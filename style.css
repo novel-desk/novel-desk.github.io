@@ -109,6 +109,12 @@ input:focus { border-color: var(--accent); }
 .toast { position: fixed; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom)); transform: translate(-50%, 10px); opacity: 0; z-index: 20;
   background: var(--text); color: var(--bg); padding: 9px 16px; border-radius: 999px; font-size: 13px; transition: .2s; pointer-events: none; max-width: calc(100vw - 32px); }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
+.token-notice { position: fixed; top: env(safe-area-inset-top); left: 0; right: 0; z-index: 15; background: var(--paper); border-bottom: 1px solid var(--error); color: var(--error); padding: 8px 16px; font-size: 13px; display: grid; gap: 6px; }
+.token-notice p { margin: 0; }
+.token-notice-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.token-notice a { color: var(--accent); }
+.replace-form { display: grid; gap: 10px; padding: 12px 16px 16px; }
+.replace-form label { display: grid; gap: 4px; font-size: 13px; }
 
 /* phones: the table of contents slides in */
 @media (max-width: 760px) {

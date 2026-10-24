@@ -55,7 +55,7 @@ export async function noPasskey(page) {
 export async function openWork(page, first = 'はじまり') {
   await noPasskey(page);
   await page.goto('./');
-  await page.getByLabel('トークン').fill(TOKEN);
+  await page.getByLabel('トークン', { exact: true }).fill(TOKEN);
   await page.getByRole('button', { name: 'パスキーで保管する' }).click();
   await page.getByRole('button', { name: /author\/novel/ }).click();
   if (first !== null) await expect(page.locator('#episode-title')).toHaveValue(first);

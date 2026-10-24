@@ -23,21 +23,33 @@ const summaryKey = repo => `summary:${repo}`;
 let shown = 0;
 
 /** @param {Listed} r @param {Summary | null} s @param {string} [state] what is happening to it ('' none) */
-function row(r, s, state = '') {
+function rowInside(r, s, state = '') {
   const where = `${esc(r.full_name)}（${esc(s?.branch ?? r.default_branch)}）${visibilityTag(r)}`;
   const about = s ? `${n(s.chars)} 字 ・ ${n(s.count)} 話 ・ 最終更新 ${esc(whenLong(s.updated))} ・ ${where}` : where;
-  return `<button class="work" data-repo="${esc(r.full_name)}" data-branch="${esc(r.default_branch)}" data-visibility="${esc(r.visibility ?? (r.private ? 'private' : 'public'))}"><b>${esc(s?.title ?? r.full_name.split('/')[1])}</b><small>${about}${state ? ` ・ ${esc(state)}` : ''}</small></button>`;
+  return `<b>${esc(s?.title ?? r.full_name.split('/')[1])}</b><small>${about}${state ? ` ・ ${esc(state)}` : ''}</small>`;
 }
+// a row filled in where it is (the button stays the same element: a tap on it while it fills in is not lost)
+/** @param {HTMLElement} b @param {Listed} r @param {Summary | null} s @param {string} [state] */
+function putRow(b, r, s, state) {
+  Object.assign(b.dataset, { repo: r.full_name, branch: r.default_branch, visibility: r.visibility ?? (r.private ? 'private' : 'public') });
+  b.innerHTML = rowInside(r, s, state);
+}
+const rows = () => /** @type {HTMLElement[]} */ ([...$('repo-list').querySelectorAll('[data-repo]')]);
 /** @param {Listed[]} list @param {Map<string, Summary>} kept */
 function render(list, kept) {
-  $('repo-list').innerHTML =
-    list.map(r => row(r, kept.get(r.full_name) ?? null, kept.has(r.full_name) ? '' : '読み込んでいます…')).join('') ||
-    '<p class="muted small">トークンで読めるリポジトリがありません。トークンの Repository access を確かめてください。</p>';
+  const state = (/** @type {Listed} */ r) => (kept.has(r.full_name) ? '' : '読み込んでいます…');
+  const now = rows();
+  if (now.length !== list.length || now.some((b, i) => b.dataset.repo !== list[i].full_name)) {
+    $('repo-list').innerHTML = list.length
+      ? list.map(() => '<button class="work" data-repo=""></button>').join('')
+      : '<p class="muted small">トークンで読めるリポジトリがありません。トークンの Repository access を確かめてください。</p>';
+  }
+  rows().forEach((b, i) => putRow(b, list[i], kept.get(list[i].full_name) ?? null, state(list[i])));
 }
 /** @param {Listed} r @param {Summary | null} s @param {string} [state] */
 function fill(r, s, state) {
-  const b = [...$('repo-list').querySelectorAll('[data-repo]')].find(x => /** @type {HTMLElement} */ (x).dataset.repo === r.full_name);
-  if (b) b.outerHTML = row(r, s, state);
+  const b = rows().find(x => x.dataset.repo === r.full_name);
+  if (b) putRow(b, r, s, state);
 }
 // a ref's commit now ('' when the branch is not there)
 /** @param {string} repo @param {string} branch */

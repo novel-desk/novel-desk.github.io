@@ -4,6 +4,12 @@ import { API, failure, nextPage } from '../lib/github.js';
 
 /** @type {string} */
 let token = '';
+/** @type {() => void} told when GitHub refuses the token (401: expired, or deleted) */
+let refused = () => {};
+/** @param {() => void} f */
+export const onRefused = f => {
+  refused = f;
+};
 /** @param {string} t */
 export const useToken = t => {
   token = t;
@@ -30,6 +36,7 @@ async function request(url, init = {}) {
   } catch {
     throw new GitHubError('GitHub につながりません（オフラインかもしれません）', 0);
   }
+  if (res.status === 401) refused();
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new GitHubError(failure(res.status, body.message), res.status);
@@ -42,6 +49,8 @@ export const getJson = async path => (await request(path)).json();
 export const send = async (method, path, body) =>
   (await request(path, { method, body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' } })).json();
 
+// whether GitHub takes the token (a GitHubError when it does not)
+export const check = () => getJson('/user/repos?per_page=1');
 // the repositories the token can read, every page of them
 export async function repos() {
   /** @type {any[]} */

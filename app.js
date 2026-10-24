@@ -1,11 +1,13 @@
 // The app: the token (put in once, opened with a passkey each time), the repository chosen, and the desk. No server:
 // the page talks to GitHub's API only, and keeps what it needs on this device
+import { dayAfter, endOf, expiryNotice } from './lib/expiry.js';
 import { installHint, isIos } from './lib/install.js';
 import { $, show, toast } from './ui/dom.js';
 import * as store from './ui/db.js';
 import * as desk from './ui/desk.js';
 import * as gh from './ui/github.js';
 import * as vault from './ui/vault.js';
+import { api } from './ui/shared.js';
 import { showWorks } from './ui/works.js';
 
 /** @typedef {import('./ui/desk.js').Repo} Repo */
@@ -17,6 +19,8 @@ const KINDS = {
 };
 /** @type {'prf' | 'local' | ''} */
 let kind = '';
+/** @type {string} the token in use ('' none yet) */
+let using = '';
 
 // --- the token
 
@@ -28,6 +32,7 @@ async function keepToken(/** @type {SubmitEvent} */ e) {
   $('keep-token').disabled = true;
   try {
     kind = await vault.keep(token);
+    await keepExpiry($('token-expires').value);
     $('token').value = '';
     if (kind === 'local') toast('PRF に対応していないため、パスキーなしで保管しました');
     await withToken(token);
@@ -53,7 +58,10 @@ async function openToken() {
 async function forgetToken() {
   if (!confirm('トークンをこの端末から消します。未送信の書きかけは残ります。よろしいですか')) return;
   await vault.forget();
+  await store.del('prefs', 'token-expires');
+  hideNotice();
   gh.useToken('');
+  using = '';
   kind = '';
   toast('トークンを消しました。パスキーはパスワードの管理に残っているので、要らなければそこで消してください');
   show('setup');
@@ -85,9 +93,64 @@ async function chooseRepo() {
   await showWorks();
 }
 
+// --- the token's expiry, said from 14 days before (GitHub does not let the page read it: the author says it), and a
+// token GitHub refuses (401): either way, a new one put in its place (FR-GH-01, NFR-USE-01)
+
+/** @param {string} day the date input's value ('' none) */
+const keepExpiry = day => store.put('prefs', 'token-expires', endOf(day));
+/** @param {string} text */
+function showNotice(text) {
+  $('token-notice-text').textContent =
+    `${text} GitHub のトークンの一覧でトークンを作り直し（Regenerate token）、新しい値を入れてください。書いたものはこの端末に残っています。`;
+  $('token-notice').hidden = false;
+}
+function hideNotice() {
+  $('token-notice').hidden = true;
+}
+async function checkExpiry() {
+  const text = expiryNotice((await store.get('prefs', 'token-expires')) ?? 0, Date.now());
+  if (text) showNotice(text);
+  else hideNotice();
+}
+gh.onRefused(() => {
+  if (using) showNotice('GitHub がトークンを断りました（期限が切れたか、消されたかもしれません）。');
+});
+async function replaceToken(/** @type {SubmitEvent} */ e) {
+  e.preventDefault();
+  const token = $('new-token').value.trim();
+  $('token-replace-error').textContent = '';
+  if (!token) return;
+  $('keep-new-token').disabled = true;
+  const before = using;
+  try {
+    gh.useToken(token);
+    try {
+      await gh.check();
+    } catch (err) {
+      throw new Error(`このトークンは使えません: ${err.message}`, { cause: err });
+    }
+    kind = await vault.keep(token);
+    await keepExpiry($('new-token-expires').value);
+    using = token;
+    $('new-token').value = '';
+    /** @type {HTMLDialogElement} */ (/** @type {unknown} */ ($('token-replace'))).close();
+    hideNotice();
+    toast('新しいトークンを保管しました');
+    if (!$('desk').hidden) await api.reload();
+    else if (!$('repos').hidden) await chooseRepo();
+  } catch (err) {
+    gh.useToken(before);
+    $('token-replace-error').textContent = err.message;
+  } finally {
+    $('keep-new-token').disabled = false;
+  }
+}
+
 /** @param {string} token */
 async function withToken(token) {
   gh.useToken(token);
+  using = token;
+  await checkExpiry();
   const r = await store.get('prefs', 'repo');
   if (r) await desk.open(r);
   else await chooseRepo();
@@ -124,6 +187,15 @@ $('repo-list').addEventListener('click', e => {
     });
 });
 desk.wire({ changeRepo: () => void chooseRepo() });
+$('token-replace-form').addEventListener('submit', e => void replaceToken(/** @type {SubmitEvent} */ (e)));
+$('token-replace-open').addEventListener('click', () => {
+  $('new-token-expires').value = dayAfter(Date.now());
+  $('token-replace-error').textContent = '';
+  /** @type {HTMLDialogElement} */ (/** @type {unknown} */ ($('token-replace'))).showModal();
+});
+$('close-token-replace').addEventListener('click', () => /** @type {HTMLDialogElement} */ (/** @type {unknown} */ ($('token-replace'))).close());
+$('token-notice-close').addEventListener('click', hideNotice);
+$('token-expires').value = dayAfter(Date.now());
 
 // --- adding the app to the home screen (FR-APP-03): said on the first screen only, never once opened from there
 /** @type {any} the browser's offer to install the app (Chrome), kept for the button */

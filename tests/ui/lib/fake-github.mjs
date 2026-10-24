@@ -163,6 +163,8 @@ export class FakeGitHub {
   constructor(repos) {
     /** @type {Map<string, FakeRepo>} */
     this.repos = new Map(repos.map(r => [r.fullName, r]));
+    /** @type {string[]} the tokens it takes */
+    this.tokens = [TOKEN];
     /** @type {string[]} the requests made to anything but this page's server and the API (refused) */
     this.outside = [];
     /** @type {string[]} the API requests, 「GET /path」 */
@@ -201,7 +203,7 @@ export class FakeGitHub {
     const reply = (status, body, headers = {}) =>
       route.fulfill({ status, headers: { ...CORS, 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body) });
     const headers = req.headers();
-    if (headers.authorization !== `Bearer ${TOKEN}`) return reply(401, { message: 'Bad credentials' });
+    if (!this.tokens.some(t => headers.authorization === `Bearer ${t}`)) return reply(401, { message: 'Bad credentials' });
     const failing = this.fail?.(method, url.pathname);
     if (failing) return reply(failing, { message: 'test failure' });
     const body = method === 'GET' ? null : req.postDataJSON();

@@ -33,7 +33,9 @@ GitHub の fine-grained personal access token を 1 つ作ります。作品の�
    - Metadata: Read-only（Contents を選ぶと自動で付きます）
 6. Generate token を押し、表示された `github_pat_…` をコピーする
 
-トークンの期限が切れたら、同じ手順で作り直し、アプリで「トークンを忘れる」を押してから入れ直します。
+トークンを入れるときに、GitHub で選んだ期限の日も入れます（はじめは 90 日後が入っています。期限なしのトークンなら空にします）。GitHub は、ブラウザーのページにトークンの期限を読ませない（API の応答の `github-authentication-token-expiration` を Access-Control-Expose-Headers に入れていない）ので、アプリはこの日を覚えて数えます。
+
+期限の 14 日前からは、画面の上に期限と、GitHub のトークンの一覧（https://github.com/settings/personal-access-tokens）へのリンクを出します。一覧でトークンを作り直し（Regenerate token）、「新しいトークンを入れる」で新しい値を貼ると、最初と同じようにパスキーで暗号化して、今のトークンと入れ替えます。GitHub がトークンを断ったとき（期限切れ、消されたなど）も、同じ知らせと入れ替えの画面を出します。未送信の書きかけは残ります。サーバー版の要件にはこの知らせが無いので、近い FR-GH-01（GitHub との連携）と NFR-USE-01（失敗したときに次にすることを出す）の試験として確かめています。
 
 ### 2. GitHub Pages を有効にする（最初の 1 回だけ）
 

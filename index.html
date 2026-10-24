@@ -31,6 +31,8 @@
     <a class="button" id="make-token" href="https://github.com/settings/personal-access-tokens/new?name=Novel+Desk&amp;description=For+novel-desk.github.io&amp;expires_in=90&amp;contents=write" target="_blank" rel="noopener noreferrer">GitHub でトークンを作る</a>
     <p class="muted small">開いた画面で、Repository access の「Only select repositories」から作品のリポジトリを選び、Generate token を押して、出たトークンを下に貼ってください（名前、期限、Contents の読み書きは入れてあります）。</p>
     <label>トークン<input id="token" type="password" autocomplete="off" spellcheck="false" placeholder="github_pat_…" required></label>
+    <label>トークンの期限<input id="token-expires" type="date"></label>
+    <p class="muted small">GitHub で選んだ期限の日です（「GitHub でトークンを作る」で作ったなら 90 日後）。期限なしのトークンなら空にしてください。GitHub はアプリにトークンの期限を教えないので、ここで覚えておき、切れる 14 日前から知らせます。</p>
     <button class="primary" id="keep-token">パスキーで保管する</button>
     <p id="setup-error" class="error" role="alert"></p>
   </form>
@@ -266,6 +268,26 @@
 <dialog id="versions" class="versions" aria-labelledby="versions-title">
   <header><strong id="versions-title">履歴</strong><button class="ghost" id="close-versions">閉じる</button></header>
   <div id="versions-body"></div>
+</dialog>
+
+<!-- トークンの期限が近い、または GitHub がトークンを断った: 作り直して入れ替える -->
+<div id="token-notice" class="token-notice" role="alert" hidden>
+  <p id="token-notice-text"></p>
+  <div class="token-notice-row">
+    <a href="https://github.com/settings/personal-access-tokens" target="_blank" rel="noopener noreferrer">GitHub のトークンの一覧</a>
+    <button id="token-replace-open">新しいトークンを入れる</button>
+    <button class="ghost" id="token-notice-close">あとで</button>
+  </div>
+</div>
+<dialog id="token-replace" class="versions" aria-labelledby="token-replace-title">
+  <header><strong id="token-replace-title">新しいトークンを入れる</strong><button class="ghost" id="close-token-replace">閉じる</button></header>
+  <form id="token-replace-form" class="replace-form">
+    <p class="muted small">GitHub のトークンの一覧でトークンを開き、Regenerate token で作り直すか、新しく作って、出た値を貼ってください。今のトークンと入れ替え、最初と同じようにパスキーで暗号化して、この端末に置きます。未送信の書きかけは残ります。</p>
+    <label>新しいトークン<input id="new-token" type="password" autocomplete="off" spellcheck="false" placeholder="github_pat_…" required></label>
+    <label>トークンの期限<input id="new-token-expires" type="date"></label>
+    <button class="primary" id="keep-new-token">パスキーで保管する</button>
+    <p id="token-replace-error" class="error" role="alert"></p>
+  </form>
 </dialog>
 
 <div class="toast" id="toast" role="status"></div>

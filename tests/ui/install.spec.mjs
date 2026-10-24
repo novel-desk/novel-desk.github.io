@@ -20,14 +20,14 @@ test.describe('an iPhone', () => {
     await noPasskey(page);
     await page.addInitScript(() => Object.defineProperty(navigator, 'standalone', { value: true, configurable: true }));
     await page.goto('./');
-    await expect(page.getByLabel('トークン')).toBeVisible();
+    await expect(page.getByLabel('トークン', { exact: true })).toBeVisible();
     await expect(page.locator('#install-ios')).toBeHidden();
   });
 });
 test('a browser that offers to install the app: a button that asks it; nothing before the offer', async ({ page, gh }) => {
   await noPasskey(page);
   await page.goto('./');
-  await expect(page.getByLabel('トークン')).toBeVisible();
+  await expect(page.getByLabel('トークン', { exact: true })).toBeVisible();
   await expect(page.locator('#install-app')).toBeHidden();
   await expect(page.locator('#install-ios')).toBeHidden();
   await page.evaluate(() => {
