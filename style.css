@@ -19,6 +19,8 @@ button, input, textarea { font: inherit; color: inherit; }
 button { cursor: pointer; border: 1px solid var(--line); background: var(--paper); border-radius: 8px; padding: 7px 12px; }
 button:disabled { opacity: .45; cursor: default; }
 button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+/* a link that opens another page, drawn as a button */
+a.button { display: block; text-align: center; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; color: var(--text); text-decoration: none; background: var(--paper); }
 button.ghost { border-color: transparent; background: transparent; color: var(--muted); }
 button.link { border: 0; background: none; color: var(--accent); padding: 4px 0; }
 input { border: 1px solid var(--line); background: var(--paper); border-radius: 8px; padding: 8px 10px; min-width: 0; outline: none; }

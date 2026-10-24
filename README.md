@@ -22,6 +22,8 @@
 
 GitHub の fine-grained personal access token を 1 つ作ります。作品のリポジトリだけを読み書きできるトークンにします。
 
+いちばん簡単なのは、アプリの最初の画面の「GitHub でトークンを作る」を押すことです。名前、説明、期限（366 日）、Contents の読み書きが入った状態で GitHub の画面が開くので、Repository access で作品のリポジトリを選び、Generate token を押すだけで済みます。手で作るときの手順は次のとおりです。
+
 1. GitHub の Settings → Developer settings → Personal access tokens → Fine-grained tokens を開き、Generate new token を押す
 2. Token name に分かる名前（例: `novel-desk`）を入れ、Expiration（期限）を選ぶ
 3. Resource owner に、作品のリポジトリの持ち主を選ぶ

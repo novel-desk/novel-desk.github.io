@@ -121,3 +121,15 @@ test('the repositories: every page of them; the one chosen is remembered; a toke
   await page.getByRole('button', { name: 'ほかの作品' }).click();
   await expect(page.locator('#repos-error')).toHaveText('トークンが使えません（期限切れか、消されたかもしれません）: test failure');
 });
+
+// the token made easy: GitHub's form opened with its name, its expiry and Contents read and write filled in
+test('a link to make the token, filled in', async ({ page }) => {
+  await page.goto('./');
+  const link = page.locator('#make-token');
+  await expect(link).toBeVisible();
+  const url = new URL(/** @type {string} */ (await link.getAttribute('href')));
+  expect(url.origin + url.pathname).toBe('https://github.com/settings/personal-access-tokens/new');
+  expect(Object.fromEntries(url.searchParams)).toEqual({ name: 'Novel Desk', description: 'For novel-desk.github.io', expires_in: '366', contents: 'write' });
+  await expect(link).toHaveAttribute('target', '_blank');
+  await expect(link).toHaveAttribute('rel', /noopener/);
+});
