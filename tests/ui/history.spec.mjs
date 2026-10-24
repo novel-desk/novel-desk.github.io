@@ -1,5 +1,6 @@
-// 履歴: the versions of the open episode, from this device and from GitHub; each compared with the one before and
-// with the text now, or read whole; put back as a change not sent, the text before kept (FR-HIST-01〜04)
+// 履歴: the versions of the open episode, this device's (ローカル履歴) and GitHub's, each in its tab; each compared with
+// the one before and with the text now, or read whole; put back as a change not sent, the text before kept
+// (FR-HIST-01〜04)
 import { test, expect, openWork, WORK_FILES } from './lib/test.mjs';
 
 test.use({ timezoneId: 'Asia/Tokyo' });
@@ -13,7 +14,11 @@ test("GitHub's versions listed; one compared with the one before, with now, read
   await page.getByRole('button', { name: 'この話の履歴' }).click();
   const dlg = page.locator('#versions');
   await expect(page.locator('#versions-title')).toHaveText('「はじまり」の履歴');
+  // this device's versions first: none yet
+  await expect(dlg.locator('.history-tabs button.on')).toHaveText('ローカル履歴（0）');
+  await expect(dlg.getByText('まだローカルの履歴はありません。この端末で書いていると、10 分おきに自動で残ります。')).toBeVisible();
   // the commits that changed this episode only, the newest first
+  await dlg.getByRole('button', { name: 'GitHub 履歴（3）' }).click();
   await expect(dlg.locator('.version')).toHaveCount(3);
   await expect(dlg.locator('.version small')).toHaveText(['ほかの端末で', 'ほかの端末で', '最初']);
   await expect(dlg.locator('.version .tag').first()).toHaveText('GitHub');
@@ -29,14 +34,17 @@ test("GitHub's versions listed; one compared with the one before, with now, read
   await expect(dlg).toBeHidden();
   await expect(page.locator('#body')).toHaveValue('# 第1話 はじまり\n\n朝が来た。鳥が鳴いた。\n');
   await expect(page.locator('#save-state')).toHaveText('未送信（この端末に保存しました）');
-  // the text before is in this device's versions; the draft is a version too
+  // the tab chosen stays; the text before is in this device's versions, and the draft is a version too
   await page.getByRole('button', { name: 'この話の履歴' }).click();
-  await expect(dlg.locator('.version .tag')).toHaveText(['未送信', '自動', 'GitHub', 'GitHub', 'GitHub']);
+  await expect(dlg.locator('.version .tag')).toHaveText(['GitHub', 'GitHub', 'GitHub']);
+  await dlg.getByRole('button', { name: 'ローカル履歴（2）' }).click();
+  await expect(dlg.locator('.version .tag')).toHaveText(['未送信', '自動']);
   await dlg.locator('.version').nth(1).click();
   await dlg.getByRole('button', { name: '全文' }).click();
   await expect(dlg.getByLabel('この版の全文')).toHaveValue('# 第1話 はじまり\n\n夜になった。\n');
+  // back in the tab it was opened from
   await dlg.getByRole('button', { name: '‹ 履歴' }).click();
-  await expect(dlg.locator('.version')).toHaveCount(5);
+  await expect(dlg.locator('.version')).toHaveCount(2);
   await dlg.getByRole('button', { name: '閉じる' }).click();
   await page.getByRole('button', { name: '送る（1）' }).click();
   await expect(page.locator('#sync-state')).toHaveText(/^送りました（/);
@@ -49,8 +57,9 @@ test('writing keeps a version on this device; the oldest version has none before
   await page.locator('#body').fill('書き直した\n');
   await page.getByRole('button', { name: 'この話の履歴' }).click();
   const dlg = page.locator('#versions');
-  await expect(dlg.locator('.version .tag')).toHaveText(['未送信', '自動', 'GitHub']);
-  await dlg.locator('.version').nth(2).click();
+  await expect(dlg.locator('.version .tag')).toHaveText(['未送信', '自動']);
+  await dlg.getByRole('button', { name: 'GitHub 履歴（1）' }).click();
+  await dlg.locator('.version').nth(0).click();
   await expect(dlg.getByText('これより前の版はありません。')).toBeVisible();
   page.once('dialog', d => void d.dismiss());
   await dlg.getByRole('button', { name: 'この版を復元' }).click();
@@ -64,6 +73,8 @@ test('an episode not on GitHub yet: only this device has versions', async ({ pag
   await page.getByRole('button', { name: '＋ 話を追加' }).click();
   await page.getByRole('button', { name: 'この話の履歴' }).click();
   await expect(page.locator('#versions .version .tag')).toHaveText(['未送信']);
+  await page.locator('#versions').getByRole('button', { name: 'GitHub 履歴（0）' }).click();
+  await expect(page.locator('#versions').getByText('GitHub にはまだ履歴がありません（まだ送っていません）。')).toBeVisible();
   expect(gh.calls.some(c => c.includes('/commits?') && c.includes('04.md'))).toBe(false);
   expect(WORK_FILES['chapters/01_first.md']).toBeTruthy();
 });
@@ -73,6 +84,8 @@ test("GitHub's versions not read (offline): said, this device's still listed", a
   await page.locator('#body').fill('書いた\n');
   gh.down = true;
   await page.getByRole('button', { name: 'この話の履歴' }).click();
-  await expect(page.locator('#versions .error')).toHaveText('GitHub の履歴を読めませんでした: GitHub につながりません（オフラインかもしれません）');
   await expect(page.locator('#versions .version .tag')).toHaveText(['未送信', '自動']);
+  await page.locator('#versions').getByRole('button', { name: 'GitHub 履歴（0）' }).click();
+  await expect(page.locator('#versions .error')).toHaveText('GitHub の履歴を読めませんでした: GitHub につながりません（オフラインかもしれません）');
+  await expect(page.locator('#versions .version')).toHaveCount(0);
 });

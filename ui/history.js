@@ -21,6 +21,10 @@ let of = null;
 let versions = [];
 // a version shows its changes from the one before, to the text now, or the whole text
 let view = 'before';
+// the list shows this device's versions (自動, 未送信) or GitHub's, as the server version's ローカル履歴 and GitHub 履歴
+let tab = 'local';
+// why GitHub's versions are not there ('' when they are)
+let failed = '';
 const body = () => $('versions-body');
 const dialog = () => /** @type {HTMLDialogElement} */ (/** @type {unknown} */ ($('versions')));
 const KIND = { here: '未送信', snapshot: '自動', github: 'GitHub' };
@@ -33,7 +37,7 @@ export async function showHistory(who) {
   body().innerHTML = '<p class="muted small">読み込んでいます…</p>';
   if (!dlg.open) dlg.showModal();
   let commits = [];
-  let failed = '';
+  failed = '';
   if (who.remote) {
     try {
       commits = await gh.commitsOf(who.repo, who.branch, who.path);
@@ -43,20 +47,29 @@ export async function showHistory(who) {
   }
   if (of !== who) return;
   versions = versionsOf({ draft: who.draft, snapshots: who.snapshots, commits });
-  renderList(failed);
+  renderList();
 }
-/** @param {string} [failed] why GitHub's versions are not there */
-function renderList(failed = '') {
+function renderList() {
+  const local = versions.filter(v => v.kind !== 'github'),
+    remote = versions.filter(v => v.kind === 'github');
+  const list = tab === 'local' ? local : remote;
   body().innerHTML =
-    (failed ? `<p class="error">GitHub の履歴を読めませんでした: ${esc(failed)}</p>` : '') +
-    (versions.length
-      ? versions
+    `<div class="history-tabs">
+      <button data-tab="local" class="${tab === 'local' ? 'on' : ''}">ローカル履歴（${local.length}）</button>
+      <button data-tab="github" class="${tab === 'github' ? 'on' : ''}">GitHub 履歴（${remote.length}）</button></div>` +
+    (tab === 'github' && failed ? `<p class="error">GitHub の履歴を読めませんでした: ${esc(failed)}</p>` : '') +
+    (list.length
+      ? list
           .map(
-            (v, i) =>
-              `<button class="version" data-v="${i}"><b>${esc(whenLong(v.at))}<span class="tag">${KIND[v.kind]}</span></b><small>${v.text === null ? esc(v.subject) : `${n(charsOf(v.text))} 字${v.subject ? ` ・ ${esc(v.subject)}` : ''}`}</small></button>`,
+            v =>
+              `<button class="version" data-v="${versions.indexOf(v)}"><b>${esc(whenLong(v.at))}<span class="tag">${KIND[v.kind]}</span></b><small>${v.text === null ? esc(v.subject) : `${n(charsOf(v.text))} 字${v.subject ? ` ・ ${esc(v.subject)}` : ''}`}</small></button>`,
           )
           .join('')
-      : '<p class="muted small">まだ履歴はありません。書いていると、この端末に 10 分おきに残ります。GitHub に送った版も出ます。</p>');
+      : tab === 'local'
+        ? '<p class="muted small">まだローカルの履歴はありません。この端末で書いていると、10 分おきに自動で残ります。</p>'
+        : failed
+          ? ''
+          : '<p class="muted small">GitHub にはまだ履歴がありません（まだ送っていません）。</p>');
 }
 // a version's text: kept with it, or read from GitHub (the blob kept on the device by its sha)
 /** @param {import('../lib/history.js').Version} v */
@@ -143,6 +156,11 @@ export function wireHistory() {
     const t = /** @type {HTMLElement} */ (e.target);
     const v = t.closest('[data-v]');
     if (v instanceof HTMLElement) return void showVersion(Number(v.dataset.v));
+    const tb = t.closest('[data-tab]');
+    if (tb instanceof HTMLElement) {
+      tab = /** @type {string} */ (tb.dataset.tab);
+      return renderList();
+    }
     const k = t.closest('[data-view]');
     if (k instanceof HTMLElement) return setView(/** @type {string} */ (k.dataset.view));
     const r = t.closest('[data-restore]');

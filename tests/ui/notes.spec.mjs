@@ -118,6 +118,7 @@ test("a note's history: its versions on GitHub and this device", async ({ page, 
   await page.getByRole('button', { name: '資料', exact: true }).click();
   await page.locator('#notes-list [data-note]', { hasText: '世界観' }).click();
   await page.getByRole('button', { name: 'この資料の履歴' }).click();
+  await page.locator('#versions').getByRole('button', { name: 'GitHub 履歴（2）' }).click();
   await expect(page.locator('#versions .version')).toHaveCount(2);
   await page.locator('#versions .version').nth(1).click();
   page.once('dialog', d => void d.accept());

@@ -40,7 +40,9 @@ test("the releases listed, one's episodes read, one put back as a change not sen
   await expect(page.locator('#body')).toHaveValue(WORK_FILES['chapters/02_second.md']);
   await expect(page.locator('#save-state')).toHaveText('未送信（この端末に保存しました）');
   await page.getByRole('button', { name: 'この話の履歴' }).click();
-  await expect(page.locator('#versions .version .tag')).toHaveText(['未送信', '自動', 'GitHub', 'GitHub']);
+  await expect(page.locator('#versions .version .tag')).toHaveText(['未送信', '自動']);
+  await page.locator('#versions').getByRole('button', { name: 'GitHub 履歴（2）' }).click();
+  await expect(page.locator('#versions .version .tag')).toHaveText(['GitHub', 'GitHub']);
 });
 
 test('no release yet: said', async ({ page, gh }) => {
