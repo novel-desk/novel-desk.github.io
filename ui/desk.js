@@ -4,7 +4,7 @@
 import { moveFiles, rebase, relabel, unsentList, withoutOp, writeFile } from '../lib/changes.js';
 import { afterSend, draftKey, draftOf, typedOver } from '../lib/drafts.js';
 import * as plans from '../lib/episodes.js';
-import { charsOf, esc, n, whenLong } from '../lib/format.js';
+import { charsOf, esc, n, rowTimes, whenLong } from '../lib/format.js';
 import { imageType } from '../lib/github.js';
 import { episodesOf, isEpisode, titleOf } from '../lib/layout.js';
 import { isNote } from '../lib/notes.js';
@@ -54,8 +54,9 @@ let busy = false;
 let ordering = false;
 /** @type {Map<string, string>} the object URLs of the pictures shown, by blob */
 const pictures = new Map();
-/** @type {Map<string, number>} when an episode was last changed on GitHub, by path and commit read */
-const changedAt = new Map();
+/** @type {Map<string, number>} when an episode was last changed on GitHub (its last commit), by path and blob: kept on
+ * the device for each work, so that it is asked once for each version of an episode */
+let changed = new Map();
 // the changes written to the device one after another, so that the last one typed is the one kept
 let writing = Promise.resolve();
 
@@ -140,7 +141,7 @@ function renderToc() {
   const episode = (e, inChapter) => {
     const text = textOf(e.path) ?? '';
     const tags = (drafts.has(e.path) ? '<span class="unsent-tag">未送信</span>' : '') + (hasConflict(text) ? '<span class="conflict">両方の版</span>' : '');
-    return `<div class="node episode${e.path === current ? ' active' : ''}" role="button" tabindex="0" data-path="${esc(e.path)}" data-node="${esc(e.path)}" draggable="${ordering}"><span class="t">${esc(titleAt(e.rel))}</span>${tags}<span class="c">${n(charsOf(text))}</span>${tools('episode', e.path, inChapter)}</div>`;
+    return `<div class="node episode${e.path === current ? ' active' : ''}" role="button" tabindex="0" data-path="${esc(e.path)}" data-node="${esc(e.path)}" draggable="${ordering}"><span class="t">${esc(titleAt(e.rel))}</span>${tags}<span class="u"></span><span class="c">${n(charsOf(text))}</span>${tools('episode', e.path, inChapter)}</div>`;
   };
   const chars = (/** @type {import('../lib/layout.js').TocEpisode[]} */ list) => list.reduce((sum, e) => sum + charsOf(textOf(e.path) ?? ''), 0);
   $('tree').innerHTML =
@@ -168,6 +169,8 @@ function renderToc() {
   for (const id of ['add-episode', 'add-chapter', 'toggle-reorder', 'trash-episode']) $(id).disabled = busy || (id === 'trash-episode' && !current);
   $('prev-episode').disabled = !neighbor(-1);
   $('next-episode').disabled = !neighbor(1);
+  paintTimes();
+  watchRows();
 }
 /** @type {string[]} the chapters folded, by path (kept on the device for each work: FR-TOC-07) */
 let folded = [];
@@ -189,23 +192,71 @@ function showCounts() {
   note.hidden = !hasConflict(text);
   note.textContent = '両方の版が並んでいます。「――― ここから」の行を探して整理してください';
 }
-// 最終更新 of the open episode: when this device wrote it (not sent), else its last commit on GitHub (FR-EDIT-02)
-async function showUpdated() {
-  const w = /** @type {NonNullable<typeof work>} */ (work);
-  const path = current;
+/** @param {string} path @param {string} sha */
+const changedKey = (path, sha) => `${path}\n${sha}`;
+// 最終更新 of an episode: when this device wrote it (not sent), else its last commit on GitHub (0: not known yet)
+/** @param {string} path */
+function updatedOf(path) {
   const d = drafts.get(path);
-  const say = (/** @type {number} */ ms) => {
-    if (path === current) $('episode-updated').textContent = ms ? `最終更新 ${whenLong(ms)}` : '';
-  };
-  if (d) return say(d.at);
-  say(0);
-  const key = `${w.commit}\n${path}`;
-  if (!changedAt.has(key) && !w.offline && w.blobs[path]) {
+  if (d) return d.at;
+  const b = /** @type {NonNullable<typeof work>} */ (work).blobs[path];
+  return b ? (changed.get(changedKey(path, b.sha)) ?? 0) : 0;
+}
+// 最終更新 of the open episode (FR-EDIT-02), asked of GitHub when it is not known yet
+function showUpdated() {
+  const ms = updatedOf(current);
+  $('episode-updated').textContent = current && ms ? `最終更新 ${whenLong(ms)}` : '';
+  if (current && !ms) ask(current);
+}
+// 最終更新 on the rows of the table of contents, where it tells one row from the others (as the server version's)
+function paintTimes() {
+  const said = rowTimes(Object.fromEntries(episodes().map(e => [e.path, updatedOf(e.path)])));
+  for (const u of /** @type {NodeListOf<HTMLElement>} */ ($('tree').querySelectorAll('.node.episode .u')))
+    u.textContent = said[/** @type {HTMLElement} */ (u.parentElement).dataset.path ?? ''] ?? '';
+  showUpdated();
+}
+// The last commits of the episodes, asked of GitHub lazily: a row when it comes into sight, the open episode when it
+// opens; a few at a time, once for each blob (the answers kept on the device for each work)
+/** @type {{ repo: string, branch: string, path: string, key: string }[]} */
+const asks = [];
+/** @type {Set<string>} the keys asked and not answered yet */
+const asking = new Set();
+let askers = 0;
+/** @param {string} path */
+function ask(path) {
+  const w = /** @type {NonNullable<typeof work>} */ (work);
+  const b = w.blobs[path];
+  if (!b || w.offline || drafts.has(path)) return;
+  const key = changedKey(path, b.sha);
+  if (changed.has(key) || asking.has(key)) return;
+  asking.add(key);
+  asks.push({ repo: w.repo, branch: w.branch, path, key });
+  while (askers < 3 && asks.length) void answerAsks();
+}
+async function answerAsks() {
+  askers++;
+  for (let job; (job = asks.shift());) {
+    let ms = 0;
     try {
-      changedAt.set(key, await lastChange(w.repo, w.branch, path));
+      ms = await lastChange(job.repo, job.branch, job.path);
     } catch {}
+    asking.delete(job.key);
+    const w = work;
+    if (!ms || !w || w.repo !== job.repo) continue;
+    changed.set(job.key, ms);
+    paintTimes();
+    // (only the keys of the files there now are kept)
+    const keys = new Set(Object.entries(w.blobs).map(([p, b]) => changedKey(p, b.sha)));
+    await store.put('prefs', `changed:${w.repo}`, Object.fromEntries([...changed].filter(([k]) => keys.has(k))));
   }
-  say(changedAt.get(key) ?? 0);
+  askers--;
+}
+/** @type {IntersectionObserver | null} the rows whose last commit is not known yet, asked when they come into sight */
+let sight = null;
+function watchRows() {
+  sight?.disconnect();
+  for (const row of /** @type {NodeListOf<HTMLElement>} */ ($('tree').querySelectorAll('.node.episode')))
+    if (!updatedOf(row.dataset.path ?? '')) sight?.observe(row);
 }
 /** @param {string} path @returns {Promise<boolean>} */
 async function openEpisode(path) {
@@ -229,7 +280,7 @@ async function openEpisode(path) {
   }
   $('desk').classList.remove('toc-open');
   renderToc();
-  void showUpdated();
+  showUpdated();
   void renderPlotPanel();
   void renderSideNote();
   await store.put('prefs', `episode:${w.repo}`, path);
@@ -272,7 +323,7 @@ function typed() {
   keepText(current, $('body').value);
   showCounts();
   renderToc();
-  void showUpdated();
+  showUpdated();
 }
 // 記録: the work's length today, noted on the device a moment after the last key (and when it is read and sent)
 /** @type {ReturnType<typeof setTimeout> | undefined} */
@@ -677,7 +728,7 @@ async function sendDrafts() {
     void noteNow();
     if (current && findEpisode(current) && !drafts.has(current)) setKeepingCaret(/** @type {HTMLTextAreaElement} */ ($('body')), textOf(current) ?? '');
     showCounts();
-    void showUpdated();
+    showUpdated();
   } catch (err) {
     syncState(
       err instanceof Overlapped
@@ -712,6 +763,7 @@ export async function open(r) {
   drafts = new Map(kept.filter(d => d.repo === r.full_name).map(d => [d.path, d]));
   edits = (await store.get('prefs', `edits:${r.full_name}`)) ?? [];
   folded = (await store.get('prefs', `closed:${r.full_name}`)) ?? [];
+  changed = new Map(Object.entries((await store.get('prefs', `changed:${r.full_name}`)) ?? {}));
   await reload();
 }
 
@@ -852,6 +904,13 @@ export function wire(on) {
   });
   wireBranches();
   wireUnsent();
+  sight = new IntersectionObserver(seen => {
+    for (const e of seen)
+      if (e.isIntersecting) {
+        sight?.unobserve(e.target);
+        ask(/** @type {HTMLElement} */ (e.target).dataset.path ?? '');
+      }
+  });
   setInterval(() => void readIn(), 60000);
   document.addEventListener('visibilitychange', () => void readIn());
   wireNotes();

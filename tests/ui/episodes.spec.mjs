@@ -205,3 +205,25 @@ test('the counts and 最終更新: the work, the episode (its last commit; this 
   await expect(page.locator('#work-chars')).toHaveText('38');
   await expect(page.locator('#episode-chars')).toHaveText('14');
 });
+
+// FR-TOC-01: 最終更新 on the rows, as the server version's: asked of GitHub lazily, once for each version of an episode,
+// and said only where it tells a row from the others
+test('the rows’ 最終更新: the one changed elsewhere says its time; asked once for each blob, kept on the device', async ({ page, gh, work }) => {
+  work.push({ 'chapters/02_second.md': '# 第2話 駅で\n\nほかで\n' });
+  await openWork(page);
+  const times = page.locator('#tree .node.episode .u');
+  await expect(times).toHaveText(['', /^10\/1 \d+:02$/, '']);
+  await expect.poll(() => gh.calls.filter(c => c.includes('/commits?') && c.includes('path=')).length).toBe(3);
+  // written here: now, until sent
+  await page.locator('#body').press('Control+End');
+  await page.keyboard.type('あ');
+  await expect(times.first()).toHaveText(/^\d+\/\d+ \d+:\d\d$/);
+  // opened again: from the device, not asked again
+  await page.reload();
+  await expect(page.locator('#episode-title')).toHaveValue('はじまり');
+  gh.calls.length = 0;
+  await page.getByRole('button', { name: '再読み込み' }).click();
+  await expect(page.locator('#sync-state')).toHaveText(/GitHub から読みました/);
+  await expect(times.nth(1)).toHaveText(/^10\/1 \d+:02$/);
+  expect(gh.calls.filter(c => c.includes('path='))).toEqual([]);
+});

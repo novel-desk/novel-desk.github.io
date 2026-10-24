@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest';
-import { esc, charsOf, n, lineBreaks, when, whenLong } from '../../lib/format.js';
+import { esc, charsOf, n, lineBreaks, rowTimes, when, whenLong } from '../../lib/format.js';
 
 describe('format', () => {
   test('esc: the five characters of HTML, anything made text', () => {
@@ -34,5 +34,16 @@ describe('format', () => {
     expect(whenLong(at, at + 2 * 86400000)).toBe('10/8 4:05');
     expect(whenLong(null)).toBe('');
     expect(whenLong(Date.now())).toMatch(/たった今/);
+  });
+  // FR-TOC-01 (the rows' 最終更新, as the server version's)
+  test('rowTimes: a row says its time only where it tells it from the others', () => {
+    const now = new Date(2026, 9, 25).getTime();
+    const [a, b] = [new Date(2026, 9, 1, 9, 1).getTime(), new Date(2026, 9, 3, 12, 30).getTime()];
+    expect(rowTimes({ x: a, y: a, z: b }, now)).toEqual({ x: '', y: '', z: '10/3 12:30' });
+    expect(rowTimes({ x: a, y: b }, now)).toEqual({ x: '10/1 9:01', y: '10/3 12:30' });
+    // not known yet: nothing said; the ones known that share a time still tell themselves from the rest
+    expect(rowTimes({ x: 0, y: 0, z: 0, w: a, v: a }, now)).toEqual({ x: '', y: '', z: '', w: '10/1 9:01', v: '10/1 9:01' });
+    expect(rowTimes({}, now)).toEqual({});
+    expect(rowTimes({ x: a })).toEqual({ x: when(a) });
   });
 });
