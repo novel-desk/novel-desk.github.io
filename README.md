@@ -1,6 +1,6 @@
-# Novel Writer（JavaScript 版）
+# Novel Desk
 
-サーバーなしで動く Novel Writer です。GitHub のリポジトリに置いた小説を、話ごとにブラウザーで書き、GitHub へ送ります。
+サーバーなしで動く、Novel Writer（kurogane255/novel-writer）の JavaScript 版です。GitHub のリポジトリに置いた小説を、話ごとにブラウザーで書き、GitHub へ送ります。
 アプリは GitHub Pages から配る静的なファイルだけでできていて、画面は GitHub の API とだけ通信します。
 
 - 公開の場所: https://novel-desk.github.io/
@@ -25,7 +25,7 @@ GitHub の fine-grained personal access token を 1 つ作ります。作品の�
 いちばん簡単なのは、アプリの最初の画面の「GitHub でトークンを作る」を押すことです。名前、説明、期限（366 日）、Contents の読み書きが入った状態で GitHub の画面が開くので、Repository access で作品のリポジトリを選び、Generate token を押すだけで済みます。手で作るときの手順は次のとおりです。
 
 1. GitHub の Settings → Developer settings → Personal access tokens → Fine-grained tokens を開き、Generate new token を押す
-2. Token name に分かる名前（例: `novel-desk`）を入れ、Expiration（期限）を選ぶ
+2. Token name に分かる名前（例: `Novel Desk`）を入れ、Expiration（期限）を選ぶ
 3. Resource owner に、作品のリポジトリの持ち主を選ぶ
 4. Repository access で Only select repositories を選び、作品のリポジトリ（例: dennou）だけを選ぶ
 5. Permissions の Repository permissions で、次の 2 つだけを付ける

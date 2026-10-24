@@ -1,6 +1,6 @@
 {
-  "name": "Novel Writer",
-  "short_name": "Novel",
+  "name": "Novel Desk",
+  "short_name": "Novel Desk",
   "description": "GitHub のリポジトリにある小説を、話ごとに書いて送る",
   "lang": "ja",
   "start_url": "./",

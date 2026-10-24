@@ -1,7 +1,7 @@
 {
   "private": true,
   "type": "module",
-  "description": "サーバーなしで動く Novel Writer。画面は素の ES modules（ライブラリなし、ビルドなし）。ここにあるのは開発用の点検と試験だけ",
+  "description": "Novel Desk: サーバーなしで動く Novel Writer の JavaScript 版。画面は素の ES modules（ライブラリなし、ビルドなし）。ここにあるのは開発用の点検と試験だけ",
   "scripts": {
     "serve": "node tools/serve.mjs",
     "format": "prettier --write \"**/*.{js,mjs}\"",

@@ -6,7 +6,7 @@ const bytes = n => new Uint8Array(n).fill(7);
 describe('passkey', () => {
   test('createOptions: a passkey on this host, verified, asking for PRF with the salt', () => {
     const o = createOptions({ rpId: 'kurogane255.github.io', userId: bytes(16), challenge: bytes(32), salt: bytes(32) });
-    expect(o.rp).toEqual({ id: 'kurogane255.github.io', name: 'Novel Writer' });
+    expect(o.rp).toEqual({ id: 'kurogane255.github.io', name: 'Novel Desk' });
     expect(o.user.id).toEqual(bytes(16));
     expect(o.challenge).toEqual(bytes(32));
     expect(o.authenticatorSelection).toEqual({ residentKey: 'preferred', userVerification: 'required' });
