@@ -1,5 +1,6 @@
 import { describe, test, expect } from 'vitest';
-import { stillHolds, summaryOf, visibilityTag } from '../../lib/works.js';
+import { adminFailure, movedKey, newWorkFiles, repoName, stillHolds, summaryOf, visibilityTag, whereIs } from '../../lib/works.js';
+import { parseLayout } from '../../lib/layout.js';
 import { viewOf } from '../../lib/view.js';
 
 const read = config => ({
@@ -48,5 +49,53 @@ describe('works', () => {
     expect(visibilityTag({ private: false })).toContain('class="vis public"');
     expect(visibilityTag({})).toBe('');
     expect(visibilityTag({ visibility: 'odd' })).toBe('');
+  });
+  // FR-WORK-02, FR-GH-10
+  test('repoName: letters, digits and . _ - (100 at most), 「.git」 left off', () => {
+    expect(repoName(' my-novel.git ')).toBe('my-novel');
+    expect(repoName('a_b.c-1')).toBe('a_b.c-1');
+    expect(repoName('小説')).toBeNull();
+    expect(repoName('')).toBeNull();
+    expect(repoName('..')).toBeNull();
+    expect(repoName('x'.repeat(101))).toBeNull();
+  });
+  // FR-WORK-02, FR-GH-02
+  test('newWorkFiles: the files the server version makes; novel.toml read as it says', () => {
+    const files = newWorkFiles('題 "引用"', 'main');
+    expect(Object.keys(files)).toEqual(['README.md', 'novel.toml', 'manuscript/01_はじまり.md', 'notes/images/.gitkeep']);
+    expect(files['README.md']).toBe('# 題 "引用"\n');
+    const { layout, problems } = parseLayout(files['novel.toml']);
+    expect(problems).toEqual([]);
+    expect(layout).toMatchObject({ title: '題 "引用"', dir: 'manuscript', files: ['*.md'], notes: 'notes', images: 'notes/images', branch: 'main' });
+    expect(files['novel.toml']).toMatch(/^# Novel Writer の作品の設定\n/);
+  });
+  // FR-GH-10, FR-GH-12
+  test('whereIs: the same, renamed or moved (by its name or its ID), another repository by the name, or gone', () => {
+    const meta = (id, full_name) => ({ id, full_name, default_branch: 'main' });
+    expect(whereIs('o/a', 1, meta(1, 'o/a'), null)).toEqual({ kind: 'same', meta: meta(1, 'o/a') });
+    expect(whereIs('o/a', 0, meta(5, 'o/a'), null)).toEqual({ kind: 'same', meta: meta(5, 'o/a') });
+    expect(whereIs('o/a', 1, meta(1, 'p/b'), null)).toEqual({ kind: 'moved', meta: meta(1, 'p/b') });
+    expect(whereIs('o/a', 1, meta(2, 'o/a'), meta(1, 'o/c'))).toEqual({ kind: 'moved', meta: meta(1, 'o/c') });
+    expect(whereIs('o/a', 1, null, meta(1, 'o/a'))).toEqual({ kind: 'same', meta: meta(1, 'o/a') });
+    expect(whereIs('o/a', 1, meta(2, 'o/a'), null)).toEqual({ kind: 'other', meta: meta(2, 'o/a') });
+    expect(whereIs('o/a', 1, null, null)).toEqual({ kind: 'gone', meta: null });
+  });
+  // FR-GH-10
+  test('movedKey: the keys of a work moved to its new name; others not', () => {
+    expect(movedKey('o/a', 'o/a', 'p/b')).toBe('p/b');
+    expect(movedKey('o/a\nch/01.md', 'o/a', 'p/b')).toBe('p/b\nch/01.md');
+    expect(movedKey('branch:o/a', 'o/a', 'p/b')).toBe('branch:p/b');
+    expect(movedKey('snap:o/a\nch/01:x.md', 'o/a', 'p/b')).toBe('snap:p/b\nch/01:x.md');
+    expect(movedKey('branch:o/ab', 'o/a', 'p/b')).toBeNull();
+    expect(movedKey('o/ab\nx', 'o/a', 'p/b')).toBeNull();
+    expect(movedKey('repos', 'o/a', 'p/b')).toBeNull();
+  });
+  // FR-WORK-02, FR-GH-10, NFR-USE-01
+  test('adminFailure: what went wrong and what to do', () => {
+    expect(adminFailure(401, 'Bad credentials')).toMatch(/^このトークンは使えません/);
+    expect(adminFailure(403, 'Resource not accessible')).toMatch(/Administration を Read and write にした別のトークン/);
+    expect(adminFailure(404, 'Not Found')).toMatch(/Administration/);
+    expect(adminFailure(422, 'name already exists')).toBe('GitHub が受け付けませんでした（同じ名前のリポジトリがあるかもしれません）: name already exists');
+    expect(adminFailure(500, 'oops')).toBe('oops');
   });
 });

@@ -35,3 +35,5 @@ export const put = (store, key, value) => run(store, 'readwrite', s => s.put(val
 export const del = (store, key) => run(store, 'readwrite', s => s.delete(key));
 /** @param {Store} store @returns {Promise<any[]>} */
 export const all = store => run(store, 'readonly', s => s.getAll());
+/** @param {Store} store @returns {Promise<IDBValidKey[]>} */
+export const keys = store => run(store, 'readonly', s => s.getAllKeys());

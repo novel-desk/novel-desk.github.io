@@ -16,8 +16,13 @@ const CORS = {
  * A repository: its objects (blobs by sha; trees as flat maps of path → { mode, sha }; commits) and its branches
  */
 export class FakeRepo {
-  /** @param {string} fullName @param {Record<string, string | Buffer>} files @param {{ branch?: string, private?: boolean }} [o] */
+  /**
+   * @param {string} fullName @param {Record<string, string | Buffer> | null} files (null: an empty repository, no commit)
+   * @param {{ branch?: string, private?: boolean }} [o]
+   */
   constructor(fullName, files, o = {}) {
+    // (given by the FakeGitHub it is in)
+    this.id = 0;
     this.fullName = fullName;
     this.defaultBranch = o.branch ?? 'main';
     this.private = o.private ?? true;
@@ -35,7 +40,21 @@ export class FakeRepo {
     this.tags = {};
     /** @type {{ id: number, tag_name: string, name: string, body: string, created_at: string }[]} */
     this.releases = [];
-    this.refs[this.defaultBranch] = this.commit(files, '最初', []);
+    if (files) this.refs[this.defaultBranch] = this.commit(files, '最初', []);
+  }
+  get empty() {
+    return Object.keys(this.refs).length === 0;
+  }
+  /** a repository as GitHub's API says it */
+  meta() {
+    return {
+      id: this.id,
+      full_name: this.fullName,
+      name: this.fullName.split('/')[1],
+      private: this.private,
+      visibility: this.private ? 'private' : 'public',
+      default_branch: this.defaultBranch,
+    };
   }
   /** @param {string | Buffer} content */
   blob(content) {
@@ -163,8 +182,20 @@ export class FakeGitHub {
   constructor(repos) {
     /** @type {Map<string, FakeRepo>} */
     this.repos = new Map(repos.map(r => [r.fullName, r]));
+    this.ids = 0;
+    for (const r of repos) r.id = ++this.ids;
+    /** @type {Record<string, string>} the names GitHub sends on to another (a repository renamed) */
+    this.movedTo = {};
+    /** @type {string[]} the tokens that can make and rename repositories (Administration) */
+    this.adminTokens = [];
+    // a repository made here is one the token in use can read (false: its Repository access does not have it yet)
+    this.newReadable = true;
+    /** @type {Set<string>} the repositories the tokens other than the admin ones cannot read */
+    this.unreadable = new Set();
     /** @type {string[]} the tokens it takes */
     this.tokens = [TOKEN];
+    /** @type {string[]} the requests that came with an admin token */
+    this.adminCalls = [];
     /** @type {string[]} the requests made to anything but this page's server and the API (refused) */
     this.outside = [];
     /** @type {string[]} the API requests, 「GET /path」 */
@@ -177,6 +208,15 @@ export class FakeGitHub {
     this.down = false;
     /** @type {((method: string, path: string) => void) | null} done before a request is answered, for a test */
     this.before = null;
+  }
+  // a repository renamed (or moved to another owner) on GitHub: its old name sent on to it
+  /** @param {string} from @param {string} to */
+  rename(from, to) {
+    const repo = /** @type {FakeRepo} */ (this.repos.get(from));
+    this.repos.delete(from);
+    repo.fullName = to;
+    this.repos.set(to, repo);
+    this.movedTo[from] = to;
   }
   /** @param {import('@playwright/test').BrowserContext} context @param {string} origin this page's server */
   async install(context, origin) {
@@ -203,11 +243,46 @@ export class FakeGitHub {
     const reply = (status, body, headers = {}) =>
       route.fulfill({ status, headers: { ...CORS, 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body) });
     const headers = req.headers();
-    if (!this.tokens.some(t => headers.authorization === `Bearer ${t}`)) return reply(401, { message: 'Bad credentials' });
+    const admin = this.adminTokens.some(t => headers.authorization === `Bearer ${t}`);
+    if (admin) this.adminCalls.push(`${method} ${url.pathname}`);
+    if (!admin && !this.tokens.some(t => headers.authorization === `Bearer ${t}`)) return reply(401, { message: 'Bad credentials' });
     const failing = this.fail?.(method, url.pathname);
     if (failing) return reply(failing, { message: 'test failure' });
     const body = method === 'GET' ? null : req.postDataJSON();
     const path = decodeURIComponent(url.pathname);
+    // the repository itself: as GitHub says it (a renamed one's old name sent on), made, renamed
+    if (path === '/user' && method === 'GET') return reply(200, { login: 'author' });
+    if ((path === '/user/repos' || /^\/orgs\/[^/]+\/repos$/.test(path)) && method === 'POST') {
+      if (!admin) return reply(403, { message: 'Resource not accessible by personal access token' });
+      const owner = path === '/user/repos' ? 'author' : path.split('/')[2];
+      const full = `${owner}/${body.name}`;
+      if (this.repos.has(full)) return reply(422, { message: 'name already exists on this account' });
+      const made = new FakeRepo(full, null, { private: body.private });
+      made.id = ++this.ids;
+      this.repos.set(full, made);
+      if (!this.newReadable) this.unreadable.add(full);
+      return reply(201, made.meta());
+    }
+    const byId = /^\/repositories\/(\d+)$/.exec(path);
+    if (byId) {
+      const found = [...this.repos.values()].find(r => r.id === Number(byId[1]));
+      return found && !this.unreadable.has(found.fullName) ? reply(200, found.meta()) : reply(404, { message: 'Not Found' });
+    }
+    const named = /^\/repos\/([^/]+\/[^/]+)$/.exec(path);
+    if (named) {
+      const found = this.repos.get(named[1]) ?? this.repos.get(this.movedTo[named[1]]);
+      if (!found || (!admin && this.unreadable.has(found.fullName))) return reply(404, { message: 'Not Found' });
+      if (method === 'GET') return reply(200, found.meta());
+      if (method === 'PATCH') {
+        if (!admin) return reply(403, { message: 'Resource not accessible by personal access token' });
+        const full = `${found.fullName.split('/')[0]}/${body.name}`;
+        if (this.repos.has(full)) return reply(422, { message: 'name already exists on this account' });
+        this.rename(found.fullName, full);
+        return reply(200, found.meta());
+      }
+    }
+    const unread = /^\/repos\/([^/]+\/[^/]+)\//.exec(path);
+    if (unread && !admin && this.unreadable.has(unread[1])) return reply(404, { message: 'Not Found' });
     if (path === '/user/repos') {
       const all = [...this.repos.values()];
       const page = Number(url.searchParams.get('page') || 1);
@@ -215,6 +290,7 @@ export class FakeGitHub {
         full_name: r.fullName,
         name: r.fullName.split('/')[1],
         private: r.private,
+        id: r.id,
         visibility: r.private ? 'private' : 'public',
         default_branch: r.defaultBranch,
       }));
@@ -242,6 +318,16 @@ export class FakeGitHub {
             }
           : {},
       );
+    }
+    const put = /^\/repos\/([^/]+\/[^/]+)\/contents\/(.+)$/.exec(path);
+    if (put && method === 'PUT' && this.repos.get(put[1])) {
+      // (the Contents API: a file and its commit, on the default branch; the first commit of an empty repository)
+      const repo = /** @type {FakeRepo} */ (this.repos.get(put[1]));
+      const head = repo.refs[repo.defaultBranch];
+      const entries = head ? { ...repo.files(head) } : {};
+      entries[put[2]] = { mode: '100644', sha: repo.blob(Buffer.from(body.content, 'base64')) };
+      repo.refs[repo.defaultBranch] = repo.commitTree(repo.tree(entries), body.message, head ? [head] : []);
+      return reply(201, { content: { path: put[2], sha: entries[put[2]].sha }, commit: { sha: repo.refs[repo.defaultBranch] } });
     }
     const f = /^\/repos\/([^/]+\/[^/]+)\/contents\/(.+)$/.exec(path);
     if (f && method === 'GET' && this.repos.get(f[1])) {
@@ -290,6 +376,7 @@ export class FakeGitHub {
     const repo = m && this.repos.get(m[1]);
     if (!m || !repo) return reply(404, { message: 'Not Found' });
     const rest = m[2];
+    if (repo.empty) return reply(409, { message: 'Git Repository is empty.' });
     let g;
     if (method === 'GET' && (g = /^ref\/tags\/(.+)$/.exec(rest))) {
       const sha = repo.tags[g[1]];

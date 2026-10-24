@@ -59,7 +59,7 @@ test('shown at once from what was kept; GitHub not reached: what was kept stays,
 // FR-GH-11
 test('public or private: on the list and on the desk, 公開 standing out', async ({ page, gh }) => {
   await openWork(page);
-  await expect(page.locator('#work-repo')).toHaveText('author/novel非公開');
+  await expect(page.locator('#work-repo')).toContainText('author/novel非公開');
   await expect(page.locator('#work-repo .vis')).toHaveClass('vis private');
   await expect(page.locator('#work-repo a')).toHaveAttribute('href', 'https://github.com/author/novel/tree/main');
   await page.getByRole('button', { name: 'ほかの作品' }).click();

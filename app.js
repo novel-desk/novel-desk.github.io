@@ -186,7 +186,7 @@ $('repo-list').addEventListener('click', e => {
       visibility: /** @type {string} */ (b.dataset.visibility),
     });
 });
-desk.wire({ changeRepo: () => void chooseRepo() });
+desk.wire({ changeRepo: () => void chooseRepo(), open: openRepo, relist: chooseRepo });
 $('token-replace-form').addEventListener('submit', e => void replaceToken(/** @type {SubmitEvent} */ (e)));
 $('token-replace-open').addEventListener('click', () => {
   $('new-token-expires').value = dayAfter(Date.now());

@@ -134,7 +134,9 @@ export async function showWorks() {
       );
       if (at === shown) fill(r, s);
     } catch (err) {
-      if (at === shown) fill(r, kept.get(r.full_name) ?? null, kept.has(r.full_name) ? '' : err.message);
+      const empty = err instanceof gh.GitHubError && err.status === 409;
+      if (at === shown)
+        fill(r, kept.get(r.full_name) ?? null, empty ? '空のリポジトリです（開くと作品として始められます）' : kept.has(r.full_name) ? '' : err.message);
     }
   });
 }

@@ -73,6 +73,17 @@
     <p class="muted small">作品のリポジトリを選んでください（トークンで読めるものだけが出ます）。</p>
     <div class="works" id="repo-list"></div>
     <p id="repos-error" class="error" role="alert"></p>
+    <form class="card new-work" id="new-work">
+      <h2>新しい作品</h2>
+      <p class="muted small">GitHub に非公開のリポジトリを作り、題名を入れた novel.toml、README.md、最初の話を置きます。中身のない（空の）リポジトリは、一覧から開くと作品として始められます。</p>
+      <label>題名<input id="new-work-title" maxlength="80"></label>
+      <label>リポジトリ名（英数字と . _ -）<input id="new-work-repo" autocapitalize="none" autocomplete="off" spellcheck="false" placeholder="my-novel"></label>
+      <label>持ち主（空なら自分。組織に作るときは組織の名前）<input id="new-work-owner" autocapitalize="none" autocomplete="off" spellcheck="false"></label>
+      <label>Administration の権限があるトークン<input id="admin-token" type="password" autocomplete="off" spellcheck="false" placeholder="github_pat_…"></label>
+      <p class="muted small">リポジトリを作るには、いつものトークン（Contents だけ）とは別に、Repository access を All repositories にし、Repository permissions の Administration を Read and write にしたトークンが要ります。いつものトークンには付けないでください。このトークンは作るときだけ使い、この端末には残しません（期限を短くして作り、使い終わったら GitHub で消してください）。いつものトークンで作ったリポジトリを読めないときは、いつものトークンの Repository access にそのリポジトリを足してください。</p>
+      <button class="primary" id="create-work">作成</button>
+      <p id="new-work-state" class="muted small" role="status"></p>
+    </form>
     <div class="card">
       <h2>画面の色</h2>
       <div class="theme-pick" id="theme-pick">
@@ -287,6 +298,18 @@
     <label>トークンの期限<input id="new-token-expires" type="date"></label>
     <button class="primary" id="keep-new-token">パスキーで保管する</button>
     <p id="token-replace-error" class="error" role="alert"></p>
+  </form>
+</dialog>
+
+<!-- リポジトリの名前を変更（Administration の権限があるトークンで） -->
+<dialog id="rename-repo" class="versions" aria-labelledby="rename-repo-title">
+  <header><strong id="rename-repo-title">リポジトリの名前を変更</strong><button class="ghost" id="close-rename-repo">閉じる</button></header>
+  <form id="rename-repo-form" class="replace-form">
+    <label>新しい名前（英数字と . _ -）<input id="rename-repo-name" autocapitalize="none" autocomplete="off" spellcheck="false"></label>
+    <label>Administration の権限があるトークン<input id="rename-admin-token" type="password" autocomplete="off" spellcheck="false" placeholder="github_pat_…"></label>
+    <p class="muted small">名前を変えるには、いつものトークン（Contents だけ）とは別に、このリポジトリの Repository permissions の Administration を Read and write にしたトークンが要ります。いつものトークンには付けないでください。このトークンは名前を変えるときだけ使い、この端末には残しません。GitHub は古い名前を新しい名前へ送るので、いつものトークンはそのまま使えます。</p>
+    <button class="primary" id="rename-repo-go">名前を変更</button>
+    <p id="rename-repo-error" class="error" role="alert"></p>
   </form>
 </dialog>
 

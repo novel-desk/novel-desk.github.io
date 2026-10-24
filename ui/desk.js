@@ -33,6 +33,7 @@ import { snapshotted } from '../lib/history.js';
 import { previewPlace, reading, showPreviewAt, stopReading, togglePreview, wireReading } from './reading.js';
 import { wireBranches } from './branches.js';
 import { wireUnsent } from './unsent.js';
+import { locate, moveRepo, relink, startWork, titleFor, wireRepo } from './repo.js';
 
 /** @typedef {import('../lib/drafts.js').Draft} Draft */
 /** @typedef {import('../lib/tomledit.js').TomlEdit & { op: string }} Edit a key of novel.toml set by an operation */
@@ -51,6 +52,8 @@ let view = null;
 // the episode open ('' = none)
 let current = '';
 let busy = false;
+/** @type {import('../lib/works.js').RepoMeta | null} another repository under the work's name (FR-GH-12): not sent to */
+let stopped = null;
 /** @type {import('../lib/sync.js').SyncMode} how this work is sent (FR-GH-04), kept on the device for each work */
 let mode = 'auto';
 // 「並べ替え」 on: the rows show ↑↓, the chapter to move to, and can be dragged
@@ -164,10 +167,11 @@ function renderToc() {
   $('work-branch').textContent = w.branch;
   // the repository, its page on GitHub, and whether it is public (FR-GH-11)
   $('work-repo').innerHTML =
-    `<a href="https://github.com/${esc(w.repo)}/tree/${esc(encodeURIComponent(w.branch))}" target="_blank" rel="noopener noreferrer">${esc(w.repo)}</a>${visibilityTag(/** @type {Repo} */ (repo))}`;
+    `<a href="https://github.com/${esc(w.repo)}/tree/${esc(encodeURIComponent(w.branch))}" target="_blank" rel="noopener noreferrer">${esc(w.repo)}</a>${visibilityTag(/** @type {Repo} */ (repo))}` +
+    `<button class="link" id="gh-rename" title="GitHub のリポジトリの名前を変更">名前を変更</button>${stopped ? '<button class="link" id="gh-relink" title="いまの名前のリポジトリにつなぎ直す">つなぎ直す</button>' : ''}`;
   $('open-unsent').hidden = unsent() === 0;
   if (document.activeElement !== $('work-title')) $('work-title').value = v.layout.title || w.repo.split('/')[1];
-  $('send').disabled = busy || unsent() === 0 || mode === 'off';
+  $('send').disabled = busy || unsent() === 0 || mode === 'off' || Boolean(stopped);
   $('send').textContent = unsent() ? `送る（${unsent()}）` : '送る';
   $('reload').disabled = busy || mode === 'off';
   $('sync-mode').value = mode;
@@ -624,24 +628,59 @@ async function reload() {
   busy = true;
   syncState('読み込んでいます…');
   /** @type {string} the branch asked for that GitHub no longer has ('' when none) */
-  let gone;
+  let gone = '';
+  /** @type {{ m: import('../lib/works.js').RepoMeta | null }} the repository found renamed or moved on GitHub */
+  const moving = { m: null };
   try {
     const chosen = (await store.get('prefs', `branch:${r.full_name}`)) ?? '';
     // 同期しない (FR-GH-04): nothing read in from GitHub; the work as last read on this device, when it has it
     const kept = mode === 'off' ? await store.get('snapshots', r.full_name) : null;
-    const read =
-      kept && (!chosen || kept.branch === chosen) ? { ...(await contents(kept, false)), gone: '' } : await load(r.full_name, r.default_branch, chosen);
-    work = read;
-    gone = read.gone;
-    if (gone) await forgetBranch(r.full_name, gone);
+    /** @type {import('./work.js').Work & { gone: string }} */
+    let read;
+    if (kept && (!chosen || kept.branch === chosen)) read = { ...(await contents(kept, false)), gone: '' };
+    else {
+      // where the repository is now (FR-GH-10, FR-GH-12): renamed or moved on GitHub, followed; another repository
+      // under its name, neither read nor sent to (the work as last read on this device) until the author says so.
+      // (GitHub not reached: read as before)
+      const where = await locate(r).catch(() => null);
+      stopped = where?.kind === 'other' ? where.meta : null;
+      if (where?.kind === 'moved') moving.m = where.meta;
+      else if (stopped) {
+        const last = await store.get('snapshots', r.full_name);
+        if (!last) throw new Error(stopSaid(r.full_name));
+        read = { ...(await contents(last, true)), gone: '' };
+      } else if (where?.meta) repo = { ...r, visibility: where.meta.visibility };
+    }
+    // (a repository moved: read by its new name, below)
+    if (!moving.m) {
+      read ??= await load(r.full_name, r.default_branch, chosen);
+      work = read;
+      gone = read.gone;
+      if (gone) await forgetBranch(r.full_name, gone);
+    }
   } catch (err) {
     syncState(err.message, 'err');
+    // an empty repository (FR-GH-02): started as a work, if the author wants it
+    if (err instanceof GitHubError && err.status === 409) {
+      busy = false;
+      if (await offerStart(r)) await reload();
+    }
     return;
   } finally {
     busy = false;
   }
+  const m = /** @type {import('../lib/works.js').RepoMeta | null} */ (moving.m);
+  if (m) {
+    // renamed or moved on GitHub: what this device keeps of the work follows it, and the work is opened by its new name
+    await writing;
+    await moveRepo(r.full_name, m.full_name);
+    await store.put('prefs', `id:${m.full_name}`, m.id);
+    toast(`GitHub でリポジトリが ${m.full_name} に変わっていたので、合わせました`);
+    return reopen({ full_name: m.full_name, default_branch: m.default_branch, visibility: m.visibility });
+  }
   refreshView();
   readState(now());
+  if (stopped) syncState(stopSaid(r.full_name), 'err');
   await rebaseChanges();
   await readMoved();
   refreshView();
@@ -649,13 +688,46 @@ async function reload() {
   renderWork();
   void noteNow();
   const paths = episodes().map(e => e.path);
-  const last = await store.get('prefs', `episode:${work.repo}`);
+  const w = /** @type {NonNullable<typeof work>} */ (work);
+  const last = await store.get('prefs', `episode:${w.repo}`);
   const open = paths.includes(current) ? current : paths.includes(last) ? last : (paths[0] ?? '');
   if (open) await openEpisode(open);
   else openNone();
   if (place && place.path === current) await showPreviewAt(place.at);
-  if (gone) toast(`${gone} は GitHub にもう無いので、${work.branch} を開きました`);
+  if (gone) toast(`${gone} は GitHub にもう無いので、${w.branch} を開きました`);
   sendSoon();
+}
+/** @param {string} name */
+const stopSaid = name =>
+  `${name} は、つないだリポジトリとは別のリポジトリになっています（GitHub で名前が変わったか、消された後に同じ名前で作られたかもしれません）。送らずに止めています。GitHub で確かめてから「つなぎ直す」を押してください`;
+// an empty repository started as a work (the files a new work has), when the author says so
+/** @param {Repo} r */
+async function offerStart(r) {
+  if (!confirm(`${r.full_name} は空のリポジトリです。作品として始めますか？（novel.toml、README.md、最初の話を置きます）`)) return false;
+  syncState('作品を始めています…');
+  try {
+    await startWork(r.full_name, r.default_branch, await titleFor(r.full_name));
+    return true;
+  } catch (err) {
+    syncState(`作品を始められませんでした: ${err.message}`, 'err');
+    return false;
+  }
+}
+// FR-GH-12: the repository under the work's name taken as its own, once the author made sure of it
+async function relinkRepo() {
+  const r = /** @type {Repo} */ (repo);
+  const other = stopped;
+  if (!other || !confirm(`${r.full_name}（いまの GitHub のリポジトリ）を、この作品のリポジトリとしてつなぎ直しますか？ 次に送ると、このリポジトリに送ります`))
+    return;
+  await relink(r.full_name, other.id);
+  stopped = null;
+  await reload();
+}
+// the work opened again by another repository (its name changed)
+/** @param {Repo} r */
+async function reopen(r) {
+  await store.put('prefs', 'repo', r);
+  await open(r);
 }
 // a branch that GitHub no longer has: no longer the one chosen on this device (the changes not sent stay as they are)
 /** @param {string} repoName @param {string} branch */
@@ -723,9 +795,10 @@ async function sendNow() {
   const w = work;
   if (!w || $('desk').hidden) return;
   if (busy && mode === 'auto' && unsent()) return sendSoon(5000);
-  if (sendsItself({ mode, unsent: unsent(), offline: w.offline, busy })) await sendDrafts();
+  if (!stopped && sendsItself({ mode, unsent: unsent(), offline: w.offline, busy })) await sendDrafts();
 }
 async function sendDrafts() {
+  if (stopped) return;
   const w = /** @type {NonNullable<typeof work>} */ (work);
   busy = true;
   renderToc();
@@ -779,6 +852,7 @@ async function sendDrafts() {
 export async function open(r) {
   repo = r;
   work = null;
+  stopped = null;
   current = '';
   ordering = false;
   show('desk');
@@ -865,7 +939,7 @@ async function setMode(value) {
 
 let wired = false;
 // the desk's buttons and the text box, once
-/** @param {{ changeRepo: () => void }} on */
+/** @param {{ changeRepo: () => void, open: (r: Repo) => Promise<void>, relist: () => Promise<void> }} on */
 export function wire(on) {
   if (wired) return;
   wired = true;
@@ -943,6 +1017,7 @@ export function wire(on) {
     unsentItems: () => unsentList(drafts, edits),
     discard,
   });
+  wireRepo(on, { repo: () => /** @type {Repo} */ (repo), settled: () => writing, reopen });
   wireBranches();
   wireUnsent();
   sight = new IntersectionObserver(seen => {
@@ -958,6 +1033,9 @@ export function wire(on) {
     else void readIn();
   });
   addEventListener('online', () => sendSoon(1000));
+  $('work-repo').addEventListener('click', e => {
+    if (/** @type {HTMLElement} */ (e.target).closest('#gh-relink')) void relinkRepo();
+  });
   $('sync-mode').addEventListener('change', () => void setMode($('sync-mode').value));
   wireNotes();
   wirePlot();

@@ -23,20 +23,21 @@ export class GitHubError extends Error {
     this.status = status;
   }
 }
-/** @param {string} url @param {RequestInit} [init] */
-async function request(url, init = {}) {
+/** @param {string} url @param {RequestInit} [init] @param {string} [as] another token than the one in use (the one with
+ * Administration, for one request: not kept, and a refusal of it is not the token in use refused) */
+async function request(url, init = {}, as = '') {
   /** @type {Response} */
   let res;
   try {
     res = await fetch(url.startsWith('https://') ? url : API + url, {
       ...init,
       cache: 'no-store',
-      headers: { Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', Authorization: `Bearer ${token}`, ...init.headers },
+      headers: { Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', Authorization: `Bearer ${as || token}`, ...init.headers },
     });
   } catch {
     throw new GitHubError('GitHub につながりません（オフラインかもしれません）', 0);
   }
-  if (res.status === 401) refused();
+  if (res.status === 401 && !as) refused();
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new GitHubError(failure(res.status, body.message), res.status);
@@ -166,3 +167,43 @@ export const newCommit = async (repo, message, tree, parent) =>
 // moves the branch onto the commit, only forward (a branch moved on elsewhere since: GitHubError 422)
 /** @param {string} repo @param {string} branch @param {string} commit */
 export const moveBranch = (repo, branch, commit) => send('PATCH', `/repos/${repoPath(repo)}/git/refs/heads/${refPath(branch)}`, { sha: commit, force: false });
+
+// --- the repository itself (FR-WORK-02, FR-GH-02, FR-GH-10, FR-GH-11, FR-GH-12)
+
+/** @typedef {import('../lib/works.js').RepoMeta} RepoMeta */
+// a repository as GitHub says it now, or null when it is not found (GitHub sends a renamed one's old name on)
+/** @param {string} path @returns {Promise<RepoMeta | null>} */
+async function metaAt(path) {
+  try {
+    const r = await getJson(path);
+    return { id: r.id, full_name: r.full_name, default_branch: r.default_branch, visibility: r.visibility, private: r.private };
+  } catch (err) {
+    if (err instanceof GitHubError && err.status === 404) return null;
+    throw err;
+  }
+}
+/** @param {string} repo */
+export const repoMeta = repo => metaAt(`/repos/${repoPath(repo)}`);
+/** @param {number} id */
+export const repoById = id => metaAt(`/repositories/${id}`);
+// a file put in a repository with its commit (the Contents API: the only way to make the first commit of an empty one)
+/** @param {string} repo @param {string} path @param {string} base64 @param {string} message @returns {Promise<string>} the commit */
+export const putFile = async (repo, path, base64, message) =>
+  (await send('PUT', `/repos/${repoPath(repo)}/contents/${path.split('/').map(encodeURIComponent).join('/')}`, { message, content: base64 })).commit.sha;
+/** @param {string} as @param {string} method @param {string} path @param {unknown} [body] @returns {Promise<any>} */
+const sendAs = async (as, method, path, body) =>
+  (await request(path, body === undefined ? { method } : { method, body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' } }, as)).json();
+// a private repository made with the token `as` (Administration): the owner's (its user's when '' or its own login)
+/** @param {string} as @param {string} owner @param {string} name @param {string} description @returns {Promise<RepoMeta>} */
+export async function createRepo(as, owner, name, description) {
+  const me = (await sendAs(as, 'GET', '/user')).login;
+  const body = { name, description, private: true, auto_init: false };
+  const r = await sendAs(as, 'POST', !owner || owner === me ? '/user/repos' : `/orgs/${encodeURIComponent(owner)}/repos`, body);
+  return { id: r.id, full_name: r.full_name, default_branch: r.default_branch || 'main', visibility: r.visibility, private: r.private };
+}
+// a repository renamed with the token `as` (Administration); GitHub sends the old name on to it
+/** @param {string} as @param {string} repo @param {string} name @returns {Promise<RepoMeta>} */
+export async function renameRepo(as, repo, name) {
+  const r = await sendAs(as, 'PATCH', `/repos/${repoPath(repo)}`, { name });
+  return { id: r.id, full_name: r.full_name, default_branch: r.default_branch, visibility: r.visibility, private: r.private };
+}
