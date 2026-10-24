@@ -72,6 +72,14 @@
     <div class="works" id="repo-list"></div>
     <p id="repos-error" class="error" role="alert"></p>
     <div class="card">
+      <h2>画面の色</h2>
+      <div class="theme-pick" id="theme-pick">
+        <button data-theme-pick="">自動</button><button data-theme-pick="light">白</button><button data-theme-pick="dark">黒</button>
+      </div>
+      <p class="muted small">「自動」は端末のダークモードの設定に合わせます。この端末だけに効きます。</p>
+      <p id="screen-info" class="muted small"></p>
+    </div>
+    <div class="card">
       <h2>トークン</h2>
       <p id="vault-kind" class="muted small"></p>
       <button id="forget-token">トークンを忘れる</button>
@@ -111,7 +119,11 @@
         <button id="reload">再読み込み</button>
         <button class="link" id="change-repo">ほかの作品</button>
       </div>
-      <p class="muted">ブランチ <span id="work-branch"></span></p>
+      <div class="sync-row">
+        <button class="link" id="open-unsent" hidden>未送信の一覧</button>
+        <button class="link" id="gh-branch" title="ブランチを切り替える・作る">⎇ <span id="work-branch"></span></button>
+        <button class="link" id="gh-merge" title="このブランチを、ほかのブランチにマージする（GitHub 上で）">マージ</button>
+      </div>
     </div>
   </aside>
   <div class="scrim" id="scrim"></div>
@@ -223,7 +235,17 @@
 <dialog id="picker" class="versions picker" aria-labelledby="picker-title">
   <header><strong id="picker-title"></strong><button class="ghost" id="picker-close">閉じる</button></header>
   <div id="picker-list" class="picker-list"></div>
+  <form id="picker-form" class="picker-form" hidden>
+    <input id="picker-input" autocapitalize="none" autocomplete="off" spellcheck="false" aria-label="名前">
+    <button class="primary">決定</button>
+  </form>
   <p class="muted small" id="picker-help"></p>
+</dialog>
+
+<!-- 未送信の一覧: 書いた文章と操作を、送る前に確かめ、取り消す -->
+<dialog id="unsent" class="versions" aria-labelledby="unsent-title">
+  <header><strong id="unsent-title">未送信の変更</strong><button class="ghost" id="close-unsent">閉じる</button></header>
+  <div id="unsent-body"></div>
 </dialog>
 
 <!-- リリース: 一覧、各話、復元 -->

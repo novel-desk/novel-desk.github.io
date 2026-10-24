@@ -8,7 +8,7 @@ const sha1 = (/** @type {string | Buffer} */ s) => createHash('sha1').update(s).
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'Authorization, Accept, Content-Type, X-GitHub-Api-Version',
-  'Access-Control-Allow-Methods': 'GET, POST, PATCH, OPTIONS',
+  'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, OPTIONS',
   'Access-Control-Expose-Headers': 'Link',
 };
 
@@ -100,6 +100,56 @@ export class FakeRepo {
       out.push(c);
     }
     return out;
+  }
+  // the commits of `head` not in `base`, and the files they change (as GitHub's compare API, from where they meet)
+  /** @param {string} base @param {string} head */
+  compare(base, head) {
+    const [b, h] = [this.refs[base], this.refs[head]];
+    const inBase = new Set(this.ancestors(b));
+    const commits = this.ancestors(h)
+      .filter(c => !inBase.has(c))
+      .reverse()
+      .map(sha => {
+        const c = /** @type {{ message: string, date: string }} */ (this.commits.get(sha));
+        return { sha, commit: { message: c.message, committer: { date: c.date } } };
+      });
+    const from = this.files(this.meet(b, h)),
+      to = this.files(h);
+    const files = [...new Set([...Object.keys(from), ...Object.keys(to)])]
+      .filter(p => from[p]?.sha !== to[p]?.sha)
+      .sort()
+      .map(p => ({ filename: p, status: !from[p] ? 'added' : !to[p] ? 'removed' : 'modified', additions: 1, deletions: from[p] && to[p] ? 1 : 0 }));
+    return { status: commits.length ? 'ahead' : 'identical', ahead_by: commits.length, commits, files };
+  }
+  /** @param {string} c @returns {string[]} every commit it comes from, itself first */
+  ancestors(c) {
+    const out = [];
+    for (let at = [c]; at.length; at = at.flatMap(x => this.commits.get(x)?.parents ?? [])) for (const x of at) if (!out.includes(x)) out.push(x);
+    return out;
+  }
+  /** @param {string} a @param {string} b the commit where they meet (the first of b's ancestors that is a's) */
+  meet(a, b) {
+    const of = new Set(this.ancestors(a));
+    return /** @type {string} */ (this.ancestors(b).find(c => of.has(c)));
+  }
+  // `head` merged into the branch `base`: 'none' when base has it all, 'conflict' when a file changed on both sides,
+  // else the merge commit (the branch moved onto it)
+  /** @param {string} base @param {string} head @param {string} message */
+  merge(base, head, message) {
+    const [b, h] = [this.refs[base], this.refs[head]];
+    if (this.descends(b, h)) return 'none';
+    const m = this.files(this.meet(b, h)),
+      ours = this.files(b),
+      theirs = this.files(h);
+    const entries = { ...ours };
+    for (const p of new Set([...Object.keys(m), ...Object.keys(theirs)])) {
+      if (m[p]?.sha === theirs[p]?.sha) continue;
+      if (m[p]?.sha !== ours[p]?.sha && ours[p]?.sha !== theirs[p]?.sha) return 'conflict';
+      if (theirs[p]) entries[p] = theirs[p];
+      else delete entries[p];
+    }
+    this.refs[base] = this.commitTree(this.tree(entries), message ?? `Merge ${head} into ${base}`, [b, h]);
+    return this.refs[base];
   }
   /** @param {string} ancestor @param {string} commit */
   descends(commit, ancestor) {
@@ -199,6 +249,22 @@ export class FakeGitHub {
       const b = /** @type {Buffer} */ (repo.blobs.get(e.sha));
       return reply(200, { type: 'file', path: f[2], sha: e.sha, size: b.length, encoding: 'base64', content: b.toString('base64').replace(/.{60}/g, '$&\n') });
     }
+    const br = /^\/repos\/([^/]+\/[^/]+)\/(branches|merges|compare\/(.+)\.\.\.(.+))$/.exec(path);
+    if (br && this.repos.get(br[1])) {
+      const repo = /** @type {FakeRepo} */ (this.repos.get(br[1]));
+      if (br[2] === 'branches')
+        return reply(
+          200,
+          Object.keys(repo.refs).map(name => ({ name, commit: { sha: repo.refs[name] } })),
+        );
+      if (br[3]) return reply(200, repo.compare(br[3], br[4]));
+      const r = repo.merge(body.base, body.head, body.commit_message);
+      return r === 'none'
+        ? route.fulfill({ status: 204, headers: CORS })
+        : r === 'conflict'
+          ? reply(409, { message: 'Merge Conflict' })
+          : reply(201, { sha: r });
+    }
     const rel = /^\/repos\/([^/]+\/[^/]+)\/(releases|tags)$/.exec(path);
     if (rel && this.repos.get(rel[1])) {
       const repo = /** @type {FakeRepo} */ (this.repos.get(rel[1]));
@@ -275,6 +341,12 @@ export class FakeGitHub {
       return reply(201, { sha: repo.tree(entries) });
     }
     if (method === 'POST' && rest === 'commits') return reply(201, { sha: repo.commitTree(body.tree, body.message, body.parents) });
+    if (method === 'POST' && rest === 'refs') {
+      const name = String(body.ref).replace(/^refs\/heads\//, '');
+      if (repo.refs[name]) return reply(422, { message: 'Reference already exists' });
+      repo.refs[name] = body.sha;
+      return reply(201, { ref: body.ref, object: { type: 'commit', sha: body.sha } });
+    }
     if (method === 'PATCH' && (g = /^refs\/heads\/(.+)$/.exec(rest))) {
       const now = repo.refs[g[1]];
       if (!body.force && !repo.descends(body.sha, now)) return reply(422, { message: 'Update is not a fast forward' });

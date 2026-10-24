@@ -106,6 +106,25 @@ export async function branchCommits(repo, branch) {
   }
   return found;
 }
+// the repository's branches (100 at most)
+/** @param {string} repo @returns {Promise<string[]>} */
+export const branches = async repo => (await getJson(`/repos/${repoPath(repo)}/branches?per_page=100`)).map((/** @type {{ name: string }} */ b) => b.name);
+// a branch made at a commit
+/** @param {string} repo @param {string} name @param {string} commit */
+export const newBranch = (repo, name, commit) => send('POST', `/repos/${repoPath(repo)}/git/refs`, { ref: `refs/heads/${name}`, sha: commit });
+// what `head` has that `base` has not: its commits and the files they change
+/** @param {string} repo @param {string} base @param {string} head @returns {Promise<{ commits: any[], files: any[] }>} */
+export const compare = (repo, base, head) => getJson(`/repos/${repoPath(repo)}/compare/${refPath(base)}...${refPath(head)}`);
+// `head` merged into `base` on GitHub: the merge commit, or null when base had it all (a conflict: GitHubError 409)
+/** @param {string} repo @param {string} base @param {string} head @param {string} message @returns {Promise<string | null>} */
+export async function merge(repo, base, head, message) {
+  const res = await request(`/repos/${repoPath(repo)}/merges`, {
+    method: 'POST',
+    body: JSON.stringify({ base, head, commit_message: message }),
+    headers: { 'Content-Type': 'application/json' },
+  });
+  return res.status === 204 ? null : (await res.json()).sha;
+}
 // the repository's releases and tags (100 each at most)
 /** @param {string} repo @returns {Promise<any[]>} */
 export const releases = repo => getJson(`/repos/${repoPath(repo)}/releases?per_page=100`);

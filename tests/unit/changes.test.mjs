@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest';
-import { conflictsOf, foldersOf, moveFiles, rebase, relabel, viewFiles, writeFile } from '../../lib/changes.js';
+import { conflictsOf, foldersOf, moveFiles, rebase, relabel, unsentList, viewFiles, withoutOp, writeFile } from '../../lib/changes.js';
 
 const blobs = { 'a.md': { sha: 'sa', mode: '100644' }, 'b.md': { sha: 'sb', mode: '100755' }, 'c/d.md': { sha: 'sd', mode: '100644' } };
 const o = { repo: 'o/r', op: 'op2', at: 9 };
@@ -150,5 +150,36 @@ describe('changes', () => {
       { repo: 'o/r', path: 'k.md', base: 'bk', text: '下書き', at: 1 },
       { repo: 'o/r', path: 'r.md', base: 'b1', text: 'one', at: 2 },
     ]);
+  });
+});
+
+// FR-SAVE-09: the changes not sent, listed, one given up by hand
+describe('the list of changes not sent', () => {
+  const list = changes([
+    { repo: 'o/r', path: 'a.md', base: 'sa', gone: true, op: 'op1', at: 1 },
+    { repo: 'o/r', path: 'x/a.md', base: '', text: '書いた', from: { path: 'a.md', base: 'sa' }, op: 'op1', at: 1 },
+    { repo: 'o/r', path: 'b.md', base: 'sb', text: '下書き', at: 2 },
+    { repo: 'o/r', path: 'n.md', base: '', text: '', op: 'op3', at: 3 },
+  ]);
+  const edits = [
+    { key: ['titles', 'a.md'], value: null, op: 'op1' },
+    { key: ['title'], value: '題', op: 'op2' },
+  ];
+  test('unsentList: each text alone, each operation with its files and keys', () => {
+    expect(unsentList(list, edits)).toEqual([
+      { kind: 'text', path: 'b.md' },
+      { kind: 'op', op: 'op1', changes: [list.get('a.md'), list.get('x/a.md')], keys: 1 },
+      { kind: 'op', op: 'op2', changes: [], keys: 1 },
+      { kind: 'op', op: 'op3', changes: [list.get('n.md')], keys: 0 },
+    ]);
+  });
+  test('withoutOp: the operation given up, the text written in it kept where it came from; its keys gone', () => {
+    const { changes: next, edits: left } = withoutOp(list, edits, 'op1');
+    expect([...next.values()]).toEqual([
+      { repo: 'o/r', path: 'b.md', base: 'sb', text: '下書き', at: 2 },
+      { repo: 'o/r', path: 'n.md', base: '', text: '', op: 'op3', at: 3 },
+      { repo: 'o/r', path: 'a.md', base: 'sa', text: '書いた', at: 1 },
+    ]);
+    expect(left).toEqual([edits[1]]);
   });
 });

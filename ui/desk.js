@@ -1,21 +1,22 @@
 // The desk: the table of contents of the work open, the episode being written, its preview, the episodes added,
 // renamed, put in the trash and reordered, and sending and reading again. The work, the changes not sent and the
 // episode open are this module's: the others call open() and the functions it gives them
-import { moveFiles, rebase, relabel, writeFile } from '../lib/changes.js';
+import { moveFiles, rebase, relabel, unsentList, withoutOp, writeFile } from '../lib/changes.js';
 import { afterSend, draftKey, draftOf, typedOver } from '../lib/drafts.js';
 import * as plans from '../lib/episodes.js';
 import { charsOf, esc, n, whenLong } from '../lib/format.js';
 import { imageType } from '../lib/github.js';
-import { episodesOf, titleOf } from '../lib/layout.js';
+import { episodesOf, isEpisode, titleOf } from '../lib/layout.js';
+import { isNote } from '../lib/notes.js';
 import { picturePaths, relPath, renderMd } from '../lib/markdown.js';
 import { CONFLICT_MARK } from '../lib/merge.js';
 import { editToml } from '../lib/tomledit.js';
 import { viewOf } from '../lib/view.js';
 import { $, show, toast } from './dom.js';
 import * as store from './db.js';
-import { bytes, contents, load, readShas } from './work.js';
+import { bytes, contents, converted, load, readShas } from './work.js';
 import { Overlapped, sendAll } from './send.js';
-import { GitHubError, lastChange } from './github.js';
+import { GitHubError, headOf, lastChange } from './github.js';
 import { evenBreaks, inputBar, insertAt, setKeepingCaret } from './textbox.js';
 import { showHistory, wireHistory } from './history.js';
 import { pickImage } from './images.js';
@@ -27,7 +28,9 @@ import { noteToday, wireRecord } from './record.js';
 import { wireReleases } from './releases.js';
 import { renderSideNote, wireSideNote } from './sidenote.js';
 import { snapshotted } from '../lib/history.js';
-import { stopReading, togglePreview, wireReading } from './reading.js';
+import { previewPlace, reading, showPreviewAt, stopReading, togglePreview, wireReading } from './reading.js';
+import { wireBranches } from './branches.js';
+import { wireUnsent } from './unsent.js';
 
 /** @typedef {import('../lib/drafts.js').Draft} Draft */
 /** @typedef {import('../lib/tomledit.js').TomlEdit & { op: string }} Edit a key of novel.toml set by an operation */
@@ -96,6 +99,23 @@ function keep(next, nextEdits = edits) {
     .catch(err => syncState(`この端末に保存できませんでした（${err.message ?? err}）`, 'err'));
   refreshView();
 }
+// a change not sent given up by hand (FR-SAVE-09): a text written alone (by its path), or an operation (its changes
+// and keys; the text written in its files stays as a draft). The open episode is shown again, or the first
+/** @param {import('../lib/changes.js').Unsent} item */
+async function discard(item) {
+  if (item.kind === 'op') {
+    const left = withoutOp(drafts, edits, item.op);
+    keep(left.changes, left.edits);
+  } else {
+    const next = new Map(drafts);
+    next.delete(item.path);
+    keep(next);
+  }
+  renderWork();
+  const open = findEpisode(current) ? current : (episodes()[0]?.path ?? '');
+  if (open) await openEpisode(open);
+  else openNone();
+}
 // how many files the changes not sent change (novel.toml counts once)
 const unsent = () => drafts.size + (edits.length && !drafts.has('novel.toml') ? 1 : 0);
 
@@ -136,6 +156,7 @@ function renderToc() {
   $('work-count').textContent = n(episodes().length);
   $('work-updated').textContent = whenLong(Math.max(w.updated || 0, ...[...drafts.values()].map(d => d.at)));
   $('work-branch').textContent = w.branch;
+  $('open-unsent').hidden = unsent() === 0;
   if (document.activeElement !== $('work-title')) $('work-title').value = v.layout.title || w.repo.split('/')[1];
   $('send').disabled = busy || unsent() === 0;
   $('send').textContent = unsent() ? `送る（${unsent()}）` : '送る';
@@ -518,13 +539,30 @@ async function rebaseChanges() {
   );
   toast('ほかの所での変更と重なった操作を取り消しました（書いた文章は残っています）');
 }
-// reads the work from GitHub again; the changes stay as they are, and the episode open shows its draft if it has one
+// the texts read from another encoding than UTF-8 (FR-WORK-03), episodes and notes: kept as drafts, made UTF-8, so
+// that the next send puts them on GitHub as UTF-8 (the server version does it when the work is taken in)
+async function keepConverted() {
+  const w = /** @type {NonNullable<typeof work>} */ (work);
+  const v = shown();
+  const paths = Object.keys(v.files).filter(p => converted.has(v.files[p].sha) && !drafts.has(p) && (isEpisode(v.layout, p) || isNote(v.layout, p)));
+  if (!paths.length) return;
+  const got = await texts(paths);
+  const next = new Map(drafts);
+  for (const p of paths) {
+    const text = got[p];
+    if (text !== null) next.set(p, { repo: w.repo, path: p, base: w.blobs[p].sha, text, at: Date.now() });
+  }
+  keep(next);
+}
+// reads the work from GitHub again; the changes stay as they are, and the episode open shows its draft if it has one.
+// The preview open stays open where it was read (FR-TOC-08)
 async function reload() {
   const r = /** @type {Repo} */ (repo);
+  const place = current && reading() ? { path: current, at: previewPlace() } : null;
   busy = true;
   syncState('読み込んでいます…');
   try {
-    work = await load(r.full_name, r.default_branch);
+    work = await load(r.full_name, r.default_branch, (await store.get('prefs', `branch:${r.full_name}`)) ?? '');
   } catch (err) {
     syncState(err.message, 'err');
     return;
@@ -536,6 +574,7 @@ async function reload() {
   await rebaseChanges();
   await readMoved();
   refreshView();
+  await keepConverted();
   renderWork();
   void noteNow();
   const paths = episodes().map(e => e.path);
@@ -543,6 +582,53 @@ async function reload() {
   const open = paths.includes(current) ? current : paths.includes(last) ? last : (paths[0] ?? '');
   if (open) await openEpisode(open);
   else openNone();
+  if (place && place.path === current) await showPreviewAt(place.at);
+}
+// written elsewhere while the work is open (another device, GitHub): read in when the branch moved, and shown, but the
+// text being written and its caret are left as they are (FR-SAVE-08). Every minute while the desk is shown, and when
+// the app comes back in front
+async function readIn() {
+  const w = work;
+  if (!w || busy || w.offline || $('desk').hidden || document.visibilityState !== 'visible') return;
+  let head;
+  try {
+    head = await headOf(w.repo, w.branch);
+  } catch {
+    return;
+  }
+  if (head === w.commit || work !== w || busy) return;
+  const r = /** @type {Repo} */ (repo);
+  let next;
+  try {
+    next = await load(r.full_name, r.default_branch, (await store.get('prefs', `branch:${r.full_name}`)) ?? '');
+  } catch {
+    return;
+  }
+  if (work !== w || busy) return;
+  work = next;
+  refreshView();
+  await rebaseChanges();
+  await readMoved();
+  refreshView();
+  await keepConverted();
+  renderWork();
+  if (current && !findEpisode(current)) {
+    const first = episodes()[0];
+    if (first) await openEpisode(first.path);
+    else openNone();
+  } else if (current && !drafts.has(current)) {
+    const text = textOf(current);
+    const area = /** @type {HTMLTextAreaElement} */ ($('body'));
+    if (text !== null && text !== area.value) {
+      setKeepingCaret(area, text);
+      showCounts();
+      if (reading()) {
+        const at = previewPlace();
+        await showPreviewAt(at);
+      }
+    }
+  }
+  toast('ほかの所での変更を読み込みました');
 }
 async function sendDrafts() {
   const w = /** @type {NonNullable<typeof work>} */ (work);
@@ -743,7 +829,16 @@ export function wire(on) {
     },
     snapshot,
     snapshots,
+    reload,
+    busy: () => busy,
+    unsent,
+    unsentItems: () => unsentList(drafts, edits),
+    discard,
   });
+  wireBranches();
+  wireUnsent();
+  setInterval(() => void readIn(), 60000);
+  document.addEventListener('visibilitychange', () => void readIn());
   wireNotes();
   wirePlot();
   wireCharacters();

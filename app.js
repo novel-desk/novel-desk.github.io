@@ -66,8 +66,20 @@ async function openRepo(r) {
   await store.put('prefs', 'repo', r);
   await desk.open(r);
 }
+// この端末の画面 (FR-APP-05): its size, its scale, the room the status bar and the home bar take, and whether it is the
+// app on the home screen (to fit the tests and the screen to the author's device)
+function screenInfo() {
+  const probe = document.createElement('div');
+  Object.assign(probe.style, { position: 'fixed', visibility: 'hidden', paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' });
+  document.body.append(probe);
+  const { paddingTop, paddingBottom } = getComputedStyle(probe);
+  probe.remove();
+  const home = matchMedia('(display-mode: standalone)').matches || /** @type {any} */ (navigator).standalone === true;
+  return `この端末の画面: ${innerWidth}×${innerHeight}、倍率 ${devicePixelRatio}、上の余白 ${parseFloat(paddingTop)}、下の余白 ${parseFloat(paddingBottom)}（${home ? 'ホーム画面のアプリ' : 'ブラウザ'}）`;
+}
 async function chooseRepo() {
   show('repos');
+  $('screen-info').textContent = screenInfo();
   $('vault-kind').textContent = kind ? KINDS[kind] : '';
   $('repos-back').hidden = !(await store.get('prefs', 'repo'));
   $('repos-error').textContent = '';
@@ -147,5 +159,27 @@ $('install').addEventListener('click', async () => {
   showInstall();
 });
 showInstall();
+
+// --- 画面の色 (FR-APP-01): 自動 (the device's setting), 白, 黒, kept on this device
+/** @param {string} t '' (自動), 'light' or 'dark' */
+function setTheme(t) {
+  if (t) document.documentElement.dataset.theme = t;
+  else delete document.documentElement.dataset.theme;
+  try {
+    if (t) localStorage.setItem('theme', t);
+    else localStorage.removeItem('theme');
+  } catch {}
+  for (const b of /** @type {NodeListOf<HTMLElement>} */ (document.querySelectorAll('[data-theme-pick]'))) b.classList.toggle('on', b.dataset.themePick === t);
+}
+try {
+  const t = localStorage.getItem('theme');
+  setTheme(t === 'light' || t === 'dark' ? t : '');
+} catch {
+  setTheme('');
+}
+$('theme-pick').addEventListener('click', e => {
+  const b = /** @type {HTMLElement} */ (e.target).closest('[data-theme-pick]');
+  if (b instanceof HTMLElement) setTheme(b.dataset.themePick ?? '');
+});
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 void start();

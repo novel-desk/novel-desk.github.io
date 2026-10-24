@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest';
-import { API, bytesOf, textOf, nextPage, imageType, filesOf, failure } from '../../lib/github.js';
+import { API, bytesOf, textOf, nextPage, imageType, filesOf, failure, japaneseText, japaneseScore } from '../../lib/github.js';
 
 describe('github', () => {
   test('API: GitHub REST API (the only place the CSP lets the page reach)', () => {
@@ -44,5 +44,34 @@ describe('github', () => {
     expect(failure(404)).toMatch(/^見つかりません/);
     expect(failure(409)).toBe('リポジトリが空です');
     expect(failure(500)).toBe('GitHub がエラーを返しました（500）');
+  });
+});
+
+// FR-WORK-03: Japanese texts in other encodings, read as text
+describe('japaneseText', () => {
+  const sjis = Buffer.from([0x82, 0xa0, 0x82, 0xa2, 0x82, 0xa4, 0x8a, 0xbf, 0x8e, 0x9a]); // あいう漢字
+  const euc = Buffer.from([0xa4, 0xa2, 0xa4, 0xa4, 0xa4, 0xa6, 0xb4, 0xc1, 0xbb, 0xfa]);
+  const jis = Buffer.from([0x1b, 0x24, 0x42, 0x24, 0x22, 0x24, 0x24, 0x1b, 0x28, 0x42]); // あい
+  test('Shift-JIS, EUC-JP, ISO-2022-JP and UTF-16 with its BOM, as text', () => {
+    expect(japaneseText(new Uint8Array(sjis))).toBe('あいう漢字');
+    expect(japaneseText(new Uint8Array(euc))).toBe('あいう漢字');
+    expect(japaneseText(new Uint8Array(jis))).toBe('あい');
+    expect(japaneseText(new Uint8Array([0xff, 0xfe, 0x42, 0x30, 0x44, 0x30]))).toBe('あい');
+    expect(japaneseText(new Uint8Array([0xfe, 0xff, 0x30, 0x42]))).toBe('あ');
+    expect(japaneseText(new Uint8Array([0xff, 0xfe, 0x00, 0xd8]))).toBeNull();
+  });
+  test('UTF-8 already, or no Japanese (no kana, or garbled): none', () => {
+    expect(japaneseText(new TextEncoder().encode('もうUTF-8'))).toBeNull();
+    expect(japaneseText(new TextEncoder().encode('ascii only'))).toBeNull();
+    // Latin-1 「Pokémon」: reads as Shift-JIS with no kana
+    expect(japaneseText(new Uint8Array([0x50, 0x6f, 0x6b, 0xe9, 0x6d, 0x6f, 0x6e]))).toBeNull();
+    // bytes that no encoding reads
+    expect(japaneseText(new Uint8Array([0x82, 0xff, 0xff, 0x82]))).toBeNull();
+    // an escape with no JIS after it in plain ASCII is ASCII
+    expect(japaneseText(new Uint8Array([0x1b, 0x24, 0x41]))).toBeNull();
+  });
+  test('japaneseScore: kana, kanji and full-width marks count; half-width katakana and control characters count against', () => {
+    expect(japaneseScore('あ漢！\n\t')).toBe(3);
+    expect(japaneseScore('ｱ\u0001x')).toBe(-30);
   });
 });

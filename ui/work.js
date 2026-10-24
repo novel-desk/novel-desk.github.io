@@ -1,7 +1,7 @@
 // The work open: its branch read from GitHub (the commit, the tree, novel.toml, the episodes' texts), or, offline, as
 // it was last read. The blobs are kept on the device by their sha, so a text read once is not asked for again. What the
 // screen shows over it (the changes not sent) is lib/view.js's
-import { filesOf, bytesOf, textOf } from '../lib/github.js';
+import { filesOf, bytesOf, japaneseText, textOf } from '../lib/github.js';
 import { CONFIG, firstLayout, parseLayout, tableOfContents, episodesOf } from '../lib/layout.js';
 import { foldersOf } from '../lib/changes.js';
 import * as gh from './github.js';
@@ -30,14 +30,25 @@ export async function bytes(repo, sha) {
   await store.put('blobs', sha, got);
   return got;
 }
+/** @type {Set<string>} the blobs read from another encoding than UTF-8 (a Japanese text: FR-WORK-03) */
+export const converted = new Set();
+// a blob's text: UTF-8, or a Japanese text of another encoding (noted in `converted`); null when it is neither
+/** @param {string} sha @param {Uint8Array} b */
+function decode(sha, b) {
+  const text = textOf(b);
+  if (text !== null) return text;
+  const other = japaneseText(b);
+  if (other !== null) converted.add(sha);
+  return other;
+}
 // a blob's text, when the device has it (offline: null when it does not)
 /** @param {string} repo @param {string} sha @param {boolean} offline */
 export async function textAt(repo, sha, offline) {
   if (offline) {
     const kept = await store.get('blobs', sha);
-    return kept ? textOf(kept) : null;
+    return kept ? decode(sha, kept) : null;
   }
-  return textOf(await bytes(repo, sha));
+  return decode(sha, await bytes(repo, sha));
 }
 // does `f` for every item, `width` at a time
 /** @template T @param {T[]} items @param {number} width @param {(item: T) => Promise<void>} f */
@@ -67,17 +78,18 @@ async function configOf(files, offline) {
   if (src === null) return { config: null, problems: ['novel.toml が UTF-8 ではないので読めません'] };
   return { config: src, problems: [] };
 }
-// The work, read from GitHub: its default branch, or the one novel.toml names. Offline, the one last read
-/** @param {string} repo @param {string} defaultBranch @returns {Promise<Work>} */
-export async function load(repo, defaultBranch) {
+// The work, read from GitHub: the branch chosen on this device, else the one novel.toml names, else the default
+// branch. Offline, the one last read
+/** @param {string} repo @param {string} defaultBranch @param {string} [chosen] @returns {Promise<Work>} */
+export async function load(repo, defaultBranch, chosen = '') {
   /** @type {Files} */
   let files;
   let offline = false;
   try {
-    files = await readBranch(repo, defaultBranch);
+    files = await readBranch(repo, chosen || defaultBranch);
     const { config } = await configOf(files, false);
     const branch = config === null ? '' : parseLayout(config).layout.branch;
-    if (branch && branch !== defaultBranch) files = await readBranch(repo, branch);
+    if (!chosen && branch && branch !== defaultBranch) files = await readBranch(repo, branch);
   } catch (err) {
     const snapshot = err instanceof gh.GitHubError && err.status === 0 && (await store.get('snapshots', repo));
     if (!snapshot) throw err;

@@ -7,10 +7,13 @@
   --gothic: -apple-system, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic", "YuGothic", "Meiryo", "Noto Sans CJK JP", "Noto Sans JP", sans-serif;
   color-scheme: light;
 }
+/* 黒: the device's dark setting (自動), or chosen (data-theme on <html>, kept on the device: FR-APP-01) */
 @media (prefers-color-scheme: dark) {
-  :root { --bg: #16171a; --paper: #1c1d21; --side: #131417; --line: #2c2e33; --text: #e4e1da; --muted: #8e8b84;
+  :root:not([data-theme="light"]) { --bg: #16171a; --paper: #1c1d21; --side: #131417; --line: #2c2e33; --text: #e4e1da; --muted: #8e8b84;
     --accent: #a98be0; --accent-soft: #2f2840; --sel: #2a2c31; --error: #f2b8b5; --ok: #8fd1a8; color-scheme: dark; }
 }
+:root[data-theme="dark"] { --bg: #16171a; --paper: #1c1d21; --side: #131417; --line: #2c2e33; --text: #e4e1da; --muted: #8e8b84;
+  --accent: #a98be0; --accent-soft: #2f2840; --sel: #2a2c31; --error: #f2b8b5; --ok: #8fd1a8; color-scheme: dark; }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; }
 body { background: var(--bg); color: var(--text); font: 15px/1.6 var(--gothic); -webkit-text-size-adjust: 100%; }
@@ -282,3 +285,11 @@ input:focus { border-color: var(--accent); }
   .side-grip.dragging { user-select: none; }
   .side-grip:hover, .side-grip:focus-visible, .side-grip.dragging { background: color-mix(in srgb, var(--accent) 35%, transparent); outline: none; }
 }
+
+/* the colours chosen, the list of changes not sent, a name typed in a picker */
+.theme-pick { display: flex; gap: 6px; } .theme-pick button { flex: 1; } .theme-pick button.on { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+#unsent-body { padding: 10px 14px 16px; display: grid; gap: 8px; }
+.unsent-item { display: flex; justify-content: space-between; align-items: center; gap: 8px; border-bottom: 1px solid var(--line); padding: 6px 0; }
+.unsent-item div { display: grid; gap: 2px; min-width: 0; } .unsent-item small { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.unsent-item .danger { color: var(--error); flex-shrink: 0; }
+.picker-form { display: flex; gap: 8px; padding: 8px 14px; } .picker-form input { flex: 1; min-width: 0; }

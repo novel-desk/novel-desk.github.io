@@ -24,6 +24,11 @@
  * @property {(path: string, text: string, force: boolean) => Promise<import('../lib/history.js').Snapshot[]>} snapshot a version
  *   kept on the device (every 10 minutes of writing, or `force`)
  * @property {(path: string) => Promise<import('../lib/history.js').Snapshot[]>} snapshots the versions kept of a file
+ * @property {() => Promise<void>} reload the work read from GitHub again
+ * @property {() => boolean} busy reading or sending
+ * @property {() => number} unsent how many files the changes not sent change
+ * @property {() => ReturnType<typeof import('../lib/changes.js').unsentList>} unsentItems the changes not sent, as listed
+ * @property {(item: import('../lib/changes.js').Unsent) => Promise<void>} discard a change not sent given up
  */
 /** @type {Api} */
 export const api = /** @type {any} */ ({});

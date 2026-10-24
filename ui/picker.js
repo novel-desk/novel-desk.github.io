@@ -3,10 +3,11 @@ import { esc } from '../lib/format.js';
 import { $ } from './dom.js';
 
 /**
- * @param {{ title: string, items: string[], current?: string, help?: string }} what
- * @returns {Promise<string | null>} what was chosen; null: closed
+ * @param {{ title: string, items: string[], current?: string, help?: string, input?: string }} what `input`: a field for
+ *   a name not in the list, with this placeholder
+ * @returns {Promise<string | null>} what was chosen or typed; null: closed
  */
-export function pick({ title, items, current = '', help = '' }) {
+export function pick({ title, items, current = '', help = '', input = '' }) {
   return new Promise(resolve => {
     const dlg = /** @type {HTMLDialogElement} */ (/** @type {unknown} */ ($('picker')));
     $('picker-title').textContent = title;
@@ -27,6 +28,13 @@ export function pick({ title, items, current = '', help = '' }) {
       if (b instanceof HTMLElement) finish(items[Number(b.dataset.pick)]);
     };
     $('picker-close').onclick = () => finish(null);
+    $('picker-form').hidden = !input;
+    $('picker-input').value = '';
+    $('picker-input').placeholder = input;
+    $('picker-form').onsubmit = e => {
+      e.preventDefault();
+      finish($('picker-input').value.trim() || null);
+    };
     // closed by Escape (a picker closed just before this one opened sends its close a moment later: not this one's)
     dlg.onclose = () => {
       if (!dlg.open) finish(null);

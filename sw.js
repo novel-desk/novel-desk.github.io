@@ -1,6 +1,6 @@
 // オフラインでも開けるように、アプリの画面のファイルだけを控える。いつもはネットワークを先に使い、届かないときだけ控えを出す。
 // GitHub の API への要求には手を出さない（作品の文章とトークンは、画面が IndexedDB に置く）
-const CACHE = 'novel-writer-js-v4';
+const CACHE = 'novel-writer-js-v5';
 // this worker (self, with the types of a service worker for the type check)
 const sw = /** @type {ServiceWorkerGlobalScope} */ (/** @type {unknown} */ (self));
 // every file of the screens (a test checks it against the files of the app)
@@ -14,6 +14,7 @@ const FILES = [
   'icon-192.png',
   'icon-512.png',
   'apple-touch-icon.png',
+  'lib/branches.js',
   'lib/changes.js',
   'lib/characters.js',
   'lib/commit.js',
@@ -36,6 +37,7 @@ const FILES = [
   'lib/toml.js',
   'lib/tomledit.js',
   'lib/view.js',
+  'ui/branches.js',
   'ui/characters.js',
   'ui/db.js',
   'ui/desk.js',
@@ -53,6 +55,7 @@ const FILES = [
   'ui/shared.js',
   'ui/sidenote.js',
   'ui/textbox.js',
+  'ui/unsent.js',
   'ui/vault.js',
   'ui/work.js',
 ];

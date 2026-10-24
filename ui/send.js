@@ -4,7 +4,7 @@
 // added, renamed, put in the trash, the order changed) whose files changed there is not sent, and the screen says so
 import { changeParts, changePart, commitSubject, japanDay, kindsOf } from '../lib/commit.js';
 import { conflictsOf } from '../lib/changes.js';
-import { filesOf, textOf } from '../lib/github.js';
+import { filesOf, japaneseText, textOf } from '../lib/github.js';
 import { CONFIG, relOf, titleWith } from '../lib/layout.js';
 import { keptBoth, sendPlan } from '../lib/merge.js';
 import { editToml } from '../lib/tomledit.js';
@@ -34,8 +34,12 @@ export class Overlapped extends Error {
 // how many times the branch may move on during one send before it gives up
 const TRIES = 3;
 
+// a blob's text there now: UTF-8, or a Japanese text of another encoding (FR-WORK-03); null when it is neither
 /** @param {string} repo @param {string} sha */
-const textAt = async (repo, sha) => textOf(await bytes(repo, sha));
+const textAt = async (repo, sha) => {
+  const b = await bytes(repo, sha);
+  return textOf(b) ?? japaneseText(b);
+};
 /** @param {Uint8Array} b */
 const base64 = b => btoa(Array.from(b, c => String.fromCharCode(c)).join(''));
 
