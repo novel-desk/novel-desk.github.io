@@ -82,6 +82,7 @@ input:focus { border-color: var(--accent); }
 .sync-row button { font-size: 13px; padding: 5px 10px; }
 .sync-row button.link { padding: 5px 4px; }
 .sync-row a { color: inherit; overflow-wrap: anywhere; }
+.sync-row select { min-width: 0; max-width: 100%; font-size: 13px; }
 
 .paper { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--paper); overflow: hidden; }
 .paper-head { display: flex; align-items: center; gap: 4px; padding: calc(2px + env(safe-area-inset-top)) 10px 2px; border-bottom: 1px solid var(--line); min-height: 40px; }

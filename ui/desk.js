@@ -11,6 +11,7 @@ import { isNote } from '../lib/notes.js';
 import { picturePaths, relPath, renderMd } from '../lib/markdown.js';
 import { CONFLICT_MARK } from '../lib/merge.js';
 import { editToml } from '../lib/tomledit.js';
+import { AUTO_WAIT, sendsItself, syncMode } from '../lib/sync.js';
 import { viewOf } from '../lib/view.js';
 import { visibilityTag } from '../lib/works.js';
 import { $, show, toast } from './dom.js';
@@ -50,6 +51,8 @@ let view = null;
 // the episode open ('' = none)
 let current = '';
 let busy = false;
+/** @type {import('../lib/sync.js').SyncMode} how this work is sent (FR-GH-04), kept on the device for each work */
+let mode = 'auto';
 // 「並べ替え」 on: the rows show ↑↓, the chapter to move to, and can be dragged
 let ordering = false;
 /** @type {Map<string, string>} the object URLs of the pictures shown, by blob */
@@ -100,6 +103,7 @@ function keep(next, nextEdits = edits) {
     })
     .catch(err => syncState(`この端末に保存できませんでした（${err.message ?? err}）`, 'err'));
   refreshView();
+  sendSoon();
 }
 // a change not sent given up by hand (FR-SAVE-09): a text written alone (by its path), or an operation (its changes
 // and keys; the text written in its files stays as a draft). The open episode is shown again, or the first
@@ -163,9 +167,10 @@ function renderToc() {
     `<a href="https://github.com/${esc(w.repo)}/tree/${esc(encodeURIComponent(w.branch))}" target="_blank" rel="noopener noreferrer">${esc(w.repo)}</a>${visibilityTag(/** @type {Repo} */ (repo))}`;
   $('open-unsent').hidden = unsent() === 0;
   if (document.activeElement !== $('work-title')) $('work-title').value = v.layout.title || w.repo.split('/')[1];
-  $('send').disabled = busy || unsent() === 0;
+  $('send').disabled = busy || unsent() === 0 || mode === 'off';
   $('send').textContent = unsent() ? `送る（${unsent()}）` : '送る';
-  $('reload').disabled = busy;
+  $('reload').disabled = busy || mode === 'off';
+  $('sync-mode').value = mode;
   for (const id of ['add-episode', 'add-chapter', 'toggle-reorder', 'trash-episode']) $(id).disabled = busy || (id === 'trash-episode' && !current);
   $('prev-episode').disabled = !neighbor(-1);
   $('next-episode').disabled = !neighbor(1);
@@ -557,9 +562,11 @@ function insertImage() {
 
 /** @param {string} when */
 const readState = when =>
-  work?.offline
-    ? syncState('オフラインです。前に読んだ版を出しています（送るのはつながってから）', 'err')
-    : syncState(`GitHub から読みました（${when}）`, 'ok');
+  mode === 'off'
+    ? syncState('同期しない設定です。GitHub へ送ることも、GitHub から取り込むこともしません（この端末で前に読んだ版に書きます）')
+    : work?.offline
+      ? syncState('オフラインです。前に読んだ版を出しています（送るのはつながってから）', 'err')
+      : syncState(`GitHub から読みました（${when}）`, 'ok');
 const now = () => new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
 
 function renderWork() {
@@ -619,7 +626,11 @@ async function reload() {
   /** @type {string} the branch asked for that GitHub no longer has ('' when none) */
   let gone;
   try {
-    const read = await load(r.full_name, r.default_branch, (await store.get('prefs', `branch:${r.full_name}`)) ?? '');
+    const chosen = (await store.get('prefs', `branch:${r.full_name}`)) ?? '';
+    // 同期しない (FR-GH-04): nothing read in from GitHub; the work as last read on this device, when it has it
+    const kept = mode === 'off' ? await store.get('snapshots', r.full_name) : null;
+    const read =
+      kept && (!chosen || kept.branch === chosen) ? { ...(await contents(kept, false)), gone: '' } : await load(r.full_name, r.default_branch, chosen);
     work = read;
     gone = read.gone;
     if (gone) await forgetBranch(r.full_name, gone);
@@ -644,6 +655,7 @@ async function reload() {
   else openNone();
   if (place && place.path === current) await showPreviewAt(place.at);
   if (gone) toast(`${gone} は GitHub にもう無いので、${work.branch} を開きました`);
+  sendSoon();
 }
 // a branch that GitHub no longer has: no longer the one chosen on this device (the changes not sent stay as they are)
 /** @param {string} repoName @param {string} branch */
@@ -655,7 +667,7 @@ async function forgetBranch(repoName, branch) {
 // the app comes back in front
 async function readIn() {
   const w = work;
-  if (!w || busy || w.offline || $('desk').hidden || document.visibilityState !== 'visible') return;
+  if (!w || busy || w.offline || mode === 'off' || $('desk').hidden || document.visibilityState !== 'visible') return;
   let head;
   try {
     head = await headOf(w.repo, w.branch);
@@ -695,6 +707,23 @@ async function readIn() {
     }
   }
   toast('ほかの所での変更を読み込みました');
+}
+// 自動 (FR-SAVE-03, FR-GH-04): the changes not sent go by themselves a while after the last one (AUTO_WAIT), when the
+// page is left (hidden), and when the device is back online, as 送る sends them (the same handling of what changed
+// elsewhere). Only while the page is open: a page closed runs nothing. A send that fails is tried again on the next
+// change, the next time the page is left, or back online
+/** @type {ReturnType<typeof setTimeout> | undefined} */
+let autoTimer;
+function sendSoon(wait = AUTO_WAIT) {
+  clearTimeout(autoTimer);
+  if (mode === 'auto' && unsent()) autoTimer = setTimeout(() => void sendNow(), wait);
+}
+async function sendNow() {
+  clearTimeout(autoTimer);
+  const w = work;
+  if (!w || $('desk').hidden) return;
+  if (busy && mode === 'auto' && unsent()) return sendSoon(5000);
+  if (sendsItself({ mode, unsent: unsent(), offline: w.offline, busy })) await sendDrafts();
 }
 async function sendDrafts() {
   const w = /** @type {NonNullable<typeof work>} */ (work);
@@ -764,6 +793,7 @@ export async function open(r) {
   edits = (await store.get('prefs', `edits:${r.full_name}`)) ?? [];
   folded = (await store.get('prefs', `closed:${r.full_name}`)) ?? [];
   changed = new Map(Object.entries((await store.get('prefs', `changed:${r.full_name}`)) ?? {}));
+  mode = syncMode(await store.get('prefs', `sync:${r.full_name}`));
   await reload();
 }
 
@@ -820,6 +850,17 @@ function wireDrag() {
   tree.addEventListener('dragend', () => {
     dragging = null;
   });
+}
+
+// 送る頻度 (FR-GH-04), chosen for each work and kept on this device
+/** @param {string} value */
+async function setMode(value) {
+  const w = /** @type {NonNullable<typeof work>} */ (work);
+  mode = syncMode(value);
+  await store.put('prefs', `sync:${w.repo}`, mode);
+  renderToc();
+  readState(now());
+  sendSoon();
 }
 
 let wired = false;
@@ -912,7 +953,12 @@ export function wire(on) {
       }
   });
   setInterval(() => void readIn(), 60000);
-  document.addEventListener('visibilitychange', () => void readIn());
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') void sendNow();
+    else void readIn();
+  });
+  addEventListener('online', () => sendSoon(1000));
+  $('sync-mode').addEventListener('change', () => void setMode($('sync-mode').value));
   wireNotes();
   wirePlot();
   wireCharacters();

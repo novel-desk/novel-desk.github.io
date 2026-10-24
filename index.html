@@ -125,6 +125,13 @@
         <button class="link" id="gh-branch" title="ブランチを切り替える・作る">⎇ <span id="work-branch"></span></button>
         <button class="link" id="gh-merge" title="このブランチを、ほかのブランチにマージする（GitHub 上で）">マージ</button>
       </div>
+      <label class="sync-row">GitHub へ送る
+        <select id="sync-mode" aria-label="GitHub へ送る頻度" title="自動: 書く手を止めて 1 分たったときと、画面を離れたときに送ります">
+          <option value="auto">自動</option>
+          <option value="manual">「送る」を押したときだけ</option>
+          <option value="off">同期しない</option>
+        </select>
+      </label>
     </div>
   </aside>
   <div class="scrim" id="scrim"></div>

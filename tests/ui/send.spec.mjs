@@ -105,3 +105,72 @@ test('reading again: the episodes come as they are on GitHub, but one with a dra
   await expect(page.locator('#sync-state')).toHaveText(/はじまりはほかでも書き換えられていた/);
   expect(work.text('chapters/01_first.md')).toBe(`# 第1話 はじまり\n\n下書き\n\n${OTHER_DEVICE_MARK}\n\n# 第1話 はじまり\n\nほかで\n`);
 });
+
+// FR-SAVE-03, FR-GH-04: 自動 (the default): what was written goes by itself a while after the last key, and when the
+// page is left, handled as 送る (what changed elsewhere too keeps both versions)
+test('自動: sent by itself after a pause in writing, and when the page is left; both versions kept as 送る keeps them', async ({ page, gh, work }) => {
+  await page.clock.install();
+  await openWork(page);
+  await expect(page.locator('#sync-mode')).toHaveValue('auto');
+  await write(page, 'はじまり', '# 第1話 はじまり\n\nひとりでに届く。\n');
+  await page.clock.fastForward(30000);
+  expect(work.text('chapters/01_first.md')).toBe(WORK_FILES['chapters/01_first.md']);
+  await page.clock.fastForward(31000);
+  await expect(page.locator('#sync-state')).toHaveText(/^送りました（/);
+  expect(work.text('chapters/01_first.md')).toBe('# 第1話 はじまり\n\nひとりでに届く。\n');
+  await expect.poll(() => stored(page, 'drafts')).toEqual([]);
+  // the page left (hidden): sent at once; written elsewhere too, both kept
+  work.push({ 'chapters/02_second.md': '# 第2話 駅で\n\nほかで書いた。\n' });
+  await write(page, '駅で', '# 第2話 駅で\n\nここで書いた。\n');
+  await page.evaluate(() => {
+    Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  await expect(page.locator('#sync-state')).toHaveText(/駅ではほかでも書き換えられていたので、両方の版を並べました/);
+  expect(work.text('chapters/02_second.md')).toBe(`# 第2話 駅で\n\nここで書いた。\n\n${OTHER_DEVICE_MARK}\n\n# 第2話 駅で\n\nほかで書いた。\n`);
+});
+
+// FR-SAVE-03: GitHub not reached: kept on the device, and sent when the device is back online
+test('自動: GitHub not reached, the text stays; back online, it goes', async ({ page, gh, work }) => {
+  await page.clock.install();
+  await openWork(page);
+  gh.down = true;
+  await write(page, 'はじまり', '後で届く\n');
+  await page.clock.fastForward(61000);
+  await expect(page.locator('#sync-state')).toHaveText('GitHub につながりません（オフラインかもしれません）。書いたものはこの端末に残っています');
+  gh.down = false;
+  await page.evaluate(() => dispatchEvent(new Event('online')));
+  await page.clock.fastForward(2000);
+  await expect(page.locator('#sync-state')).toHaveText(/^送りました（/);
+  expect(work.text('chapters/01_first.md')).toBe('後で届く\n');
+});
+
+// FR-GH-04: 「送る」を押したときだけ, and 同期しない (nothing sent, nothing read in), chosen for each work and kept
+test('送る頻度: 送るを押したときだけ waits for the button; 同期しない sends nothing and reads nothing in', async ({ page, gh, work }) => {
+  await page.clock.install();
+  await openWork(page);
+  await page.locator('#sync-mode').selectOption('manual');
+  await write(page, 'はじまり', '# 第1話 はじまり\n\n押すまで待つ\n');
+  await page.clock.fastForward(120000);
+  expect(work.text('chapters/01_first.md')).toBe(WORK_FILES['chapters/01_first.md']);
+  await page.getByRole('button', { name: '送る（1）' }).click();
+  await expect(page.locator('#sync-state')).toHaveText(/^送りました（/);
+  await page.locator('#sync-mode').selectOption('off');
+  await expect(page.locator('#sync-state')).toHaveText(/^同期しない設定です/);
+  await write(page, 'はじまり', '# 第1話 はじまり\n\n端末だけ\n');
+  await expect(page.locator('#send')).toBeDisabled();
+  await expect(page.locator('#reload')).toBeDisabled();
+  // opened again: the mode kept, the work as read before, GitHub not asked where the branch is
+  work.push({ 'chapters/02_second.md': '# 第2話 駅で\n\nほかで\n' });
+  gh.calls.length = 0;
+  await page.reload();
+  await expect(page.locator('#episode-title')).toHaveValue('はじまり');
+  await expect(page.locator('#sync-mode')).toHaveValue('off');
+  await expect(page.locator('#body')).toHaveValue('# 第1話 はじまり\n\n端末だけ\n');
+  await page.clock.fastForward(120000);
+  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+  await page.locator('#tree .node', { hasText: '駅で' }).click();
+  await expect(page.locator('#body')).toHaveValue(WORK_FILES['chapters/02_second.md']);
+  expect(gh.calls.filter(c => c.includes('/git/ref') || c.startsWith('POST') || c.startsWith('PATCH'))).toEqual([]);
+  expect(work.text('chapters/01_first.md')).toBe('# 第1話 はじまり\n\n押すまで待つ\n');
+});
