@@ -78,25 +78,46 @@ async function configOf(files, offline) {
   if (src === null) return { config: null, problems: ['novel.toml が UTF-8 ではないので読めません'] };
   return { config: src, problems: [] };
 }
+// a branch read, or null when GitHub has no such branch (deleted after a merge, say)
+/** @param {string} repo @param {string} branch @returns {Promise<Files | null>} */
+async function readIfThere(repo, branch) {
+  try {
+    return await readBranch(repo, branch);
+  } catch (err) {
+    if (err instanceof gh.GitHubError && err.status === 404) return null;
+    throw err;
+  }
+}
 // The work, read from GitHub: the branch chosen on this device, else the one novel.toml names, else the default
-// branch. Offline, the one last read
-/** @param {string} repo @param {string} defaultBranch @param {string} [chosen] @returns {Promise<Work>} */
+// branch; a branch that GitHub no longer has is passed over (and named in `gone`). Offline, the one last read
+/** @param {string} repo @param {string} defaultBranch @param {string} [chosen] @returns {Promise<Work & { gone: string }>} */
 export async function load(repo, defaultBranch, chosen = '') {
   /** @type {Files} */
   let files;
   let offline = false;
+  let gone = '';
   try {
-    files = await readBranch(repo, chosen || defaultBranch);
-    const { config } = await configOf(files, false);
-    const branch = config === null ? '' : parseLayout(config).layout.branch;
-    if (!chosen && branch && branch !== defaultBranch) files = await readBranch(repo, branch);
+    const read = chosen ? await readIfThere(repo, chosen) : null;
+    if (read) files = read;
+    else {
+      if (chosen) gone = chosen;
+      files = await readBranch(repo, defaultBranch);
+      const { config } = await configOf(files, false);
+      const branch = config === null ? '' : parseLayout(config).layout.branch;
+      if (branch && branch !== defaultBranch && branch !== gone) {
+        const named = await readIfThere(repo, branch);
+        if (named) files = named;
+        else gone ||= branch;
+      }
+    }
   } catch (err) {
     const snapshot = err instanceof gh.GitHubError && err.status === 0 && (await store.get('snapshots', repo));
     if (!snapshot) throw err;
     files = snapshot;
     offline = true;
+    gone = '';
   }
-  return contents(files, offline);
+  return { ...(await contents(files, offline)), gone };
 }
 // The work from its files: novel.toml, the episodes' texts. Kept as the last read of the work
 /** @param {Files} files @param {boolean} offline @returns {Promise<Work>} */

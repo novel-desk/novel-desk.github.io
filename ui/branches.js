@@ -10,9 +10,11 @@ import { pick } from './picker.js';
 import { api } from './shared.js';
 
 const UNSENT = '未送信の変更があります。「送る」で送ってから、ブランチを切り替えたりマージしたりしてください';
+const NO_WORK = '作品を読み込めていません。「再読み込み」で読み込んでから、ブランチを切り替えたりマージしたりしてください';
 
 async function chooseBranch() {
   const w = api.work();
+  if (!w) return toast(NO_WORK);
   if (api.unsent()) return toast(UNSENT);
   let list;
   try {
@@ -43,6 +45,7 @@ async function chooseBranch() {
 }
 async function mergeBranch() {
   const w = api.work();
+  if (!w) return toast(NO_WORK);
   if (api.unsent()) return toast(UNSENT);
   let list;
   try {

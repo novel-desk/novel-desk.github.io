@@ -90,6 +90,44 @@ test('a branch merged into another on GitHub: what it brings said first; a confl
   await expect(page.locator('#toast')).toHaveText(/^マージできませんでした: 両方のブランチで同じファイルが変わっています/);
 });
 
+// FR-GH-09: the branch chosen on this device deleted on GitHub (after a merge, say): the one novel.toml names opened
+// instead, said, and no longer chosen; the changes not sent stay
+test('a chosen branch GitHub no longer has: the branch novel.toml names opened instead, said; the changes not sent kept', async ({ page, gh, work }) => {
+  work.refs.draft = work.refs.main;
+  work.push({ 'chapters/02_second.md': '# 第2話 駅で\n\n枝で書いた。\n' }, 'draft');
+  await openWork(page);
+  await page.getByRole('button', { name: /⎇ main/ }).click();
+  await page.locator('#picker').getByRole('button', { name: 'draft' }).click();
+  await expect(page.getByRole('button', { name: /⎇ draft/ })).toBeVisible();
+  await page.locator('#body').fill('書きかけ\n');
+  await expect(page.locator('#send')).toHaveText('送る（1）');
+  delete work.refs.draft;
+  await page.reload();
+  await expect(page.getByRole('button', { name: /⎇ main/ })).toBeVisible();
+  await expect(page.locator('#toast')).toHaveText('draft は GitHub にもう無いので、main を開きました');
+  await expect(page.locator('#send')).toHaveText('送る（1）');
+  await expect(page.locator('#body')).toHaveValue('書きかけ\n');
+  expect(await stored(page, 'prefs')).not.toContain('draft');
+});
+// FR-GH-09: novel.toml names a branch GitHub does not have: the default branch opened, said
+test('novel.toml names a branch GitHub does not have: the default branch opened, said', async ({ page, gh, work }) => {
+  work.push({ 'novel.toml': WORK_FILES['novel.toml'].replace('branch = "main"', 'branch = "draft/old"') });
+  await openWork(page);
+  await expect(page.getByRole('button', { name: /⎇ main/ })).toBeVisible();
+  await expect(page.locator('#toast')).toHaveText('draft/old は GitHub にもう無いので、main を開きました');
+});
+// FR-GH-09: the work not read (GitHub failing): choosing or merging a branch says so instead of doing nothing
+test('the work not read: choosing or merging a branch says to read it first', async ({ page, gh, work }) => {
+  gh.fail = (method, path) => (path.includes('/git/ref/') ? 500 : undefined);
+  await openWork(page, null);
+  await expect(page.locator('#sync-state')).toHaveClass(/err/);
+  await page.locator('#gh-branch').click();
+  await expect(page.locator('#toast')).toHaveText(/^作品を読み込めていません/);
+  await page.locator('#toast').evaluate(t => (t.textContent = ''));
+  await page.locator('#gh-merge').click();
+  await expect(page.locator('#toast')).toHaveText(/^作品を読み込めていません/);
+});
+
 // FR-TOC-08
 test('read again from the preview: the preview stays, where it was read', async ({ page, gh, work }) => {
   const long = Array.from({ length: 150 }, (_, i) => `${i}行目。`).join('\n');

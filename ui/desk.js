@@ -561,8 +561,13 @@ async function reload() {
   const place = current && reading() ? { path: current, at: previewPlace() } : null;
   busy = true;
   syncState('読み込んでいます…');
+  /** @type {string} the branch asked for that GitHub no longer has ('' when none) */
+  let gone;
   try {
-    work = await load(r.full_name, r.default_branch, (await store.get('prefs', `branch:${r.full_name}`)) ?? '');
+    const read = await load(r.full_name, r.default_branch, (await store.get('prefs', `branch:${r.full_name}`)) ?? '');
+    work = read;
+    gone = read.gone;
+    if (gone) await forgetBranch(r.full_name, gone);
   } catch (err) {
     syncState(err.message, 'err');
     return;
@@ -583,6 +588,12 @@ async function reload() {
   if (open) await openEpisode(open);
   else openNone();
   if (place && place.path === current) await showPreviewAt(place.at);
+  if (gone) toast(`${gone} は GitHub にもう無いので、${work.branch} を開きました`);
+}
+// a branch that GitHub no longer has: no longer the one chosen on this device (the changes not sent stay as they are)
+/** @param {string} repoName @param {string} branch */
+async function forgetBranch(repoName, branch) {
+  if ((await store.get('prefs', `branch:${repoName}`)) === branch) await store.del('prefs', `branch:${repoName}`);
 }
 // written elsewhere while the work is open (another device, GitHub): read in when the branch moved, and shown, but the
 // text being written and its caret are left as they are (FR-SAVE-08). Every minute while the desk is shown, and when
