@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Novel Writer: 生成りの原稿用紙に、朱のペン先。中身は中央 80% に収める（maskable のため） -->
+  <rect width="512" height="512" fill="#f7f5f0"/>
+  <g stroke="#d9d2c3" stroke-width="6">
+    <line x1="150" y1="120" x2="150" y2="392"/>
+    <line x1="210" y1="120" x2="210" y2="392"/>
+    <line x1="270" y1="120" x2="270" y2="392"/>
+  </g>
+  <g stroke="#2b2a27" stroke-width="10" stroke-linecap="round">
+    <line x1="150" y1="150" x2="150" y2="300"/>
+    <line x1="210" y1="150" x2="210" y2="350"/>
+  </g>
+  <g transform="translate(330 260) rotate(28)">
+    <path d="M0 -150 L34 -40 L22 60 L0 110 L-22 60 L-34 -40 Z" fill="#c0563b"/>
+    <path d="M0 -40 L0 70" stroke="#f7f5f0" stroke-width="6" stroke-linecap="round"/>
+    <circle cx="0" cy="-40" r="10" fill="#f7f5f0"/>
+  </g>
+</svg>

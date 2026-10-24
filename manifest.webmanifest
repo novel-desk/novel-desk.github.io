@@ -1,0 +1,16 @@
+{
+  "name": "Novel Writer",
+  "short_name": "Novel",
+  "description": "GitHub のリポジトリにある小説を、話ごとに書いて送る",
+  "lang": "ja",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f2eee6",
+  "theme_color": "#f2eee6",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" },
+    { "src": "apple-touch-icon.png", "sizes": "180x180", "type": "image/png" }
+  ]
+}

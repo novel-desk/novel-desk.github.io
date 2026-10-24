@@ -1,0 +1,16 @@
+// 画面の JS の型の点検（npm run check:types）。JSDoc の型を strict で確かめる。
+// useUnknownInCatchVariables だけは外す: このアプリが投げるのは Error だけで、catch (err) の err.message を読む
+{
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "strict": true,
+    "useUnknownInCatchVariables": false,
+    "noEmit": true,
+    "target": "es2023",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "lib": ["es2023", "dom", "dom.iterable"]
+  },
+  "include": ["app.js", "ui/*.js", "lib/*.js"]
+}

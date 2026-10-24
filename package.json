@@ -1,0 +1,25 @@
+{
+  "private": true,
+  "type": "module",
+  "description": "サーバーなしで動く Novel Writer。画面は素の ES modules（ライブラリなし、ビルドなし）。ここにあるのは開発用の点検と試験だけ",
+  "scripts": {
+    "serve": "node tools/serve.mjs",
+    "format": "prettier --write \"**/*.{js,mjs}\"",
+    "format:check": "prettier --check \"**/*.{js,mjs}\"",
+    "lint:js": "eslint .",
+    "check:types": "tsc -p tsconfig.json && tsc -p tsconfig.sw.json",
+    "test:unit": "vitest run --coverage",
+    "test:ui": "playwright test",
+    "check:all": "bash tools/check_all.sh"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@playwright/test": "1.64.1",
+    "@vitest/coverage-istanbul": "4.1.12",
+    "eslint": "10.12.0",
+    "globals": "17.13.0",
+    "prettier": "3.9.10",
+    "typescript": "7.0.2",
+    "vitest": "4.1.12"
+  }
+}

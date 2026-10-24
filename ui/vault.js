@@ -1,0 +1,125 @@
+// The token, kept on this device encrypted: with a key from a passkey's PRF output (iPhone: Face ID each time it is
+// opened), or where PRF is not there, with a WebCrypto key that cannot be taken out of IndexedDB. The token itself is
+// only in this page's memory while it is open
+import { createOptions, getOptions, KEY_INFO, prfOf, webauthnFailure } from '../lib/passkey.js';
+import * as store from './db.js';
+
+/**
+ * @typedef {{ kind: 'prf', credentialId: Uint8Array, salt: Uint8Array, iv: Uint8Array, data: ArrayBuffer }} PrfVault
+ * @typedef {{ kind: 'local', key: CryptoKey, iv: Uint8Array, data: ArrayBuffer }} LocalVault
+ * @typedef {PrfVault | LocalVault} Vault
+ */
+const KEY = 'token';
+/** @param {number} n */
+const random = n => crypto.getRandomValues(new Uint8Array(n));
+
+/** @returns {Promise<Vault | undefined>} */
+export const kept = () => store.get('vault', KEY);
+export const forget = () => store.del('vault', KEY);
+
+// The AES-GCM key from a PRF output (HKDF, SHA-256, the salt kept with it)
+/** @param {BufferSource} output @param {Uint8Array} salt */
+async function prfKey(output, salt) {
+  const base = await crypto.subtle.importKey('raw', output, 'HKDF', false, ['deriveKey']);
+  const info = new TextEncoder().encode(KEY_INFO);
+  return crypto.subtle.deriveKey(
+    { name: 'HKDF', hash: 'SHA-256', salt: /** @type {BufferSource} */ (salt), info },
+    base,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt', 'decrypt'],
+  );
+}
+/** @param {CryptoKey} key @param {string} token */
+async function encrypt(key, token) {
+  const iv = random(12);
+  const data = await crypto.subtle.encrypt({ name: 'AES-GCM', iv: /** @type {BufferSource} */ (iv) }, key, new TextEncoder().encode(token));
+  return { iv, data };
+}
+/** @param {CryptoKey} key @param {Uint8Array} iv @param {ArrayBuffer} data */
+async function decrypt(key, iv, data) {
+  return new TextDecoder().decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: /** @type {BufferSource} */ (iv) }, key, data));
+}
+
+// Whether this browser says it has PRF (false: it says it has not; null: it does not say)
+async function saysPrf() {
+  const PKC = /** @type {any} */ (window.PublicKeyCredential);
+  if (!PKC) return false;
+  if (typeof PKC.getClientCapabilities !== 'function') return null;
+  try {
+    const caps = await PKC.getClientCapabilities();
+    return 'extension:prf' in caps ? caps['extension:prf'] === true : null;
+  } catch {
+    return null;
+  }
+}
+// A passkey made for the token, and its PRF output (null when the authenticator has no PRF: the passkey is left unused)
+/** @param {Uint8Array} salt @returns {Promise<{ credentialId: Uint8Array, output: BufferSource } | null>} */
+async function makePasskey(salt) {
+  const rpId = location.hostname;
+  const cred = /** @type {PublicKeyCredential | null} */ (
+    await navigator.credentials.create({ publicKey: createOptions({ rpId, userId: random(16), challenge: random(32), salt }) })
+  );
+  if (!cred) return null;
+  const credentialId = new Uint8Array(cred.rawId);
+  const made = prfOf(cred.getClientExtensionResults());
+  if (made.output) return { credentialId, output: made.output };
+  if (!made.enabled) return null;
+  // (an authenticator that gives the output only on a get: asked once more, as opening it will)
+  const output = await passkeyOutput(credentialId, salt);
+  return output ? { credentialId, output } : null;
+}
+/** @param {Uint8Array} credentialId @param {Uint8Array} salt */
+async function passkeyOutput(credentialId, salt) {
+  const got = /** @type {PublicKeyCredential | null} */ (
+    await navigator.credentials.get({ publicKey: getOptions({ rpId: location.hostname, credentialId, challenge: random(32), salt }) })
+  );
+  return got ? prfOf(got.getClientExtensionResults()).output : null;
+}
+
+// Keeps the token: with a passkey when this browser has PRF, else with a key that cannot be taken out. Returns the
+// kind kept. Throws when the author said no to the passkey (nothing is kept then)
+/** @param {string} token @returns {Promise<'prf' | 'local'>} */
+export async function keep(token) {
+  const salt = random(32);
+  /** @type {{ credentialId: Uint8Array, output: BufferSource } | null} */
+  let passkey = null;
+  if ((await saysPrf()) !== false) {
+    try {
+      passkey = await makePasskey(salt);
+    } catch (err) {
+      if (webauthnFailure(err) === 'cancelled')
+        throw new Error('パスキーが作られませんでした（取り消されたか、時間切れです）。もう一度押してください', { cause: err });
+    }
+  }
+  if (passkey) {
+    const { iv, data } = await encrypt(await prfKey(passkey.output, salt), token);
+    await store.put('vault', KEY, { kind: 'prf', credentialId: passkey.credentialId, salt, iv, data });
+    return 'prf';
+  }
+  const key = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+  const { iv, data } = await encrypt(key, token);
+  await store.put('vault', KEY, { kind: 'local', key, iv, data });
+  return 'local';
+}
+// The token, opened (a passkey's: the author verified by it). Throws when it cannot be
+/** @param {Vault} v @returns {Promise<string>} */
+export async function open(v) {
+  if (v.kind === 'local') return decrypt(v.key, v.iv, v.data);
+  /** @type {BufferSource | null} */
+  let output;
+  try {
+    output = await passkeyOutput(v.credentialId, v.salt);
+  } catch (err) {
+    throw new Error(
+      webauthnFailure(err) === 'cancelled' ? 'パスキーで開けませんでした（取り消されたか、時間切れです）' : `パスキーを使えません（${err.name ?? err}）`,
+      { cause: err },
+    );
+  }
+  if (!output) throw new Error('パスキーが PRF の値を返しませんでした');
+  try {
+    return await decrypt(await prfKey(output, v.salt), v.iv, v.data);
+  } catch (err) {
+    throw new Error('トークンを復号できませんでした（作ったときと違うパスキーかもしれません）', { cause: err });
+  }
+}
