@@ -113,8 +113,8 @@ test('the repositories: every page of them; the one chosen is remembered; a toke
   gh.perPage = 1;
   await openWork(page);
   await page.getByRole('button', { name: 'ほかの作品' }).click();
-  await expect(page.locator('#repo-list .work b')).toHaveText(['author/novel', 'author/other']);
-  await expect(page.locator('#repo-list .work small')).toHaveText(['非公開・main', '公開・main']);
+  await expect(page.locator('#repo-list .work b')).toHaveText(['試験の作品', 'other']);
+  await expect(page.locator('#repo-list .work small')).toHaveText([/author\/novel（main）非公開$/, /author\/other（main）公開$/]);
   await page.getByRole('button', { name: '戻る' }).click();
   await expect(page.locator('#episode-title')).toHaveValue('はじまり');
   gh.fail = () => 401;
@@ -129,7 +129,7 @@ test('a link to make the token, filled in', async ({ page }) => {
   await expect(link).toBeVisible();
   const url = new URL(/** @type {string} */ (await link.getAttribute('href')));
   expect(url.origin + url.pathname).toBe('https://github.com/settings/personal-access-tokens/new');
-  expect(Object.fromEntries(url.searchParams)).toEqual({ name: 'Novel Desk', description: 'For novel-desk.github.io', expires_in: '366', contents: 'write' });
+  expect(Object.fromEntries(url.searchParams)).toEqual({ name: 'Novel Desk', description: 'For novel-desk.github.io', expires_in: '90', contents: 'write' });
   await expect(link).toHaveAttribute('target', '_blank');
   await expect(link).toHaveAttribute('rel', /noopener/);
 });

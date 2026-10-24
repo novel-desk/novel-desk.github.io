@@ -12,7 +12,7 @@ describe('toml', () => {
   test('the novel.toml of a work: comments, tables, texts', () => {
     const src = [
       '# Novel Writer の作品の設定',
-      'title = "電脳都市の空"',
+      'title = "星降る坂の町"',
       '',
       '[manuscript]',
       'dir = "chapters"  # 本文',
@@ -25,7 +25,7 @@ describe('toml', () => {
       'file = "notes/01_plot.md"',
     ].join('\r\n');
     expect(ok(src)).toEqual({
-      title: '電脳都市の空',
+      title: '星降る坂の町',
       manuscript: { dir: 'chapters', files: '*.md', title: 'heading' },
       git: { branch: 'main' },
       plot: { file: 'notes/01_plot.md' },

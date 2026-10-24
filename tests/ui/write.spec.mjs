@@ -11,7 +11,7 @@ test('the table of contents: titles from the headings, the chapter folder, other
   await expect(page.locator('#episode-chars')).toHaveText('13');
   await expect(page.locator('#sync-state')).toHaveText(/GitHub から読みました/);
   // only the API, with the token
-  expect(gh.calls.every(c => /^GET \/(user\/repos|repos\/author\/novel\/(git\/|commits\?))/.test(c))).toBe(true);
+  expect(gh.calls.every(c => /^GET \/(user\/repos|repos\/author\/(novel|other)\/(git\/|commits\?))/.test(c))).toBe(true);
 });
 
 test('typing keeps a draft on the device with the blob it was written from; the episode shows it as not sent, after a reload too', async ({
@@ -87,11 +87,11 @@ test('novel.toml that cannot be read: what cannot be read is said on the screen'
 });
 
 test('the preview: headings, rubies, and the pictures read from GitHub', async ({ page, gh, work }) => {
-  work.push({ 'chapters/01_first.md': '# 第1話 はじまり\n\n|電脳《でんのう》の空。\n![空](../notes/images/sky.png)\n' });
+  work.push({ 'chapters/01_first.md': '# 第1話 はじまり\n\n|星空《ほしぞら》の下。\n![空](../notes/images/sky.png)\n' });
   await openWork(page);
   await page.getByRole('button', { name: 'プレビュー' }).click();
   await expect(page.locator('#preview h1')).toHaveText('第1話 はじまり');
-  await expect(page.locator('#preview ruby')).toHaveText('電脳でんのう');
+  await expect(page.locator('#preview ruby')).toHaveText('星空ほしぞら');
   const img = page.locator('#preview img');
   await expect(img).toHaveAttribute('src', /^blob:/);
   await expect.poll(() => img.evaluate(i => /** @type {HTMLImageElement} */ (i).naturalWidth)).toBe(1);

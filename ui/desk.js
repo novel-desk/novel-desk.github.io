@@ -12,6 +12,7 @@ import { picturePaths, relPath, renderMd } from '../lib/markdown.js';
 import { CONFLICT_MARK } from '../lib/merge.js';
 import { editToml } from '../lib/tomledit.js';
 import { viewOf } from '../lib/view.js';
+import { visibilityTag } from '../lib/works.js';
 import { $, show, toast } from './dom.js';
 import * as store from './db.js';
 import { bytes, contents, converted, load, readShas } from './work.js';
@@ -34,7 +35,7 @@ import { wireUnsent } from './unsent.js';
 
 /** @typedef {import('../lib/drafts.js').Draft} Draft */
 /** @typedef {import('../lib/tomledit.js').TomlEdit & { op: string }} Edit a key of novel.toml set by an operation */
-/** @typedef {{ full_name: string, default_branch: string }} Repo */
+/** @typedef {{ full_name: string, default_branch: string, visibility?: string }} Repo */
 
 /** @type {Repo | null} */
 let repo = null;
@@ -156,6 +157,9 @@ function renderToc() {
   $('work-count').textContent = n(episodes().length);
   $('work-updated').textContent = whenLong(Math.max(w.updated || 0, ...[...drafts.values()].map(d => d.at)));
   $('work-branch').textContent = w.branch;
+  // the repository, its page on GitHub, and whether it is public (FR-GH-11)
+  $('work-repo').innerHTML =
+    `<a href="https://github.com/${esc(w.repo)}/tree/${esc(encodeURIComponent(w.branch))}" target="_blank" rel="noopener noreferrer">${esc(w.repo)}</a>${visibilityTag(/** @type {Repo} */ (repo))}`;
   $('open-unsent').hidden = unsent() === 0;
   if (document.activeElement !== $('work-title')) $('work-title').value = v.layout.title || w.repo.split('/')[1];
   $('send').disabled = busy || unsent() === 0;

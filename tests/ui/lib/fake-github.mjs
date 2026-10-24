@@ -213,6 +213,7 @@ export class FakeGitHub {
         full_name: r.fullName,
         name: r.fullName.split('/')[1],
         private: r.private,
+        visibility: r.private ? 'private' : 'public',
         default_branch: r.defaultBranch,
       }));
       const more = page * this.perPage < all.length;

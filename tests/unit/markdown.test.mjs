@@ -44,8 +44,8 @@ describe('markdown', () => {
     expect(renderMd('#### 四\n##### 五', '01.md', src)).toBe('<h4 data-l="0">四</h4><p data-l="1">##### 五</p>');
   });
   test('renderMd: rubies, and the text made safe', () => {
-    expect(renderMd('|電脳《でんのう》と漢字《かんじ》<b>', '01.md', src)).toBe(
-      '<p data-l="0"><ruby>電脳<rt>でんのう</rt></ruby>と<ruby>漢字<rt>かんじ</rt></ruby>&lt;b&gt;</p>',
+    expect(renderMd('|星空《ほしぞら》と漢字《かんじ》<b>', '01.md', src)).toBe(
+      '<p data-l="0"><ruby>星空<rt>ほしぞら</rt></ruby>と<ruby>漢字<rt>かんじ</rt></ruby>&lt;b&gt;</p>',
     );
   });
   test('renderMd: pictures by the address given for their file; outside ones as written; one not found by its alt only', () => {

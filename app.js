@@ -1,12 +1,12 @@
 // The app: the token (put in once, opened with a passkey each time), the repository chosen, and the desk. No server:
 // the page talks to GitHub's API only, and keeps what it needs on this device
-import { esc } from './lib/format.js';
 import { installHint, isIos } from './lib/install.js';
 import { $, show, toast } from './ui/dom.js';
 import * as store from './ui/db.js';
 import * as desk from './ui/desk.js';
 import * as gh from './ui/github.js';
 import * as vault from './ui/vault.js';
+import { showWorks } from './ui/works.js';
 
 /** @typedef {import('./ui/desk.js').Repo} Repo */
 
@@ -82,21 +82,7 @@ async function chooseRepo() {
   $('screen-info').textContent = screenInfo();
   $('vault-kind').textContent = kind ? KINDS[kind] : '';
   $('repos-back').hidden = !(await store.get('prefs', 'repo'));
-  $('repos-error').textContent = '';
-  $('repo-list').innerHTML = '<p class="muted small">読み込んでいます…</p>';
-  try {
-    const list = await gh.repos();
-    $('repo-list').innerHTML =
-      list
-        .map(
-          r =>
-            `<button class="work" data-repo="${esc(r.full_name)}" data-branch="${esc(r.default_branch)}"><b>${esc(r.full_name)}</b><small>${r.private ? '非公開' : '公開'}・${esc(r.default_branch)}</small></button>`,
-        )
-        .join('') || '<p class="muted small">トークンで読めるリポジトリがありません。トークンの Repository access を確かめてください。</p>';
-  } catch (err) {
-    $('repo-list').innerHTML = '';
-    $('repos-error').textContent = err.message;
-  }
+  await showWorks();
 }
 
 /** @param {string} token */
@@ -130,7 +116,12 @@ $('forget-token-unlock').addEventListener('click', () => void forgetToken());
 $('repos-back').addEventListener('click', async () => void desk.open(await store.get('prefs', 'repo')));
 $('repo-list').addEventListener('click', e => {
   const b = /** @type {HTMLElement} */ (e.target).closest('[data-repo]');
-  if (b instanceof HTMLElement) void openRepo({ full_name: /** @type {string} */ (b.dataset.repo), default_branch: /** @type {string} */ (b.dataset.branch) });
+  if (b instanceof HTMLElement)
+    void openRepo({
+      full_name: /** @type {string} */ (b.dataset.repo),
+      default_branch: /** @type {string} */ (b.dataset.branch),
+      visibility: /** @type {string} */ (b.dataset.visibility),
+    });
 });
 desk.wire({ changeRepo: () => void chooseRepo() });
 

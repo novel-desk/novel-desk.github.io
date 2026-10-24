@@ -4,7 +4,7 @@ import { parseToml } from '../../lib/toml.js';
 
 const SRC = [
   '# 作品の設定',
-  'title = "電脳都市の空"  # 題名',
+  'title = "星降る坂の町"  # 題名',
   '',
   '[manuscript]',
   'dir = "chapters"',
@@ -28,7 +28,7 @@ const ok = (src, edits) => {
 describe('editToml', () => {
   test('a value changed: only the value, the key as written and the comment after it stay', () => {
     expect(ok(SRC, [{ key: ['titles', '01_a.md'], value: '最初の話' }])).toBe(SRC.replace('"01_a.md" = "一"', '"01_a.md" = "最初の話"'));
-    expect(ok(SRC, [{ key: ['title'], value: '新しい題' }])).toBe(SRC.replace('"電脳都市の空"', '"新しい題"'));
+    expect(ok(SRC, [{ key: ['title'], value: '新しい題' }])).toBe(SRC.replace('"星降る坂の町"', '"新しい題"'));
   });
   test('a key removed takes its line; a key not there is nothing to remove', () => {
     expect(ok(SRC, [{ key: ['titles', '02_b.md'], value: null }])).toBe(SRC.replace("'02_b.md' = '二'\n", ''));

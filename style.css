@@ -79,6 +79,7 @@ input:focus { border-color: var(--accent); }
 .sync-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .sync-row button { font-size: 13px; padding: 5px 10px; }
 .sync-row button.link { padding: 5px 4px; }
+.sync-row a { color: inherit; overflow-wrap: anywhere; }
 
 .paper { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--paper); overflow: hidden; }
 .paper-head { display: flex; align-items: center; gap: 4px; padding: calc(2px + env(safe-area-inset-top)) 10px 2px; border-bottom: 1px solid var(--line); min-height: 40px; }
@@ -203,7 +204,8 @@ input:focus { border-color: var(--accent); }
 .notes-folder button { padding: 2px 10px; }
 .notes-h { font-size: 14px; margin: 16px 0 6px; display: flex; align-items: center; justify-content: space-between; }
 .unsent-tag { color: var(--accent); border: 1px solid var(--accent); border-radius: 4px; font-size: 10px; padding: 0 4px; white-space: nowrap; }
-.vis { display: inline-block; margin: 0 4px; padding: 0 6px; border: 1px solid var(--accent); border-radius: 999px; font-size: 10px; line-height: 16px; color: var(--accent); font-weight: 600; vertical-align: 1px; white-space: nowrap; }
+.vis { display: inline-block; margin: 0 4px; padding: 0 6px; border: 1px solid var(--line); border-radius: 999px; font-size: 10px; line-height: 16px; color: var(--muted); vertical-align: 1px; white-space: nowrap; }
+.vis.public { border-color: var(--accent); color: var(--accent); font-weight: 600; }
 .note-view { display: grid; gap: 8px; }
 .note-head { display: flex; align-items: center; gap: 6px; } .note-head button { white-space: nowrap; flex-shrink: 0; }
 .note-head b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

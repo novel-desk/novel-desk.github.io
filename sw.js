@@ -1,6 +1,6 @@
 // オフラインでも開けるように、アプリの画面のファイルだけを控える。いつもはネットワークを先に使い、届かないときだけ控えを出す。
 // GitHub の API への要求には手を出さない（作品の文章とトークンは、画面が IndexedDB に置く）
-const CACHE = 'novel-writer-js-v5';
+const CACHE = 'novel-writer-js-v6';
 // this worker (self, with the types of a service worker for the type check)
 const sw = /** @type {ServiceWorkerGlobalScope} */ (/** @type {unknown} */ (self));
 // every file of the screens (a test checks it against the files of the app)
@@ -37,6 +37,7 @@ const FILES = [
   'lib/toml.js',
   'lib/tomledit.js',
   'lib/view.js',
+  'lib/works.js',
   'ui/branches.js',
   'ui/characters.js',
   'ui/db.js',
@@ -58,6 +59,7 @@ const FILES = [
   'ui/unsent.js',
   'ui/vault.js',
   'ui/work.js',
+  'ui/works.js',
 ];
 const urls = new Set(FILES.map(f => new URL(f, location.href).href));
 

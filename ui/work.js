@@ -60,9 +60,10 @@ export async function each(items, width, f) {
   await Promise.all(Array.from({ length: Math.min(width, items.length) }, worker));
 }
 
-/** @param {string} repo @param {string} branch */
-async function readBranch(repo, branch) {
+/** @param {string} repo @param {string} branch @param {[string, string][]} heads the refs looked at, noted */
+async function readBranch(repo, branch, heads) {
   const commit = await gh.headOf(repo, branch);
+  heads.push([branch, commit]);
   const { tree, date } = await gh.commitOf(repo, commit);
   const listing = await gh.treeFiles(repo, tree);
   if (listing.truncated) throw new Error('リポジトリのファイルが多すぎて、GitHub が一覧を全部返しませんでした');
@@ -78,38 +79,51 @@ async function configOf(files, offline) {
   if (src === null) return { config: null, problems: ['novel.toml が UTF-8 ではないので読めません'] };
   return { config: src, problems: [] };
 }
-// a branch read, or null when GitHub has no such branch (deleted after a merge, say)
-/** @param {string} repo @param {string} branch @returns {Promise<Files | null>} */
-async function readIfThere(repo, branch) {
+// a branch read, or null when GitHub has no such branch (deleted after a merge, say; noted in `heads` with no commit)
+/** @param {string} repo @param {string} branch @param {[string, string][]} heads @returns {Promise<Files | null>} */
+async function readIfThere(repo, branch, heads) {
   try {
-    return await readBranch(repo, branch);
+    return await readBranch(repo, branch, heads);
   } catch (err) {
-    if (err instanceof gh.GitHubError && err.status === 404) return null;
+    if (err instanceof gh.GitHubError && err.status === 404) {
+      if (!heads.some(([b]) => b === branch)) heads.push([branch, '']);
+      return null;
+    }
     throw err;
   }
 }
-// The work, read from GitHub: the branch chosen on this device, else the one novel.toml names, else the default
-// branch; a branch that GitHub no longer has is passed over (and named in `gone`). Offline, the one last read
+// The files of the branch in use, read from GitHub: the branch chosen on this device, else the one novel.toml names,
+// else the default branch; a branch that GitHub no longer has is passed over (and named in `gone`). `heads`: every ref
+// looked at on the way, and the commit it was at ('' not there), so that a summary kept by them can be checked with
+// those refs alone (FR-WORK-01)
+/** @param {string} repo @param {string} defaultBranch @param {string} [chosen] */
+export async function readFiles(repo, defaultBranch, chosen = '') {
+  /** @type {[string, string][]} */
+  const heads = [];
+  let gone = '';
+  const read = chosen ? await readIfThere(repo, chosen, heads) : null;
+  if (read) return { files: read, gone, heads };
+  if (chosen) gone = chosen;
+  let files = await readBranch(repo, defaultBranch, heads);
+  const { config } = await configOf(files, false);
+  const branch = config === null ? '' : parseLayout(config).layout.branch;
+  if (branch && branch !== defaultBranch && branch !== gone) {
+    const named = await readIfThere(repo, branch, heads);
+    if (named) files = named;
+    else gone ||= branch;
+  }
+  return { files, gone, heads };
+}
+// The work, read from GitHub (readFiles). Offline, the one last read
 /** @param {string} repo @param {string} defaultBranch @param {string} [chosen] @returns {Promise<Work & { gone: string }>} */
 export async function load(repo, defaultBranch, chosen = '') {
   /** @type {Files} */
   let files;
   let offline = false;
-  let gone = '';
+  /** @type {string} */
+  let gone;
   try {
-    const read = chosen ? await readIfThere(repo, chosen) : null;
-    if (read) files = read;
-    else {
-      if (chosen) gone = chosen;
-      files = await readBranch(repo, defaultBranch);
-      const { config } = await configOf(files, false);
-      const branch = config === null ? '' : parseLayout(config).layout.branch;
-      if (branch && branch !== defaultBranch && branch !== gone) {
-        const named = await readIfThere(repo, branch);
-        if (named) files = named;
-        else gone ||= branch;
-      }
-    }
+    ({ files, gone } = await readFiles(repo, defaultBranch, chosen));
   } catch (err) {
     const snapshot = err instanceof gh.GitHubError && err.status === 0 && (await store.get('snapshots', repo));
     if (!snapshot) throw err;
@@ -119,9 +133,10 @@ export async function load(repo, defaultBranch, chosen = '') {
   }
   return { ...(await contents(files, offline)), gone };
 }
-// The work from its files: novel.toml, the episodes' texts. Kept as the last read of the work
-/** @param {Files} files @param {boolean} offline @returns {Promise<Work>} */
-export async function contents(files, offline) {
+// The work from its files: novel.toml, the episodes' texts. Kept as the last read of the work (unless `keep` is false:
+// a work summed up for the list of works, not opened)
+/** @param {Files} files @param {boolean} offline @param {boolean} [keep] @returns {Promise<Work>} */
+export async function contents(files, offline, keep = true) {
   const { config, problems } = await configOf(files, offline);
   const parsed = config === null ? { layout: firstLayout(), problems: [] } : parseLayout(config);
   const paths = Object.keys(files.blobs);
@@ -134,7 +149,7 @@ export async function contents(files, offline) {
     const sha = files.blobs[e.path].sha;
     texts[e.path] = shaTexts[sha] = await textAt(files.repo, sha, offline);
   });
-  if (!offline) await store.put('snapshots', files.repo, files);
+  if (!offline && keep) await store.put('snapshots', files.repo, files);
   return { ...files, config, problems, texts, shaTexts, offline };
 }
 // the texts of these blobs (files moved by changes not sent), into the work's, when they are not there yet
