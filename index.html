@@ -72,6 +72,7 @@
   <main class="shelf-main">
     <p class="muted small">作品のリポジトリを選んでください（トークンで読めるものだけが出ます）。</p>
     <div class="works" id="repo-list"></div>
+    <div id="off-list"></div>
     <p id="repos-error" class="error" role="alert"></p>
     <form class="card new-work" id="new-work">
       <h2>新しい作品</h2>
@@ -131,6 +132,7 @@
         <button class="primary" id="send" disabled>送る</button>
         <button id="reload">再読み込み</button>
         <button class="link" id="change-repo">ほかの作品</button>
+        <button class="link" id="delete-work" title="この作品を作品の一覧から外す（GitHub のリポジトリは消しません）">一覧から外す</button>
       </div>
       <div class="sync-row" id="work-repo"></div>
       <div class="sync-row">

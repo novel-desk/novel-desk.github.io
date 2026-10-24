@@ -194,6 +194,8 @@ export class FakeGitHub {
     this.unreadable = new Set();
     /** @type {string[]} the tokens it takes */
     this.tokens = [TOKEN];
+    /** @type {Record<string, string>} the GitHub user of a token ('author' when not given) */
+    this.logins = {};
     /** @type {string[]} the requests that came with an admin token */
     this.adminCalls = [];
     /** @type {string[]} the requests made to anything but this page's server and the API (refused) */
@@ -251,7 +253,7 @@ export class FakeGitHub {
     const body = method === 'GET' ? null : req.postDataJSON();
     const path = decodeURIComponent(url.pathname);
     // the repository itself: as GitHub says it (a renamed one's old name sent on), made, renamed
-    if (path === '/user' && method === 'GET') return reply(200, { login: 'author' });
+    if (path === '/user' && method === 'GET') return reply(200, { login: this.logins[String(headers.authorization).replace(/^Bearer /, '')] ?? 'author' });
     if ((path === '/user/repos' || /^\/orgs\/[^/]+\/repos$/.test(path)) && method === 'POST') {
       if (!admin) return reply(403, { message: 'Resource not accessible by personal access token' });
       const owner = path === '/user/repos' ? 'author' : path.split('/')[2];

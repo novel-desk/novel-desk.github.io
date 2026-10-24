@@ -6,7 +6,7 @@
 // The list and the summaries are this module's
 import { esc, n, whenLong } from '../lib/format.js';
 import { viewOf } from '../lib/view.js';
-import { stillHolds, summaryOf, visibilityTag } from '../lib/works.js';
+import { listed, stillHolds, summaryOf, visibilityTag } from '../lib/works.js';
 import { $ } from './dom.js';
 import * as store from './db.js';
 import * as gh from './github.js';
@@ -84,12 +84,44 @@ async function summarize(r, drafts) {
   return s;
 }
 
+// the works taken off the list on this device (FR-WORK-05), each with a way back
+/** @param {Listed[]} off */
+function renderOff(off) {
+  $('off-list').innerHTML = off.length
+    ? `<details class="off-list"><summary>一覧から外した作品（${off.length}）</summary>${off
+        .map(r => `<div class="off-row"><span>${esc(r.full_name)}</span><button class="ghost" data-back-on="${esc(r.full_name)}">一覧に戻す</button></div>`)
+        .join('')}</details>`
+    : '';
+}
+// the repositories the list shows (not the ones taken off it), and those taken off shown apart
+/** @param {Listed[]} all */
+async function shownOf(all) {
+  const { shown, off } = listed(all, (await store.get('prefs', 'off-list')) ?? []);
+  renderOff(off);
+  return shown;
+}
+export function wireWorks() {
+  $('off-list').addEventListener('click', async e => {
+    const b = /** @type {HTMLElement} */ (e.target).closest('[data-back-on]');
+    if (!(b instanceof HTMLElement)) return;
+    /** @type {string[]} */
+    const off = (await store.get('prefs', 'off-list')) ?? [];
+    await store.put(
+      'prefs',
+      'off-list',
+      off.filter(x => x !== b.dataset.backOn),
+    );
+    await showWorks();
+  });
+}
+
 // The list of works: the repositories (the listing kept, then GitHub's), each with its summary kept, filled in as read
 export async function showWorks() {
   const at = ++shown;
   $('repos-error').textContent = '';
   /** @type {Listed[] | undefined} */
-  const listed = await store.get('prefs', 'repos');
+  const keptList = await store.get('prefs', 'repos');
+  const before = keptList && (await shownOf(keptList));
   /** @type {Map<string, Summary>} */
   const kept = new Map();
   const keptOf = async (/** @type {Listed[]} */ list) => {
@@ -98,14 +130,14 @@ export async function showWorks() {
       if (s) kept.set(r.full_name, s);
     }
   };
-  if (listed) {
-    await keptOf(listed);
-    if (at === shown) render(listed, kept);
+  if (before) {
+    await keptOf(before);
+    if (at === shown) render(before, kept);
   } else $('repo-list').innerHTML = '<p class="muted small">読み込んでいます…</p>';
   /** @type {Listed[]} */
-  let list;
+  let all;
   try {
-    list = (await gh.repos()).map((/** @type {any} */ r) => ({
+    all = (await gh.repos()).map((/** @type {any} */ r) => ({
       full_name: r.full_name,
       default_branch: r.default_branch,
       private: r.private,
@@ -113,13 +145,14 @@ export async function showWorks() {
     }));
   } catch (err) {
     if (at !== shown) return;
-    if (!listed) $('repo-list').innerHTML = '';
-    else for (const r of listed) if (!kept.has(r.full_name)) fill(r, null, '');
+    if (!before) $('repo-list').innerHTML = '';
+    else for (const r of before) if (!kept.has(r.full_name)) fill(r, null, '');
     $('repos-error').textContent = err.message;
     return;
   }
   if (at !== shown) return;
-  await store.put('prefs', 'repos', list);
+  await store.put('prefs', 'repos', all);
+  const list = await shownOf(all);
   await keptOf(list);
   render(list, kept);
   /** @type {import('../lib/drafts.js').Draft[]} */

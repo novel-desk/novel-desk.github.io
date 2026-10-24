@@ -1,5 +1,17 @@
 import { describe, test, expect } from 'vitest';
-import { adminFailure, movedKey, newWorkFiles, repoName, stillHolds, summaryOf, visibilityTag, whereIs } from '../../lib/works.js';
+import {
+  adminFailure,
+  isWorkKey,
+  keptAfterForget,
+  listed,
+  movedKey,
+  newWorkFiles,
+  repoName,
+  stillHolds,
+  summaryOf,
+  visibilityTag,
+  whereIs,
+} from '../../lib/works.js';
 import { parseLayout } from '../../lib/layout.js';
 import { viewOf } from '../../lib/view.js';
 
@@ -97,5 +109,22 @@ describe('works', () => {
     expect(adminFailure(404, 'Not Found')).toMatch(/Administration/);
     expect(adminFailure(422, 'name already exists')).toBe('GitHub が受け付けませんでした（同じ名前のリポジトリがあるかもしれません）: name already exists');
     expect(adminFailure(500, 'oops')).toBe('oops');
+  });
+  // FR-WORK-05
+  test('isWorkKey, listed: a work’s keys; the list without the works taken off it', () => {
+    expect(isWorkKey('o/a\n01.md', 'o/a')).toBe(true);
+    expect(isWorkKey('summary:o/a', 'o/a')).toBe(true);
+    expect(isWorkKey('summary:o/ab', 'o/a')).toBe(false);
+    const list = [{ full_name: 'o/a' }, { full_name: 'o/b' }];
+    expect(listed(list, ['o/b', 'o/z'])).toEqual({ shown: [{ full_name: 'o/a' }], off: [{ full_name: 'o/b' }] });
+    expect(listed(list, [])).toEqual({ shown: list, off: [] });
+  });
+  // NFR-SEC-16
+  test('keptAfterForget: nothing, but what the drafts kept need', () => {
+    expect(keptAfterForget('edits:o/a', true)).toBe(true);
+    expect(keptAfterForget('owner', true)).toBe(true);
+    expect(keptAfterForget('summary:o/a', true)).toBe(false);
+    expect(keptAfterForget('edits:o/a', false)).toBe(false);
+    expect(keptAfterForget('owner', false)).toBe(false);
   });
 });

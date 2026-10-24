@@ -116,6 +116,8 @@ input:focus { border-color: var(--accent); }
 .replace-form { display: grid; gap: 10px; padding: 12px 16px 16px; }
 .replace-form label, .new-work label { display: grid; gap: 4px; font-size: 13px; }
 .new-work { display: grid; gap: 10px; }
+.off-list summary { cursor: pointer; font-size: 13px; color: var(--muted); }
+.off-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 0; overflow-wrap: anywhere; }
 
 /* phones: the table of contents slides in */
 @media (max-width: 760px) {

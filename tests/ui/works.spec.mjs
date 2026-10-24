@@ -1,6 +1,6 @@
 // 作品の一覧 (FR-WORK-01): every repository the token reads, each with its work summed up, the summaries kept by the
 // refs they were read at; the repository's visibility, 公開 standing out (FR-GH-11)
-import { test, expect, openWork } from './lib/test.mjs';
+import { test, expect, openWork, stored } from './lib/test.mjs';
 
 /** @param {import('@playwright/test').Page} page */
 const rows = page => page.locator('#repo-list .work small');
@@ -66,4 +66,44 @@ test('public or private: on the list and on the desk, 公開 standing out', asyn
   await expect(page.locator('#repo-list .vis.public')).toHaveText('公開');
   await page.getByRole('button', { name: /author\/other/ }).click();
   await expect(page.locator('#work-repo .vis.public')).toHaveText('公開');
+});
+
+// FR-WORK-05: a work taken off the list; the repository on GitHub stays; what was not sent goes first, or is given up
+test('taken off the list: sent first or given up as chosen; GitHub keeps the repository; put back on the list', async ({ page, gh, work }) => {
+  await openWork(page);
+  await page.locator('#body').fill('# 第1話 はじまり\n\n外す前に書いた\n');
+  /** @type {string[]} */
+  const asked = [];
+  page.on('dialog', d => {
+    asked.push(d.message());
+    void d.accept();
+  });
+  await page.getByRole('button', { name: '一覧から外す' }).click();
+  await expect(page.locator('#repos')).toBeVisible();
+  expect(asked).toEqual([
+    '「試験の作品」を作品の一覧から外しますか？（GitHub のリポジトリ author/novel は消しません。この端末に残した控え・履歴・設定は消します）',
+    'GitHub に送っていない変更が 1 件あります。先に送りますか？（「キャンセル」なら、送らずに捨てるかを聞きます）',
+  ]);
+  expect(work.text('chapters/01_first.md')).toBe('# 第1話 はじまり\n\n外す前に書いた\n');
+  await expect(page.locator('#repo-list .work b')).toHaveText(['other']);
+  await expect(page.locator('#off-list summary')).toHaveText('一覧から外した作品（1）');
+  expect((await stored(page, 'snapshots')).map(s => s.repo)).not.toContain('author/novel');
+  await page.locator('#off-list summary').click();
+  await page.getByRole('button', { name: '一覧に戻す' }).click();
+  await expect(page.locator('#repo-list .work b')).toHaveText(['試験の作品', 'other']);
+  await expect(page.locator('#off-list')).toBeEmpty();
+});
+
+// FR-WORK-05: not sent, and given up
+test('taken off the list, what was not sent given up: nothing sent, the drafts gone', async ({ page, gh, work }) => {
+  await openWork(page);
+  await page.locator('#body').fill('# 第1話 はじまり\n\n捨てる\n');
+  await expect.poll(async () => (await stored(page, 'drafts')).length).toBe(1);
+  const answers = [true, false, true];
+  page.on('dialog', d => void (answers.shift() ? d.accept() : d.dismiss()));
+  await page.getByRole('button', { name: '一覧から外す' }).click();
+  await expect(page.locator('#repos')).toBeVisible();
+  expect(work.text('chapters/01_first.md')).toBe('# 第1話 はじまり\n\n朝が来た。\n');
+  expect(await stored(page, 'drafts')).toEqual([]);
+  expect(gh.calls.filter(c => !c.startsWith('GET'))).toEqual([]);
 });

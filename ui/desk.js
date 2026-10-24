@@ -33,7 +33,7 @@ import { snapshotted } from '../lib/history.js';
 import { previewPlace, reading, showPreviewAt, stopReading, togglePreview, wireReading } from './reading.js';
 import { wireBranches } from './branches.js';
 import { wireUnsent } from './unsent.js';
-import { locate, moveRepo, relink, startWork, titleFor, wireRepo } from './repo.js';
+import { forgetWork, locate, moveRepo, relink, startWork, titleFor, wireRepo } from './repo.js';
 
 /** @typedef {import('../lib/drafts.js').Draft} Draft */
 /** @typedef {import('../lib/tomledit.js').TomlEdit & { op: string }} Edit a key of novel.toml set by an operation */
@@ -723,6 +723,32 @@ async function relinkRepo() {
   stopped = null;
   await reload();
 }
+// 作品の削除 (FR-WORK-05): the work taken off the list; the repository on GitHub stays. What was not sent yet is
+// sent first, or given up, as the author chooses
+async function deleteWork() {
+  const r = /** @type {Repo} */ (repo);
+  const title = $('work-title').value || r.full_name;
+  if (!confirm(`「${title}」を作品の一覧から外しますか？（GitHub のリポジトリ ${r.full_name} は消しません。この端末に残した控え・履歴・設定は消します）`))
+    return;
+  const left = unsent();
+  if (left) {
+    if (confirm(`GitHub に送っていない変更が ${left} 件あります。先に送りますか？（「キャンセル」なら、送らずに捨てるかを聞きます）`)) {
+      await sendDrafts();
+      if (unsent()) return void toast('送れなかったので、一覧から外しませんでした。書いたものはこの端末に残っています');
+    } else if (!confirm(`送っていない変更 ${left} 件を捨てて、一覧から外しますか？（取り消せません）`)) return;
+  }
+  clearTimeout(autoTimer);
+  sight?.disconnect();
+  await writing;
+  await forgetWork(r.full_name);
+  work = null;
+  drafts = new Map();
+  edits = [];
+  toast(`「${title}」を一覧から外しました（GitHub のリポジトリはそのままです。「一覧から外した作品」から戻せます）`);
+  changeRepo();
+}
+// the changes typed, written to the device (before the page is loaded again: FR-APP-02)
+export const settled = () => writing;
 // the work opened again by another repository (its name changed)
 /** @param {Repo} r */
 async function reopen(r) {
@@ -937,6 +963,8 @@ async function setMode(value) {
   sendSoon();
 }
 
+/** the list of works shown (app.js) */
+let changeRepo = () => {};
 let wired = false;
 // the desk's buttons and the text box, once
 /** @param {{ changeRepo: () => void, open: (r: Repo) => Promise<void>, relist: () => Promise<void> }} on */
@@ -965,6 +993,8 @@ export function wire(on) {
   $('send').addEventListener('click', () => void sendDrafts());
   $('reload').addEventListener('click', () => void reload());
   $('change-repo').addEventListener('click', on.changeRepo);
+  changeRepo = on.changeRepo;
+  $('delete-work').addEventListener('click', () => void deleteWork());
   $('menu').addEventListener('click', () => $('desk').classList.toggle('toc-open'));
   $('scrim').addEventListener('click', () => $('desk').classList.remove('toc-open'));
   $('add-episode').addEventListener('click', () => void addEpisode());

@@ -1,14 +1,15 @@
 // The app: the token (put in once, opened with a passkey each time), the repository chosen, and the desk. No server:
 // the page talks to GitHub's API only, and keeps what it needs on this device
 import { dayAfter, endOf, expiryNotice } from './lib/expiry.js';
-import { installHint, isIos } from './lib/install.js';
+import { installHint, isIos, switchNow } from './lib/install.js';
 import { $, show, toast } from './ui/dom.js';
 import * as store from './ui/db.js';
 import * as desk from './ui/desk.js';
 import * as gh from './ui/github.js';
 import * as vault from './ui/vault.js';
 import { api } from './ui/shared.js';
-import { showWorks } from './ui/works.js';
+import { showWorks, wireWorks } from './ui/works.js';
+import { forgetDevice } from './ui/repo.js';
 
 /** @typedef {import('./ui/desk.js').Repo} Repo */
 
@@ -31,6 +32,7 @@ async function keepToken(/** @type {SubmitEvent} */ e) {
   if (!token) return;
   $('keep-token').disabled = true;
   try {
+    await checkOwner(token);
     kind = await vault.keep(token);
     await keepExpiry($('token-expires').value);
     $('token').value = '';
@@ -55,15 +57,50 @@ async function openToken() {
     $('open-token').disabled = false;
   }
 }
+// The GitHub user the token is of, kept with the drafts. A token of another user put in where drafts of the one before
+// are left (a device shared): asked, without showing them, whether to delete them; if not, the token is not kept
+// (NFR-SEC-16)
+/** @param {string} token */
+async function checkOwner(token) {
+  gh.useToken(token);
+  /** @type {string} */
+  let login = '';
+  try {
+    login = (await gh.getJson('/user')).login ?? '';
+  } catch {}
+  const owner = await store.get('prefs', 'owner');
+  const left = (await store.all('drafts')).length;
+  if (left && owner && login && login !== owner) {
+    if (
+      !confirm(
+        `この端末には、前のユーザーが GitHub に送っていない書きかけが ${left} 件残っています（中身は出しません）。消してから進みますか？（「キャンセル」なら、このトークンを保管しません）`,
+      )
+    ) {
+      gh.useToken(using);
+      throw new Error('前のユーザーの書きかけを残すため、このトークンを保管しませんでした。前のユーザーがトークンを入れ直すと送れます');
+    }
+    await forgetDevice(false);
+  }
+  if (login) await store.put('prefs', 'owner', login);
+}
+// The token forgotten (NFR-SEC-16): with it, what the device keeps of the works (the works last read, the blobs, the
+// settings, the versions kept); the drafts not sent too, when the author says so
 async function forgetToken() {
-  if (!confirm('トークンをこの端末から消します。未送信の書きかけは残ります。よろしいですか')) return;
+  if (!confirm('トークンをこの端末から消します。この端末に残した作品の控え・履歴・設定も消します。よろしいですか')) return;
+  const left = (await store.all('drafts')).length;
+  const dropDrafts =
+    left > 0 &&
+    confirm(
+      `GitHub に送っていない書きかけが ${left} 件あります。この端末から消しますか？（「キャンセル」なら書きかけだけ残します。同じ GitHub のユーザーのトークンを入れ直すと送れます）`,
+    );
   await vault.forget();
+  await forgetDevice(left > 0 && !dropDrafts);
   await store.del('prefs', 'token-expires');
   hideNotice();
   gh.useToken('');
   using = '';
   kind = '';
-  toast('トークンを消しました。パスキーはパスワードの管理に残っているので、要らなければそこで消してください');
+  toast('トークンと、この端末に残した作品の控えを消しました。パスキーはパスワードの管理に残っているので、要らなければそこで消してください');
   show('setup');
 }
 
@@ -91,6 +128,7 @@ async function chooseRepo() {
   $('vault-kind').textContent = kind ? KINDS[kind] : '';
   $('repos-back').hidden = !(await store.get('prefs', 'repo'));
   await showWorks();
+  switchSoon();
 }
 
 // --- the token's expiry, said from 14 days before (GitHub does not let the page read it: the author says it), and a
@@ -112,8 +150,12 @@ async function checkExpiry() {
   if (text) showNotice(text);
   else hideNotice();
 }
+// a token GitHub refuses: said, with the way to put a new one in; and, as when the server version's session ends
+// (NFR-SEC-16), what the device keeps of the works deleted (the copies, the settings, the records), the drafts kept
 gh.onRefused(() => {
-  if (using) showNotice('GitHub がトークンを断りました（期限が切れたか、消されたかもしれません）。');
+  if (!using) return;
+  showNotice('GitHub がトークンを断りました（期限が切れたか、消されたかもしれません）。');
+  void forgetDevice(true);
 });
 async function replaceToken(/** @type {SubmitEvent} */ e) {
   e.preventDefault();
@@ -186,6 +228,7 @@ $('repo-list').addEventListener('click', e => {
       visibility: /** @type {string} */ (b.dataset.visibility),
     });
 });
+wireWorks();
 desk.wire({ changeRepo: () => void chooseRepo(), open: openRepo, relist: chooseRepo });
 $('token-replace-form').addEventListener('submit', e => void replaceToken(/** @type {SubmitEvent} */ (e)));
 $('token-replace-open').addEventListener('click', () => {
@@ -244,5 +287,25 @@ $('theme-pick').addEventListener('click', e => {
   const b = /** @type {HTMLElement} */ (e.target).closest('[data-theme-pick]');
   if (b instanceof HTMLElement) setTheme(b.dataset.themePick ?? '');
 });
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+// --- a new version of the app (FR-APP-02): its worker takes over at once (sw.js); the page is loaded again when
+// nothing typed can be lost (lib/install.js switchNow): off the desk, or when the desk is left (the page hidden). The
+// worker is asked for a new version when the app comes back in front, and every hour
+let updated = false;
+function switchSoon() {
+  if (!updated) return;
+  const s = { updated, onDesk: !$('desk').hidden, visible: document.visibilityState === 'visible', busy: Boolean(api.busy?.()) };
+  if (switchNow(s)) void desk.settled().then(() => location.reload());
+  else if (s.busy) setTimeout(switchSoon, 1000);
+}
+if ('serviceWorker' in navigator) {
+  const had = Boolean(navigator.serviceWorker.controller);
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    updated ||= had;
+    switchSoon();
+  });
+  const check = () => void navigator.serviceWorker.getRegistration().then(reg => reg?.update().catch(() => {}));
+  document.addEventListener('visibilitychange', () => (document.visibilityState === 'hidden' ? switchSoon() : check()));
+  setInterval(check, 3600000);
+  navigator.serviceWorker.register('sw.js').catch(() => {});
+}
 void start();

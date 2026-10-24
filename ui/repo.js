@@ -3,7 +3,7 @@
 // its name: not sent to until the author says so, FR-GH-12), and what this device keeps of a work moved to the new
 // name. Making and renaming a repository needs Administration, which the token in use does not have: a separate
 // token is put in for it each time, used for that one request and not kept
-import { adminFailure, movedKey, newWorkFiles, repoName, whereIs } from '../lib/works.js';
+import { adminFailure, isWorkKey, keptAfterForget, movedKey, newWorkFiles, repoName, whereIs } from '../lib/works.js';
 import { $, toast } from './dom.js';
 import * as store from './db.js';
 import * as gh from './github.js';
@@ -36,6 +36,26 @@ export async function moveRepo(from, to) {
       'repos',
       listed.map(r => (r.full_name === from ? { ...r, full_name: to } : r)),
     );
+}
+
+// 作品の削除 (FR-WORK-05): the work taken off this device's list, and what the device keeps of it (its drafts, the
+// work last read, its settings) deleted. The repository on GitHub stays as it is; it can be put back on the list
+/** @param {string} repo */
+export async function forgetWork(repo) {
+  for (const name of /** @type {const} */ (['drafts', 'snapshots', 'prefs']))
+    for (const key of await store.keys(name)) if (isWorkKey(String(key), repo)) await store.del(name, String(key));
+  if ((await store.get('prefs', 'repo'))?.full_name === repo) await store.del('prefs', 'repo');
+  /** @type {string[]} */
+  const off = (await store.get('prefs', 'off-list')) ?? [];
+  if (!off.includes(repo)) await store.put('prefs', 'off-list', [...off, repo]);
+}
+// The token forgotten (NFR-SEC-16): what the device keeps of the works deleted (the works last read, the blobs, the
+// settings and the versions kept), and the drafts too unless the author keeps them (with what they need to be sent)
+/** @param {boolean} draftsKept */
+export async function forgetDevice(draftsKept) {
+  for (const name of /** @type {const} */ (['snapshots', 'blobs'])) for (const key of await store.keys(name)) await store.del(name, String(key));
+  for (const key of await store.keys('prefs')) if (!keptAfterForget(String(key), draftsKept)) await store.del('prefs', String(key));
+  if (!draftsKept) for (const key of await store.keys('drafts')) await store.del('drafts', String(key));
 }
 
 // Where the repository of a work is now (lib/works.js whereIs), its ID kept the first time it is seen

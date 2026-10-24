@@ -162,6 +162,8 @@ test('the expiry: 90 days filled in; from 14 days before, said on the screen; th
   const [before] = /** @type {any[]} */ (await stored(page, 'vault'));
   // regenerated on GitHub: the old value no longer taken
   gh.tokens = ['new-test-token-not-real'];
+  await page.getByRole('button', { name: '再読み込み' }).click();
+  await expect(page.locator('#token-notice-text')).toHaveText(/^GitHub がトークンを断りました/);
   await page.getByRole('button', { name: '新しいトークンを入れる' }).click();
   await expect(page.locator('#new-token-expires')).toHaveValue(await dayOn(page, 90));
   await page.getByLabel('新しいトークン', { exact: true }).fill('new-test-token-not-real');
@@ -176,18 +178,26 @@ test('the expiry: 90 days filled in; from 14 days before, said on the screen; th
   await page.getByRole('button', { name: '送る（1）' }).click();
   await expect(page.locator('#sync-state')).toHaveText(/^送りました（/);
   expect(work.text('chapters/01_first.md')).toBe('# 第1話 はじまり\n\n新しいトークンで\n');
+  // (the refusal deleted what the device kept of the works, the choice of the work too: chosen again)
   await page.reload();
+  await page.getByRole('button', { name: /author\/novel/ }).click();
   await expect(page.locator('#episode-title')).toHaveValue('はじまり');
   await expect(page.locator('#token-notice')).toBeHidden();
 });
 
 // NFR-USE-01: a token GitHub refuses (expired, deleted) is said with what to do, and a new one put in its place
+// NFR-SEC-16: and, as when a session ends, the works' copies and settings deleted, the drafts kept
 test('a token GitHub refuses: said, with the way to put a new one in; a token that does not work is not kept', async ({ page, gh }) => {
   await openWork(page);
+  await page.locator('#body').fill('# 第1話 はじまり\n\n断られても残る\n');
+  await expect.poll(async () => (await stored(page, 'drafts')).length).toBe(1);
   await expect(page.locator('#token-notice')).toBeHidden();
   gh.tokens = ['new-test-token-not-real'];
   await page.getByRole('button', { name: '再読み込み' }).click();
   await expect(page.locator('#token-notice-text')).toHaveText(/^GitHub がトークンを断りました（期限が切れたか、消されたかもしれません）。/);
+  await expect.poll(() => stored(page, 'snapshots')).toEqual([]);
+  expect(await stored(page, 'blobs')).toEqual([]);
+  expect((await stored(page, 'drafts')).map(d => d.text)).toEqual(['# 第1話 はじまり\n\n断られても残る\n']);
   await page.getByRole('button', { name: '新しいトークンを入れる' }).click();
   await page.getByLabel('新しいトークン', { exact: true }).fill('wrong-token');
   await page.getByRole('button', { name: 'パスキーで保管する' }).click();
@@ -196,4 +206,43 @@ test('a token GitHub refuses: said, with the way to put a new one in; a token th
   await page.getByRole('button', { name: 'パスキーで保管する' }).click();
   await expect(page.locator('#sync-state')).toHaveText(/GitHub から読みました/);
   await expect(page.locator('#token-notice')).toBeHidden();
+});
+
+// NFR-SEC-16: the token forgotten: with it, what the device keeps of the works; the drafts too when the author says so
+test('the token forgotten: the works’ copies and settings deleted; the drafts kept or deleted as asked', async ({ page, gh }) => {
+  await openWork(page);
+  await page.locator('#body').fill('# 第1話 はじまり\n\n残す書きかけ\n');
+  await expect.poll(async () => (await stored(page, 'drafts')).length).toBe(1);
+  await page.getByRole('button', { name: 'ほかの作品' }).click();
+  const answers = [true, false];
+  page.on('dialog', d => void (answers.shift() ? d.accept() : d.dismiss()));
+  await page.getByRole('button', { name: 'トークンを忘れる' }).click();
+  await expect(page.locator('#setup')).toBeVisible();
+  expect(await stored(page, 'vault')).toEqual([]);
+  expect(await stored(page, 'snapshots')).toEqual([]);
+  expect(await stored(page, 'blobs')).toEqual([]);
+  expect(await stored(page, 'prefs')).toEqual(['author']);
+  expect((await stored(page, 'drafts')).map(d => d.text)).toEqual(['# 第1話 はじまり\n\n残す書きかけ\n']);
+});
+
+// NFR-SEC-16: another user's token where the drafts of the one before are left: asked without showing them; kept
+// unless deleted
+test('another user’s token on a device with the drafts of the one before: not kept unless they are deleted', async ({ page, gh }) => {
+  await openWork(page);
+  await page.locator('#body').fill('# 第1話 はじまり\n\n前の人の書きかけ\n');
+  await expect.poll(async () => (await stored(page, 'drafts')).length).toBe(1);
+  await page.getByRole('button', { name: 'ほかの作品' }).click();
+  const answers = [true, false, false, true];
+  page.on('dialog', d => void (answers.shift() ? d.accept() : d.dismiss()));
+  await page.getByRole('button', { name: 'トークンを忘れる' }).click();
+  gh.tokens.push('someone-test-token');
+  gh.logins['someone-test-token'] = 'someone';
+  await page.getByLabel('トークン', { exact: true }).fill('someone-test-token');
+  await page.getByRole('button', { name: 'パスキーで保管する' }).click();
+  await expect(page.locator('#setup-error')).toHaveText(/^前のユーザーの書きかけを残すため、このトークンを保管しませんでした/);
+  expect(await stored(page, 'vault')).toEqual([]);
+  expect((await stored(page, 'drafts')).length).toBe(1);
+  await page.getByRole('button', { name: 'パスキーで保管する' }).click();
+  await expect(page.locator('#repos')).toBeVisible();
+  expect(await stored(page, 'drafts')).toEqual([]);
 });

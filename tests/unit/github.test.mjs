@@ -19,10 +19,12 @@ describe('github', () => {
     expect(nextPage('<https://api.github.com/user/repos?page=1>; rel="prev"')).toBeNull();
     expect(nextPage(null)).toBeNull();
   });
-  test('imageType: by the name, in any case; unknown names as bytes', () => {
+  // NFR-SEC-15: never SVG
+  test('imageType: by the name, in any case; unknown names, and SVG, as bytes', () => {
     expect(imageType('images/a.PNG')).toBe('image/png');
     expect(imageType('a.jpeg')).toBe('image/jpeg');
-    expect(imageType('a.svg')).toBe('image/svg+xml');
+    expect(imageType('a.svg')).toBe('application/octet-stream');
+    expect(imageType('a.webp')).toBe('image/webp');
     expect(imageType('a.txt')).toBe('application/octet-stream');
   });
   test('filesOf: the blobs by path and the folders; links and submodules left out', () => {
