@@ -1,6 +1,6 @@
 // オフラインでも開けるように、アプリの画面のファイルだけを控える。いつもはネットワークを先に使い、届かないときだけ控えを出す。
 // GitHub の API への要求には手を出さない（作品の文章とトークンは、画面が IndexedDB に置く）
-const CACHE = 'novel-writer-js-v3';
+const CACHE = 'novel-writer-js-v4';
 // this worker (self, with the types of a service worker for the type check)
 const sw = /** @type {ServiceWorkerGlobalScope} */ (/** @type {unknown} */ (self));
 // every file of the screens (a test checks it against the files of the app)
@@ -15,6 +15,7 @@ const FILES = [
   'icon-512.png',
   'apple-touch-icon.png',
   'lib/changes.js',
+  'lib/characters.js',
   'lib/commit.js',
   'lib/diff.js',
   'lib/drafts.js',
@@ -26,19 +27,31 @@ const FILES = [
   'lib/layout.js',
   'lib/markdown.js',
   'lib/merge.js',
+  'lib/notelist.js',
   'lib/notes.js',
   'lib/passkey.js',
+  'lib/plot.js',
+  'lib/record.js',
+  'lib/releases.js',
   'lib/toml.js',
   'lib/tomledit.js',
   'lib/view.js',
+  'ui/characters.js',
   'ui/db.js',
   'ui/desk.js',
   'ui/dom.js',
   'ui/github.js',
   'ui/history.js',
   'ui/images.js',
+  'ui/notes.js',
+  'ui/picker.js',
+  'ui/plot.js',
   'ui/reading.js',
+  'ui/record.js',
+  'ui/releases.js',
   'ui/send.js',
+  'ui/shared.js',
+  'ui/sidenote.js',
   'ui/textbox.js',
   'ui/vault.js',
   'ui/work.js',

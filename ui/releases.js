@@ -1,0 +1,143 @@
+// リリース: the work named as it is on GitHub now (a tag and a GitHub release: FR-REL-01), the releases listed and their
+// episodes read (FR-REL-02), and an episode of one put back into the manuscript as a change not sent, the text before
+// it kept in this device's versions (FR-REL-03). From the server version's public/ui/versions.js; GitHub's REST API in
+// place of the server's git
+import { filesOf, textOf } from '../lib/github.js';
+import { charsOf, esc, n } from '../lib/format.js';
+import { episodesOf, firstLayout, parseLayout, tableOfContents, titleOf, headingsOf, CONFIG } from '../lib/layout.js';
+import { foldersOf } from '../lib/changes.js';
+import { nextTag, pathOrder, releaseLabel, releasesOf } from '../lib/releases.js';
+import { $, toast } from './dom.js';
+import * as gh from './github.js';
+import { api } from './shared.js';
+import { bytes, each } from './work.js';
+
+const body = () => $('releases-body');
+const dialog = () => /** @type {HTMLDialogElement} */ (/** @type {unknown} */ ($('releases')));
+/** @type {{ tag: string, label: string, episodes: { path: string, title: string, chapter: string, chars: number, text: string }[] } | null} */
+let opened = null;
+
+async function makeRelease() {
+  const w = api.work();
+  if (api.drafts().size || api.view().config !== w.config) return toast('未送信の変更があります。「送る」で送ってから、リリースを作成してください');
+  if (w.offline) return toast('オフラインです。つながってからリリースを作成してください');
+  const given = prompt('リリース名（例: 第一稿、新人賞応募版）\nいまの原稿（GitHub にある版）にタグを付け、GitHub のリリースにも残します');
+  const label = given === null ? null : releaseLabel(given);
+  if (!label) return;
+  try {
+    const [list, names] = await Promise.all([gh.releases(w.repo), gh.tags(w.repo)]);
+    const tag = nextTag([...names, ...list.map((/** @type {{ tag_name: string }} */ r) => r.tag_name)]);
+    const eps = api.episodes();
+    await gh.newRelease(w.repo, { tag, commit: w.commit, name: label, body: `${label}（${eps.length} 話、${eps.reduce((s, e) => s + e.chars, 0)} 字）` });
+    toast(`リリース「${label}」（${tag}）を作成しました`);
+  } catch (err) {
+    toast(`リリースを作成できませんでした: ${err.message}`);
+  }
+}
+async function showReleases() {
+  opened = null;
+  $('releases-title').textContent = 'リリース一覧';
+  body().innerHTML = '<p class="muted small">読み込み中…</p>';
+  if (!dialog().open) dialog().showModal();
+  try {
+    const list = releasesOf(await gh.releases(api.work().repo));
+    body().innerHTML = list.length
+      ? list
+          .map(
+            r =>
+              `<button class="version" data-tag="${esc(r.tag)}" data-label="${esc(r.label)}"><b>${esc(r.label)}</b><small>${esc(r.tag)} ・ ${esc(new Date(r.date).toLocaleString('ja-JP'))}</small></button>`,
+          )
+          .join('')
+      : '<p class="muted small">まだリリースはありません。「リリースを作成」で、いまの原稿を残せます。</p>';
+  } catch (err) {
+    body().innerHTML = `<p class="error">${esc(err.message)}</p>`;
+  }
+}
+// a release's episodes: its tree at the tag, novel.toml as it was then
+/** @param {string} tag @param {string} label */
+async function showRelease(tag, label) {
+  const w = api.work();
+  $('releases-title').textContent = label;
+  body().innerHTML = '<p class="muted small">読み込み中…</p>';
+  try {
+    const { tree } = await gh.commitOf(w.repo, await gh.tagCommit(w.repo, tag));
+    const { blobs } = filesOf((await gh.treeFiles(w.repo, tree)).tree);
+    const config = blobs[CONFIG] ? textOf(await bytes(w.repo, blobs[CONFIG].sha)) : null;
+    const l = config === null ? firstLayout() : parseLayout(config).layout;
+    const paths = Object.keys(blobs);
+    const toc = tableOfContents(l, paths, foldersOf(paths));
+    /** @type {Record<string, string>} */
+    const texts = {};
+    await each(episodesOf(toc), 6, async e => {
+      texts[e.path] = textOf(await bytes(w.repo, blobs[e.path].sha)) ?? '';
+    });
+    const headings = headingsOf(l, toc, texts);
+    const episodes = episodesOf(toc)
+      .map(e => {
+        const at = e.rel.indexOf('/');
+        return {
+          path: e.path,
+          title: titleOf(l, e.rel, headings),
+          chapter: at === -1 ? '' : titleOf(l, e.rel.slice(0, at), headings),
+          chars: charsOf(texts[e.path]),
+          text: texts[e.path],
+        };
+      })
+      .sort((a, b) => pathOrder(a.path, b.path));
+    opened = { tag, label, episodes };
+    body().innerHTML =
+      '<button class="ghost back-releases">‹ リリース一覧</button>' +
+      episodes
+        .map(
+          (e, i) =>
+            `<button class="version" data-episode="${i}"><b>${e.chapter ? `${esc(e.chapter)} / ` : ''}${esc(e.title)}</b><small>${n(e.chars)} 字</small></button>`,
+        )
+        .join('');
+  } catch (err) {
+    body().innerHTML = `<button class="ghost back-releases">‹ リリース一覧</button><p class="error">${esc(err.message)}</p>`;
+  }
+}
+/** @param {number} i */
+function showEpisode(i) {
+  const r = /** @type {NonNullable<typeof opened>} */ (opened);
+  const e = r.episodes[i];
+  const here = api.episodes().find(x => x.path === e.path);
+  body().innerHTML = `<button class="ghost back-release">‹ ${esc(r.label)}</button><textarea class="version-text" readonly aria-label="リリースの本文">${esc(e.text)}</textarea>${
+    here
+      ? `<button class="primary" data-restore="${i}">この話を今の原稿に復元</button>`
+      : '<p class="muted small">今の原稿には、同じ場所にこの話がありません（タイトルや順番が変わった可能性があります）。必要なら上の本文をコピーしてください。</p>'
+  }`;
+}
+/** @param {number} i */
+async function restore(i) {
+  const r = /** @type {NonNullable<typeof opened>} */ (opened);
+  const e = r.episodes[i];
+  const here = /** @type {import('./shared.js').Episode} */ (api.episodes().find(x => x.path === e.path));
+  if (
+    !confirm(`今の「${here.title}」を、リリース「${r.label}」の内容に復元しますか？（今の内容も、この端末の履歴に残ります。送るまではこの端末だけの変更です）`)
+  )
+    return;
+  const now = (await api.texts([e.path]))[e.path];
+  if (now !== null) await api.snapshot(e.path, now, true);
+  api.keepText(e.path, e.text);
+  dialog().close();
+  await api.openEpisode(e.path);
+  toast(`「${here.title}」を「${r.label}」の内容に復元しました`);
+}
+
+export function wireReleases() {
+  $('name-version').addEventListener('click', () => void makeRelease());
+  $('open-versions').addEventListener('click', () => void showReleases());
+  $('close-releases').addEventListener('click', () => dialog().close());
+  body().addEventListener('click', e => {
+    const t = /** @type {HTMLElement} */ (e.target);
+    if (t.closest('.back-releases')) return void showReleases();
+    if (t.closest('.back-release') && opened) return void showRelease(opened.tag, opened.label);
+    const rel = t.closest('[data-tag]');
+    if (rel instanceof HTMLElement) return void showRelease(/** @type {string} */ (rel.dataset.tag), /** @type {string} */ (rel.dataset.label));
+    const ep = t.closest('[data-episode]');
+    if (ep instanceof HTMLElement) return showEpisode(Number(ep.dataset.episode));
+    const res = t.closest('[data-restore]');
+    if (res instanceof HTMLElement) void restore(Number(res.dataset.restore));
+  });
+}

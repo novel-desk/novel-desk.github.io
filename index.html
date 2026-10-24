@@ -92,8 +92,18 @@
     <div class="toc-add">
       <button id="add-episode">＋ 話を追加</button>
       <button id="add-chapter">＋ 章を追加</button>
-      <button id="open-images" title="作品の画像（名前の変更、削除）">画像</button>
+      <button id="open-notes" title="キャラクター、世界観、プロット、画像（資料のフォルダ）">資料</button>
+      <button id="open-plot" title="プロットを箱で見る・組み立てる（大箱・中箱）">プロット</button>
+      <button id="open-characters" title="キャラクターを 1 人ずつカードで見る・書く">キャラ</button>
+      <button id="open-record" title="日ごと・月ごとに増えた字数">記録</button>
     </div>
+    <details class="toc-more">
+      <summary>リリース</summary>
+      <div class="versions-row">
+        <button id="name-version" title="いまの原稿に名前を付けて残す（GitHub のタグとリリース）">リリースを作成</button>
+        <button id="open-versions">リリース一覧</button>
+      </div>
+    </details>
     <div class="sync">
       <p id="sync-state" class="sync-state"></p>
       <div class="sync-row">
@@ -109,9 +119,12 @@
     <div class="paper-head">
       <button class="menu icon" id="menu" aria-label="目次">☰</button>
       <input id="episode-title" class="episode-title" maxlength="80" aria-label="話のタイトル" disabled>
+      <button class="ghost icon" id="plot-peek" title="この話のプロット（中箱）を見る" aria-label="この話のプロット"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg></button>
+      <button class="ghost icon side-peek" id="side-peek" title="資料を本文の横に出す（PC と iPad の横向きの幅のとき）" aria-label="資料を横に出す"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M14 4v16M16.5 9h2M16.5 13h2"/></svg></button>
       <button class="ghost icon danger" id="trash-episode" title="この話を削除（作品の _trash/ フォルダに移動。完全には消えません）" aria-label="この話を削除"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg></button>
     </div>
     <p class="episode-meta muted"><span><span id="episode-chars">0</span> 字</span><span id="episode-updated"></span></p>
+    <div id="plot-panel" class="plot-panel" hidden></div>
     <p id="episode-note" class="episode-note" hidden></p>
     <textarea id="body" class="body" spellcheck="false" disabled placeholder="目次から話を選んでください"></textarea>
     <div id="preview" class="preview" hidden></div>
@@ -132,21 +145,92 @@
       </span>
     </footer>
   </main>
+  <aside id="side-note" class="side-note" hidden>
+    <div id="side-grip" class="side-grip" role="separator" aria-orientation="vertical" aria-label="資料の欄の幅（ドラッグか ← →）" aria-valuemin="240" tabindex="0"></div>
+    <div id="side-note-in" class="side-note-in"></div>
+  </aside>
 </section>
 
-<!-- 画像: 作品の画像の一覧（名前の変更、削除） -->
-<section id="images" class="settings" hidden>
+<!-- 資料: 資料のフォルダの .md と画像 -->
+<section id="notes" class="settings" hidden>
   <header class="bar">
-    <button class="ghost" id="close-images">‹ 原稿へ</button>
-    <strong>画像</strong>
-    <button class="ghost" id="add-image">＋ 画像</button>
+    <button class="ghost" id="close-notes">‹ 原稿へ</button>
+    <strong>資料</strong>
+    <button class="ghost" id="add-note">＋ 資料を追加</button>
   </header>
   <main class="settings-main">
-    <p class="muted small" id="images-where"></p>
-    <div id="images-list" class="images-list"></div>
+    <div id="notes-index">
+      <p class="muted small" id="notes-where"></p>
+      <div id="notes-list" class="notes-list"></div>
+      <h3 class="notes-h">画像 <button class="ghost" id="add-image">＋ 画像</button></h3>
+      <p class="muted small" id="images-where"></p>
+      <div id="images-list" class="images-list"></div>
+    </div>
+    <div id="note-view" class="note-view" hidden>
+      <div class="note-head">
+        <button class="ghost" id="note-back">‹ 一覧</button>
+        <b id="note-name"></b>
+        <button class="ghost icon" id="note-rename" title="資料の名前を変更" aria-label="資料の名前を変更">✎</button>
+        <button class="ghost icon" id="note-image" title="画像を挿入" aria-label="資料に画像を挿入"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 17-5-5-9 8"/></svg></button>
+        <button class="ghost icon" id="note-preview-toggle" title="プレビュー" aria-label="プレビュー"><span data-face="book"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg></span><span data-face="pen" hidden><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4z"/><path d="m13.5 6.5 4 4"/></svg></span></button>
+        <button class="ghost" id="note-as-plot" title="この資料をプロット（# 大箱、## 中箱）として使う">プロットに設定</button>
+        <button class="ghost" id="note-whole" title="資料全体を表示する" hidden>全体</button>
+        <button class="ghost icon" id="note-history" title="この資料の履歴（この端末と GitHub）" aria-label="この資料の履歴"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l3 2"/></svg></button>
+        <button class="ghost icon danger" id="note-trash" title="この資料を削除（作品の _trash/ フォルダに移動。完全には消えません）" aria-label="この資料を削除"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg></button>
+      </div>
+      <textarea id="note-body" class="note-body" spellcheck="false" aria-label="資料の本文"></textarea>
+      <div id="note-kbar" class="kbar" hidden>
+      <button data-wrap="「」">「」</button><button data-wrap="『』">『』</button><button data-ins="……">……</button><button data-ins="――">――</button><button data-ins="　" title="全角スペース" aria-label="全角スペース">□</button><button data-ruby title="ルビ（｜親文字《るび》）" aria-label="ルビ"><ruby>ルビ<rt>るび</rt></ruby></button>
+      <span class="kbar-sep" aria-hidden="true"></span>
+      <button data-cmd="undo" title="元に戻す" aria-label="元に戻す"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></button><button data-cmd="redo" title="やり直す" aria-label="やり直す"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/></svg></button><span class="kbar-sep" aria-hidden="true"></span><button data-view title="プレビュー" aria-label="プレビュー"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg></button>
+    </div>
+      <div id="note-preview" class="preview" hidden></div>
+      <p class="muted small" id="note-state"></p>
+    </div>
   </main>
 </section>
+
+<!-- プロット: the plot note as boxes (# 大箱, ## 中箱), each 中箱 with the episodes written from it -->
+<section id="plot" class="settings" hidden>
+  <header class="bar">
+    <button class="ghost" id="close-plot">‹ 原稿へ</button>
+    <strong>プロット</strong>
+    <button class="ghost" id="plot-file" title="どの資料をプロットにするか">ファイル</button>
+  </header>
+  <main class="settings-main">
+    <div id="plot-board" class="plot-board"></div>
+  </main>
+</section>
+<section id="characters" class="settings" hidden>
+  <header class="bar">
+    <button class="ghost" id="close-characters">‹ 原稿へ</button>
+    <strong>キャラ</strong>
+    <span></span>
+  </header>
+  <main class="settings-main"><div id="characters-board" class="plot-board"></div></main>
+</section>
+<section id="record" class="settings" hidden>
+  <header class="bar">
+    <button class="ghost" id="close-record">‹ 原稿へ</button>
+    <strong>記録</strong>
+    <span></span>
+  </header>
+  <main class="settings-main"><div id="record-body"></div></main>
+</section>
 <input type="file" id="image-file" accept="image/*" hidden>
+
+<!-- 候補から選ぶ（プロットの資料、中箱、章） -->
+<dialog id="picker" class="versions picker" aria-labelledby="picker-title">
+  <header><strong id="picker-title"></strong><button class="ghost" id="picker-close">閉じる</button></header>
+  <div id="picker-list" class="picker-list"></div>
+  <p class="muted small" id="picker-help"></p>
+</dialog>
+
+<!-- リリース: 一覧、各話、復元 -->
+<dialog id="releases" class="versions" aria-labelledby="releases-title">
+  <header><strong id="releases-title">リリース一覧</strong><button class="ghost" id="close-releases">閉じる</button></header>
+  <div id="releases-body"></div>
+</dialog>
 
 <!-- 履歴: 版の一覧、差分、全文、復元 -->
 <dialog id="versions" class="versions" aria-labelledby="versions-title">

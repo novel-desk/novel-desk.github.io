@@ -100,3 +100,69 @@ describe('pictures (FR-EDIT-07〜09)', () => {
     expect(nt.toTrash(['_trash/S_a.png', '_trash/S-2_a.png'], 'a.png', 'S')).toBe('_trash/S-3_a.png');
   });
 });
+
+describe('notes (FR-NOTE-01, FR-NOTE-05, FR-NOTE-06)', () => {
+  const layout = l({ notes: 'notes' });
+  test('noteHeading: the first line when it is a heading, 60 characters at most', () => {
+    expect(nt.noteHeading('﻿\n# 世界観\n本文')).toBe('世界観');
+    expect(nt.noteHeading(`# ${'あ'.repeat(70)}`)).toBe('あ'.repeat(60));
+    expect(nt.noteHeading('本文')).toBeNull();
+    expect(nt.noteHeading('#  ')).toBeNull();
+    expect(nt.noteHeading('')).toBeNull();
+  });
+  test('noteFolder: any letters, 3 levels; not a dot first, not 40 letters past', () => {
+    expect(nt.noteFolder(' キャラ / 主役 ')).toBe('キャラ/主役');
+    expect(nt.noteFolder('')).toBe('');
+    expect(() => nt.noteFolder('.git')).toThrow('フォルダの名前が正しくありません');
+    expect(() => nt.noteFolder('a\\b')).toThrow('フォルダの名前が正しくありません');
+    expect(() => nt.noteFolder('あ'.repeat(41))).toThrow('フォルダの名前が正しくありません');
+    expect(() => nt.noteFolder('a/b/c/d')).toThrow('フォルダは 3 段までです');
+  });
+  test('noteTitled: the heading put in place of the first heading, else above the text', () => {
+    expect(nt.noteTitled('\n# 古い\r\n本文', '新しい')).toBe('\n# 新しい\r\n本文');
+    expect(nt.noteTitled('﻿# 古い', '新しい')).toBe('﻿# 新しい');
+    expect(nt.noteTitled('本文だけ', '題')).toBe('# 題\n\n本文だけ');
+    expect(nt.noteTitled('﻿本文', '題')).toBe('﻿# 題\n\n本文');
+  });
+  test('newNote: its file name in ASCII (or the time), its heading the name; no notes folder, or the name taken: refused', () => {
+    const at = Date.parse('2026-10-24T00:30:15Z');
+    expect(nt.newNote(layout, [], 'キャラ', 'Alice', 'Alice', at)).toEqual({ path: 'notes/キャラ/alice.md', text: '# Alice\n\n' });
+    expect(nt.newNote(layout, [], '', '世界観', '世界観', at).path).toBe('notes/note-20261024-093015.md');
+    expect(() => nt.newNote(l(), [], '', 'a', 'a', at)).toThrow('資料のフォルダが決まっていません');
+    expect(() => nt.newNote(layout, ['notes/a.md'], '', 'a', 'a', at)).toThrow('同じ名前の資料があります');
+  });
+  test('renameNote: the heading and the file name; the plot only its file name, [plot] file following; [characters] file following', () => {
+    expect(nt.renameNote(layout, ['notes/w.md'], 'notes/w.md', 'World', 'World', '# 世界\n本文', false)).toEqual({
+      moves: [['notes/w.md', 'notes/world.md']],
+      writes: [{ path: 'notes/world.md', text: '# World\n本文' }],
+      edits: [],
+      path: 'notes/world.md',
+    });
+    // a name of no ASCII letters: the file name stays, the heading changes
+    expect(nt.renameNote(layout, [], 'notes/w.md', '世界観', '世界観', '# 世界\n', false)).toEqual({
+      moves: [],
+      writes: [{ path: 'notes/w.md', text: '# 世界観\n' }],
+      edits: [],
+      path: 'notes/w.md',
+    });
+    const plot = nt.renameNote({ ...layout, plot: 'notes/p.md' }, [], 'notes/p.md', 'story', 'story', '# 大箱1\n', false);
+    expect(plot).toEqual({
+      moves: [['notes/p.md', 'notes/story.md']],
+      writes: [],
+      edits: [{ key: ['plot', 'file'], value: 'notes/story.md' }],
+      path: 'notes/story.md',
+    });
+    expect(nt.renameNote(layout, [], 'notes/plot.md', 'story', 'story', '# 大箱1\n', true).edits).toEqual([{ key: ['plot', 'file'], value: 'notes/story.md' }]);
+    expect(nt.renameNote({ ...layout, characters: 'notes/c.md' }, [], 'notes/c.md', 'people', 'people', '# 人\n', false).edits).toEqual([
+      { key: ['characters', 'file'], value: 'notes/people.md' },
+    ]);
+    expect(() => nt.renameNote(layout, [], 'notes/plot.md', 'プロット', 'プロット', '#', true)).toThrow('プロットの資料は見出しを変えません');
+    expect(() => nt.renameNote(layout, [], 'notes/w.md', ' ', '無題', '', false)).toThrow('名前を入れてください');
+    expect(() => nt.renameNote(layout, [], 'notes/w.md', 'w', 'w', '# w\n', false)).toThrow('いまと同じ名前です');
+    expect(() => nt.renameNote(layout, ['notes/x.md'], 'notes/w.md', 'x', 'x', '# w\n', false)).toThrow('同じ名前の資料があります');
+  });
+  test('trashNote: to _trash/; the plot no longer chosen when it is that note', () => {
+    expect(nt.trashNote(layout, [], 'notes/a.md', 'S')).toEqual({ moves: [['notes/a.md', '_trash/S_a.md']], writes: [], edits: [], path: '' });
+    expect(nt.trashNote({ ...layout, plot: 'notes/a.md' }, [], 'notes/a.md', 'S').edits).toEqual([{ key: ['plot', 'file'], value: null }]);
+  });
+});

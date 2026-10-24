@@ -44,7 +44,7 @@ test('a picture inserted where the caret is: made small (JPEG) in the pictures f
 test('a picture added from the list of pictures; not a picture: refused', async ({ page, gh, work }) => {
   work.push({ 'novel.toml': WITH_NOTES });
   await openWork(page);
-  await page.getByRole('button', { name: '画像', exact: true }).click();
+  await page.getByRole('button', { name: '資料', exact: true }).click();
   await expect(page.locator('#images-list figcaption')).toHaveText(['sky.png']);
   await expect
     .poll(() =>
@@ -73,7 +73,7 @@ test('a picture added from the list of pictures; not a picture: refused', async 
 test('a picture renamed: the episodes that show it show it by its new name; sent as one commit', async ({ page, gh, work }) => {
   work.push({ 'novel.toml': WITH_NOTES, 'chapters/01_first.md': '# 第1話 はじまり\n\n![空](../notes/images/sky.png)\n' });
   await openWork(page);
-  await page.getByRole('button', { name: '画像', exact: true }).click();
+  await page.getByRole('button', { name: '資料', exact: true }).click();
   page.once('dialog', d => void d.accept('skyline'));
   await page.getByRole('button', { name: '名前を変更' }).click();
   await expect(page.locator('#toast')).toHaveText('画像の名前を変更しました（1 か所の画像も新しい名前にしました）');
@@ -91,7 +91,7 @@ test('a picture renamed: the episodes that show it show it by its new name; sent
 test('a picture renamed to a name not allowed: said, nothing changes', async ({ page, gh, work }) => {
   work.push({ 'novel.toml': WITH_NOTES });
   await openWork(page);
-  await page.getByRole('button', { name: '画像', exact: true }).click();
+  await page.getByRole('button', { name: '資料', exact: true }).click();
   page.once('dialog', d => void d.accept('空の写真'));
   await page.getByRole('button', { name: '名前を変更' }).click();
   await expect(page.locator('#toast')).toHaveText('画像の名前は、英数字と - _ で 80 文字までにしてください');
@@ -102,7 +102,7 @@ test('a picture renamed to a name not allowed: said, nothing changes', async ({ 
 test('a picture put in the trash: how many places use it said first; moved to _trash/', async ({ page, gh, work }) => {
   work.push({ 'novel.toml': WITH_NOTES, 'chapters/01_first.md': '# 第1話 はじまり\n\n![空](../notes/images/sky.png)\n' });
   await openWork(page);
-  await page.getByRole('button', { name: '画像', exact: true }).click();
+  await page.getByRole('button', { name: '資料', exact: true }).click();
   /** @type {string[]} */
   const said = [];
   page.once('dialog', d => {

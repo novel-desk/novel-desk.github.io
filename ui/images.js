@@ -1,21 +1,18 @@
 // Pictures: one chosen is made small on the device and kept as a change not sent (FR-EDIT-07); the pictures of the
-// work listed, renamed (the texts that show one show it by its new name: FR-EDIT-08) and put in the trash (the places
-// that use it said first: FR-EDIT-09). From the server version's public/ui/images.js and the pictures of notes.js
+// work listed on 資料, renamed (the texts that show one show it by its new name: FR-EDIT-08) and put in the trash (the
+// places that use it said first: FR-EDIT-09). From the server version's public/ui/images.js and the pictures of notes.js
 import { trashStamp } from '../lib/episodes.js';
 import { esc } from '../lib/format.js';
 import { dirOf } from '../lib/markdown.js';
-import { extOf, MAX_PICTURE, newPicture, notesList, pictureUses, renamePicture, toTrash } from '../lib/notes.js';
-import { $, show, toast } from './dom.js';
+import { extOf, MAX_PICTURE, mdFiles, newPicture, notesList, pictureUses, renamePicture, toTrash } from '../lib/notes.js';
+import { $, toast } from './dom.js';
+import { api } from './shared.js';
 
-/**
- * What the desk gives: the work's files and layout as shown, the texts of its .md files, a picture's object URL, an
- * operation kept as changes, and the way back
- * @typedef {{ files: () => string[], layout: () => import('../lib/layout.js').Layout, mdTexts: () => Promise<Record<string, string>>,
- *   pictureUrl: (path: string) => Promise<string>, apply: (plan: import('../lib/episodes.js').Plan) => Promise<boolean>, back: () => void }} Desk
- */
-/** @type {Desk} */
-let desk;
-
+// the texts of the work's .md files that can be read (the pictures in them)
+async function mdTexts() {
+  const got = await api.texts(mdFiles(api.files()));
+  return /** @type {Record<string, string>} */ (Object.fromEntries(Object.entries(got).filter(([, t]) => t !== null)));
+}
 // make the picture small on the device (long side 1600px, JPEG; a GIF as it is)
 /** @param {File} file @returns {Promise<Blob>} */
 async function shrink(file) {
@@ -50,24 +47,26 @@ async function picked() {
     const ext = extOf(blob.type);
     if (!ext) throw new Error('画像（JPEG、PNG、WebP、GIF）を選んでください');
     if (blob.size > MAX_PICTURE) throw new Error('画像が大きすぎます（5 MB まで）');
-    await then(newPicture(desk.layout(), desk.files(), file.name, ext, Date.now()), new Uint8Array(await blob.arrayBuffer()));
+    await then(newPicture(api.view().layout, api.files(), file.name, ext, Date.now()), new Uint8Array(await blob.arrayBuffer()));
   } catch (err) {
-    toast(err.message ?? '画像を読めませんでした');
+    toast(err.message);
   }
 }
 
-// --- the pictures of the work
+// --- the pictures of the work, on 資料
 
 /** @type {string[]} the pictures listed, by their place in the list */
 let listed = [];
-export async function openImages() {
-  show('images');
-  const l = desk.layout();
+/** @type {() => void} what draws 資料 again after a picture changed */
+let again = () => {};
+// the pictures drawn on 資料, by folder (in more than one folder, each under its path, so two of the same name are told apart)
+export async function renderImages() {
+  const l = api.view().layout;
   $('images-where').textContent =
     l.notes || l.images
       ? ''
       : '資料のフォルダが novel.toml に書かれていないので、一番上の images/ の画像を出します（[notes] dir か [images] dir で変えられます）';
-  const images = notesList(l, desk.files()).filter(f => f.kind === 'image');
+  const images = notesList(l, api.files()).filter(f => f.kind === 'image');
   listed = images.map(f => f.path);
   /** @type {Map<string, typeof images>} */
   const folders = new Map();
@@ -89,7 +88,7 @@ export async function openImages() {
           .map(folder => `<div class="notes-folder"><span>${esc(folder)}</span></div>${grid(/** @type {typeof images} */ (folders.get(folder)))}`)
           .join('');
   for (const img of /** @type {NodeListOf<HTMLImageElement>} */ ($('images-list').querySelectorAll('img[data-src]'))) {
-    const url = await desk.pictureUrl(/** @type {string} */ (img.dataset.src));
+    const url = await api.pictureUrl(/** @type {string} */ (img.dataset.src));
     if (url) img.src = url;
   }
 }
@@ -103,35 +102,33 @@ async function renameImage(path) {
   );
   if (name === null || !name.trim() || name.trim() === now) return;
   try {
-    const plan = renamePicture(desk.files(), await desk.mdTexts(), path, name.trim());
-    if (await desk.apply({ moves: plan.moves, writes: plan.writes.map(w => ({ ...w, bound: true })), edits: [], path: plan.path }))
+    const plan = renamePicture(api.files(), await mdTexts(), path, name.trim());
+    if (await api.apply({ moves: plan.moves, writes: plan.writes.map(w => ({ ...w, bound: true })), edits: [], path: plan.path }))
       toast(plan.links ? `画像の名前を変更しました（${plan.links} か所の画像も新しい名前にしました）` : '画像の名前を変更しました');
   } catch (err) {
     toast(err.message);
   }
-  await openImages();
+  again();
 }
 /** @param {string} path */
 async function trashImage(path) {
   const file = path.split('/').pop();
-  const uses = pictureUses(await desk.mdTexts(), path);
+  const uses = pictureUses(await mdTexts(), path);
   const where = uses ? `この画像は ${uses} か所で使われています（本文の ![](…) は残り、画像は表示されなくなります）。` : '';
   if (!confirm(`「${file}」を削除しますか？ ${where}削除した画像は作品の _trash/ に残ります`)) return;
-  const to = toTrash(desk.files(), path, trashStamp(Date.now()));
-  if (await desk.apply({ moves: [[path, to]], writes: [], edits: [], path: '' })) toast('画像を削除しました（送るまではこの端末だけの変更です）');
-  await openImages();
+  const to = toTrash(api.files(), path, trashStamp(Date.now()));
+  if (await api.apply({ moves: [[path, to]], writes: [], edits: [], path: '' })) toast('画像を削除しました（送るまではこの端末だけの変更です）');
+  again();
 }
 
-/** @param {Desk} d */
-export function wireImages(d) {
-  desk = d;
+/** @param {() => void} redraw 資料 drawn again */
+export function wireImages(redraw) {
+  again = redraw;
   $('image-file').addEventListener('change', () => void picked());
-  $('open-images').addEventListener('click', () => void openImages());
-  $('close-images').addEventListener('click', () => desk.back());
   $('add-image').addEventListener('click', () =>
     pickImage(async (path, bytes) => {
-      if (await desk.apply({ moves: [], writes: [{ path, bytes }], edits: [], path })) toast('画像を追加しました（送るまではこの端末だけの変更です）');
-      await openImages();
+      if (await api.apply({ moves: [], writes: [{ path, bytes }], edits: [], path })) toast('画像を追加しました（送るまではこの端末だけの変更です）');
+      again();
     }),
   );
   $('images-list').addEventListener('click', e => {

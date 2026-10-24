@@ -92,6 +92,36 @@ export async function commitsOf(repo, branch, path) {
   }
   return found;
 }
+// the commits of a branch, the newest first (300 at most)
+/** @param {string} repo @param {string} branch @returns {Promise<any[]>} */
+export async function branchCommits(repo, branch) {
+  /** @type {any[]} */
+  const found = [];
+  /** @type {string | null} */
+  let url = `/repos/${repoPath(repo)}/commits?sha=${encodeURIComponent(branch)}&per_page=100`;
+  for (let page = 0; url && page < 3; page++) {
+    const res = await request(url);
+    found.push(...(await res.json()));
+    url = nextPage(res.headers.get('Link'));
+  }
+  return found;
+}
+// the repository's releases and tags (100 each at most)
+/** @param {string} repo @returns {Promise<any[]>} */
+export const releases = repo => getJson(`/repos/${repoPath(repo)}/releases?per_page=100`);
+/** @param {string} repo @returns {Promise<string[]>} */
+export const tags = async repo => (await getJson(`/repos/${repoPath(repo)}/tags?per_page=100`)).map((/** @type {{ name: string }} */ t) => t.name);
+// a release made: the tag at the commit, with its name and what it says
+/** @param {string} repo @param {{ tag: string, commit: string, name: string, body: string }} r */
+export const newRelease = (repo, r) =>
+  send('POST', `/repos/${repoPath(repo)}/releases`, { tag_name: r.tag, target_commitish: r.commit, name: r.name, body: r.body });
+// the commit a tag is at (an annotated tag is followed to its commit)
+/** @param {string} repo @param {string} tag @returns {Promise<string>} */
+export async function tagCommit(repo, tag) {
+  let o = (await getJson(`/repos/${repoPath(repo)}/git/ref/tags/${refPath(tag)}`)).object;
+  for (let i = 0; o.type === 'tag' && i < 5; i++) o = (await getJson(`/repos/${repoPath(repo)}/git/tags/${o.sha}`)).object;
+  return o.sha;
+}
 // a file as it was at a commit: its blob and its content (base64)
 /** @param {string} repo @param {string} path @param {string} ref @returns {Promise<{ sha: string, content: string }>} */
 export const fileAt = (repo, path, ref) =>

@@ -18,9 +18,15 @@ import { Overlapped, sendAll } from './send.js';
 import { GitHubError, lastChange } from './github.js';
 import { evenBreaks, inputBar, insertAt, setKeepingCaret } from './textbox.js';
 import { showHistory, wireHistory } from './history.js';
-import { pickImage, wireImages } from './images.js';
+import { pickImage } from './images.js';
+import { api } from './shared.js';
+import { wireNotes } from './notes.js';
+import { renderPlotPanel, wirePlot } from './plot.js';
+import { wireCharacters } from './characters.js';
+import { noteToday, wireRecord } from './record.js';
+import { wireReleases } from './releases.js';
+import { renderSideNote, wireSideNote } from './sidenote.js';
 import { snapshotted } from '../lib/history.js';
-import { mdFiles } from '../lib/notes.js';
 import { stopReading, togglePreview, wireReading } from './reading.js';
 
 /** @typedef {import('../lib/drafts.js').Draft} Draft */
@@ -199,6 +205,8 @@ async function openEpisode(path) {
   $('desk').classList.remove('toc-open');
   renderToc();
   void showUpdated();
+  void renderPlotPanel();
+  void renderSideNote();
   await store.put('prefs', `episode:${w.repo}`, path);
   return text !== null;
 }
@@ -214,26 +222,45 @@ function openNone() {
   stopReading();
   showCounts();
   renderToc();
+  void renderPlotPanel();
+  void renderSideNote();
 }
-// what was typed: kept on the device at once, with the blob it was written from
-function typed() {
+// a text written in a file of the work (the episode typed, a note): kept on the device at once, with the blob it was
+// written from; a version of it kept every 10 minutes of writing
+/** @param {string} path @param {string} text */
+function keepText(path, text) {
   const w = /** @type {NonNullable<typeof work>} */ (work);
-  const path = current,
-    text = $('body').value;
   const before = drafts.get(path);
   const next = new Map(drafts);
   /** @type {Draft | null} */
   let draft;
   if (before?.op) draft = typedOver(before, text, Date.now());
-  else draft = draftOf({ repo: w.repo, path, base: before?.base ?? w.blobs[path].sha, read: remoteText(path), text, at: Date.now() });
+  else draft = draftOf({ repo: w.repo, path, base: before?.base ?? w.blobs[path]?.sha ?? '', read: remoteText(path), text, at: Date.now() });
   if (draft) next.set(path, draft);
   else next.delete(path);
   keep(next);
+  void snapshot(path, text, false);
+  noteSoon();
+}
+// what was typed in the episode
+function typed() {
+  keepText(current, $('body').value);
   showCounts();
   renderToc();
   void showUpdated();
-  void snapshot(path, text, false);
 }
+// 記録: the work's length today, noted on the device a moment after the last key (and when it is read and sent)
+/** @type {ReturnType<typeof setTimeout> | undefined} */
+let noteTimer;
+const noteSoon = () => {
+  clearTimeout(noteTimer);
+  noteTimer = setTimeout(() => void noteNow(), 2000);
+};
+const noteNow = () =>
+  noteToday(
+    /** @type {NonNullable<typeof work>} */ (work).repo,
+    episodes().reduce((sum, e) => sum + charsOf(textOf(e.path) ?? ''), 0),
+  );
 // the text of a file as read from GitHub ('' when it is not there, or not read)
 /** @param {string} path */
 function remoteText(path) {
@@ -252,20 +279,24 @@ async function snapshot(path, text, force) {
   if (next !== list) await store.put('prefs', key, next);
   return next;
 }
+/** @param {string} path */
+async function snapshots(path) {
+  const key = `snap:${/** @type {NonNullable<typeof work>} */ (work).repo}\n${path}`;
+  return snaps.get(key) ?? (await store.get('prefs', key)) ?? [];
+}
 async function openHistory() {
   const w = /** @type {NonNullable<typeof work>} */ (work);
   const path = current,
     e = findEpisode(path);
   if (!e) return;
   const d = drafts.get(path);
-  const key = `snap:${w.repo}\n${path}`;
   await showHistory({
     repo: w.repo,
     branch: w.branch,
     path,
     title: titleAt(e.rel),
     draft: d?.text !== undefined ? { text: d.text, at: d.at } : null,
-    snapshots: snaps.get(key) ?? (await store.get('prefs', key)) ?? [],
+    snapshots: await snapshots(path),
     remote: Boolean(w.blobs[path]),
     now: () => $('body').value,
     restore: async text => {
@@ -414,22 +445,25 @@ async function pictureUrl(path) {
   } catch {}
   return pictures.get(key) ?? '';
 }
-// the texts of the work's .md files (episodes, notes), read when the device does not have them yet
-async function mdTexts() {
+// the texts of files of the work as shown (the changes not sent first), read when the device does not have them yet
+// (null: not there, not UTF-8, or not on the device offline)
+/** @param {string[]} paths @returns {Promise<Record<string, string | null>>} */
+async function texts(paths) {
   const w = /** @type {NonNullable<typeof work>} */ (work);
-  const files = mdFiles(Object.keys(shown().files));
+  const files = shown().files;
   await readShas(
     w,
-    files.map(p => shown().files[p].sha).filter(s => s),
+    paths.flatMap(p => (files[p]?.sha ? [files[p].sha] : [])),
   );
-  /** @type {Record<string, string>} */
-  const texts = {};
-  for (const p of files) {
+  /** @type {Record<string, string | null>} */
+  const out = {};
+  for (const p of paths) {
     const c = drafts.get(p);
-    const t = c ? (c.text ?? w.shaTexts[c.sha ?? ''] ?? null) : (w.texts[p] ?? w.shaTexts[w.blobs[p].sha] ?? null);
-    if (t !== null && t !== undefined) texts[p] = t;
+    if (!files[p]) out[p] = null;
+    else if (c) out[p] = c.text ?? w.shaTexts[c.sha ?? ''] ?? null;
+    else out[p] = w.texts[p] ?? w.shaTexts[files[p].sha] ?? null;
   }
-  return texts;
+  return out;
 }
 // a picture added to the open episode where the caret is: made small, put in the pictures folder, ![](…) written
 function insertImage() {
@@ -503,6 +537,7 @@ async function reload() {
   await readMoved();
   refreshView();
   renderWork();
+  void noteNow();
   const paths = episodes().map(e => e.path);
   const last = await store.get('prefs', `episode:${work.repo}`);
   const open = paths.includes(current) ? current : paths.includes(last) ? last : (paths[0] ?? '');
@@ -538,6 +573,7 @@ async function sendDrafts() {
       toast('ほかでも書き換えられていた話があります。両方の版を並べました');
     } else syncState(`送りました（${result.message}）`, 'ok');
     renderWork();
+    void noteNow();
     if (current && findEpisode(current) && !drafts.has(current)) setKeepingCaret(/** @type {HTMLTextAreaElement} */ ($('body')), textOf(current) ?? '');
     showCounts();
     void showUpdated();
@@ -686,15 +722,32 @@ export function wire(on) {
   wireHistory();
   $('open-history').addEventListener('click', () => void openHistory());
   $('insert-image').addEventListener('click', insertImage);
-  wireImages({
+  Object.assign(api, {
+    work: () => work,
+    view: shown,
+    drafts: () => drafts,
     files: () => Object.keys(shown().files),
-    layout: () => shown().layout,
-    mdTexts,
+    texts,
+    keepText,
+    apply,
     pictureUrl,
-    apply: plan => apply(plan),
+    forPlans,
+    openEpisode,
+    current: () => current,
+    episodes: () => episodes().map(e => ({ path: e.path, rel: e.rel, title: titleAt(e.rel), chars: charsOf(textOf(e.path) ?? '') })),
+    title: titleAt,
     back: () => {
       show('desk');
-      renderToc();
+      if (current && findEpisode(current)) void openEpisode(current);
+      else openNone();
     },
+    snapshot,
+    snapshots,
   });
+  wireNotes();
+  wirePlot();
+  wireCharacters();
+  wireRecord();
+  wireReleases();
+  wireSideNote();
 }

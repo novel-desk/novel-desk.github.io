@@ -31,6 +31,10 @@ export class FakeRepo {
     this.clock = Date.parse('2026-10-01T00:00:00Z');
     /** @type {Record<string, string>} */
     this.refs = {};
+    /** @type {Record<string, string>} the tags, by name: their commits */
+    this.tags = {};
+    /** @type {{ id: number, tag_name: string, name: string, body: string, created_at: string }[]} */
+    this.releases = [];
     this.refs[this.defaultBranch] = this.commit(files, '最初', []);
   }
   /** @param {string | Buffer} content */
@@ -195,11 +199,33 @@ export class FakeGitHub {
       const b = /** @type {Buffer} */ (repo.blobs.get(e.sha));
       return reply(200, { type: 'file', path: f[2], sha: e.sha, size: b.length, encoding: 'base64', content: b.toString('base64').replace(/.{60}/g, '$&\n') });
     }
+    const rel = /^\/repos\/([^/]+\/[^/]+)\/(releases|tags)$/.exec(path);
+    if (rel && this.repos.get(rel[1])) {
+      const repo = /** @type {FakeRepo} */ (this.repos.get(rel[1]));
+      if (method === 'GET' && rel[2] === 'tags')
+        return reply(
+          200,
+          Object.keys(repo.tags).map(name => ({ name, commit: { sha: repo.tags[name] } })),
+        );
+      if (method === 'GET') return reply(200, [...repo.releases].reverse());
+      if (repo.tags[body.tag_name]) return reply(422, { message: 'Validation Failed' });
+      const commit = repo.refs[body.target_commitish] ?? body.target_commitish;
+      if (!repo.commits.has(commit)) return reply(422, { message: 'Validation Failed' });
+      repo.tags[body.tag_name] = commit;
+      const made = { id: repo.releases.length + 1, tag_name: body.tag_name, name: body.name, body: body.body, created_at: new Date(repo.clock).toISOString() };
+      repo.clock += 60000;
+      repo.releases.push(made);
+      return reply(201, made);
+    }
     const m = /^\/repos\/([^/]+\/[^/]+)\/git\/(.+)$/.exec(path);
     const repo = m && this.repos.get(m[1]);
     if (!m || !repo) return reply(404, { message: 'Not Found' });
     const rest = m[2];
     let g;
+    if (method === 'GET' && (g = /^ref\/tags\/(.+)$/.exec(rest))) {
+      const sha = repo.tags[g[1]];
+      return sha ? reply(200, { ref: `refs/tags/${g[1]}`, object: { type: 'commit', sha } }) : reply(404, { message: 'Not Found' });
+    }
     if (method === 'GET' && (g = /^ref\/heads\/(.+)$/.exec(rest))) {
       const sha = repo.refs[g[1]];
       return sha ? reply(200, { ref: `refs/heads/${g[1]}`, object: { type: 'commit', sha } }) : reply(404, { message: 'Not Found' });

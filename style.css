@@ -130,7 +130,8 @@ input:focus { border-color: var(--accent); }
 .order-tools button { padding: 2px 7px; font-size: 12px; border-radius: 6px; }
 .order-tools select { font-size: 12px; max-width: 90px; border: 1px solid var(--line); border-radius: 6px; background: var(--paper); color: var(--text); }
 .toc-head button { white-space: nowrap; }
-.toc-add { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; padding: 8px 0 4px; }
+.toc-add { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; padding: 8px 0 4px; }
+.toc-add #add-episode, .toc-add #add-chapter { grid-column: span 2; }
 .toc-add button { white-space: nowrap; padding: 7px 8px; }
 
 /* the paper's tools */
@@ -191,3 +192,93 @@ input:focus { border-color: var(--accent); }
 .diff del { background: rgba(214, 69, 65, .18); color: inherit; text-decoration: line-through; text-decoration-color: rgba(214, 69, 65, .7); }
 .diff ins { background: rgba(46, 160, 67, .2); color: inherit; text-decoration: none; }
 .diff .diff-gap { color: var(--muted); text-align: center; }
+
+/* 資料: the list (主な資料, folders), a note open as an episode is (its own bar, the text to the bottom) */
+.notes-list { display: grid; gap: 6px; }
+.notes-list button { text-align: left; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.notes-in { display: grid; gap: 6px; }
+.notes-folder button { padding: 2px 10px; }
+.notes-h { font-size: 14px; margin: 16px 0 6px; display: flex; align-items: center; justify-content: space-between; }
+.unsent-tag { color: var(--accent); border: 1px solid var(--accent); border-radius: 4px; font-size: 10px; padding: 0 4px; white-space: nowrap; }
+.vis { display: inline-block; margin: 0 4px; padding: 0 6px; border: 1px solid var(--accent); border-radius: 999px; font-size: 10px; line-height: 16px; color: var(--accent); font-weight: 600; vertical-align: 1px; white-space: nowrap; }
+.note-view { display: grid; gap: 8px; }
+.note-head { display: flex; align-items: center; gap: 6px; } .note-head button { white-space: nowrap; flex-shrink: 0; }
+.note-head b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.note-head .icon { padding: 3px 6px; }
+.note-body { width: 100%; min-height: 60vh; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); color: var(--text); padding: 12px; resize: vertical;
+  font: 14px/1.8 "BIZ UDGothic", "BIZ UDゴシック", "ヒラギノ角ゴ ProN W3", "Hiragino Kaku Gothic ProN", "Hiragino Sans", "游ゴシック Medium", "Yu Gothic Medium", "メイリオ", Meiryo, var(--gothic); }
+#note-preview { border: 1px solid var(--line); border-radius: 10px; background: var(--paper); min-height: 60vh; }
+#notes.note-open { display: flex; flex-direction: column; height: 100dvh; overflow: hidden; }
+#notes.note-open > header.bar { display: none; }
+#notes.note-open > .settings-main { flex: 1; min-height: 0; width: 100%; display: flex; flex-direction: column; padding-top: 0; padding-bottom: 0; }
+#notes.note-open #note-view { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 4px; }
+#notes.note-open .note-head { padding: calc(2px + env(safe-area-inset-top)) 2px 2px; border-bottom: 1px solid var(--line); }
+#notes.note-open .note-body, #notes.note-open #note-preview { flex: 1; min-height: 0; border: 0; border-radius: 0; background: transparent; padding: 8px 6px 30vh; resize: none; overflow-y: auto; outline: none; }
+#notes.note-open #note-state { margin: 0; padding: 2px 6px calc(2px + env(safe-area-inset-bottom)); }
+#notes.writing { display: flex; flex-direction: column; overflow: hidden; }
+#notes.writing .note-body { padding-bottom: 40px; }
+#notes.writing #note-state { display: none; }
+
+/* プロット and キャラ: 大箱 as sections, 中箱 (and people) as cards */
+.plot-board { display: grid; gap: 12px; touch-action: manipulation; }
+.pgroup { border: 1px solid var(--line); border-radius: 12px; background: var(--paper); padding: 4px 10px 6px; }
+.pgroup > summary { cursor: pointer; font: 600 15px/1.5 var(--mincho); padding: 2px 0; }
+.pgroup > summary small { font: 11px var(--gothic); color: var(--muted); margin-left: 6px; }
+.pgroup > summary .pbox-tools { float: right; margin-left: 6px; font-family: var(--gothic); font-weight: 400; }
+.pcards { display: grid; gap: 6px; margin: 6px 0 2px; }
+.pcard { border: 1px solid var(--line); border-radius: 10px; background: var(--bg); padding: 6px 8px; display: grid; gap: 2px; }
+.pcard-head { display: flex; align-items: center; gap: 6px; } .pcard-head b { flex: 1; min-width: 0; font-weight: 600; font-size: 14px; }
+.pcard-sum { margin: 0; font-size: 13px; color: var(--muted); line-height: 1.7; white-space: pre-line; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
+.pcard-sum.open { display: block; -webkit-line-clamp: unset; overflow: visible; }
+.sum-more { justify-self: start; padding: 0 2px !important; font-size: 12px; color: var(--accent) !important; }
+.pcard-eps { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.ep-chip { font-size: 12px; padding: 2px 8px; border-radius: 999px; } .ep-chip small { color: var(--muted); }
+.pbox-tools { display: flex; gap: 0; flex-shrink: 0; } .pbox-tools button { padding: 2px 6px; font-size: 12px; }
+.pbox-tools .danger { color: var(--error); }
+.plot-add-group { justify-self: start; }
+.grow { flex: 1; }
+/* the episode's 中箱, over the text */
+.plot-panel { margin: 0 auto; width: 100%; max-width: 46em; padding: 4px 16px 6px; border-bottom: 1px dashed var(--line); background: var(--side); flex-shrink: 0; }
+.plot-panel-head { display: flex; align-items: center; gap: 6px; font-size: 13px; } .plot-panel-head b { font-weight: 600; }
+.plot-panel-body { height: 24vh; overflow-y: auto; overscroll-behavior: contain; font-size: 13px; line-height: 1.8; padding: 2px 0 0; }
+.desk.writing .plot-panel { display: none; }
+@media (max-width: 760px) {
+  #plot .settings-main, #notes .settings-main, #characters .settings-main { padding: 8px 4px; gap: 8px; }
+  .pgroup { padding: 4px 6px 6px; border-radius: 10px; } .pcard { padding: 6px; }
+}
+
+/* 記録: the bars of what each day or month added, and the table */
+.rec-chart { width: 100%; height: auto; display: block; margin: 8px 0 12px; }
+.rec-up { fill: var(--accent); } .rec-down { fill: #c55; }
+.rec-zero { stroke: currentColor; stroke-width: 0.5; opacity: 0.5; }
+.rec-label { font-size: 9px; fill: currentColor; opacity: 0.7; }
+.rec-table { width: 100%; border-collapse: collapse; font-size: 14px; margin-bottom: 16px; }
+.rec-table th, .rec-table td { padding: 4px 6px; border-bottom: 1px solid rgba(128, 128, 128, 0.25); text-align: left; }
+.rec-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+#record-body h2 { font-size: 15px; margin: 8px 0 0; }
+
+/* リリース, and choosing from a list */
+.toc-more { border-top: 1px solid var(--line); padding-top: 6px; }
+.toc-more > summary { cursor: pointer; font-size: 12px; color: var(--muted); padding: 4px 6px; }
+.versions-row { display: flex; gap: 6px; padding: 6px 0; } .versions-row button { flex: 1; font-size: 12px; padding: 6px 8px; white-space: nowrap; }
+#releases-body { padding: 10px 14px 16px; display: grid; gap: 8px; }
+.picker-list { display: grid; gap: 6px; padding: 12px 14px 4px; max-height: 45vh; overflow-y: auto; }
+.picker-list button { text-align: left; } .picker-list button.current { border-color: var(--accent); font-weight: 600; }
+.picker > p { padding: 0 14px 12px; margin: 0; }
+
+/* 横の資料: a third column on a PC's or an iPad's (landscape) width only (FR-NOTE-11) */
+.side-peek, .side-note { display: none; }
+@media (min-width: 1180px) {
+  .side-peek { display: inline-grid; }
+  /* the width dragged (--side-w, ui/sidenote.js), held between the panel's least and the text's least as the screen
+     changes. Not dragged: all the screen beyond the table of contents and the text box at its widest, never under 360px */
+  .desk:has(.side-note:not([hidden])) { grid-template-columns: 280px 1fr clamp(240px, var(--side-w, max(360px, calc(100vw - 280px - 644px))), calc(100vw - 700px)); }
+  .side-note:not([hidden]) { display: flex; position: relative; min-height: 0; min-width: 0; border-left: 1px solid var(--line); background: var(--side); }
+  .side-note-in { flex: 1; display: flex; flex-direction: column; min-height: 0; min-width: 0;
+    padding: calc(8px + env(safe-area-inset-top)) calc(12px + env(safe-area-inset-right)) calc(8px + env(safe-area-inset-bottom)) 12px; }
+  .side-note-body { overflow: auto; flex: 1; min-height: 0; font-size: 14px; }
+  .side-grip { position: absolute; left: -5px; top: 0; bottom: 0; width: 10px; cursor: col-resize; touch-action: none; z-index: 1; }
+  @media (pointer: coarse) { .side-grip { left: -14px; width: 28px; } }
+  .side-grip.dragging { user-select: none; }
+  .side-grip:hover, .side-grip:focus-visible, .side-grip.dragging { background: color-mix(in srgb, var(--accent) 35%, transparent); outline: none; }
+}

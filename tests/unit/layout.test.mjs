@@ -21,6 +21,9 @@ import {
   episodesOf,
   headingsOf,
   titleWith,
+  sideWidth,
+  SIDE_MIN,
+  BESIDE_MIN,
 } from '../../lib/layout.js';
 
 const layout = (over = {}) => ({ ...firstLayout(), ...over });
@@ -296,4 +299,13 @@ describe('the table of contents', () => {
     expect(titleWith(h, '01.md', '本文だけ', { '01.md': '古い題' })).toBe('古い題');
     expect(titleWith(layout(), '01_題.md', '# 見出し', {})).toBe('題');
   });
+});
+
+// FR-NOTE-11: the note beside the text: at least 240px, the text at least 420px beside the table of contents
+test('sideWidth: held between the least of the panel and of the text', () => {
+  expect([SIDE_MIN, BESIDE_MIN]).toEqual([240, 700]);
+  expect(sideWidth(500.4, 1400)).toBe(500);
+  expect(sideWidth(100, 1400)).toBe(240);
+  expect(sideWidth(900, 1400)).toBe(700);
+  expect(sideWidth(500, 800)).toBe(240);
 });
