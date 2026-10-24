@@ -11,7 +11,7 @@ import { isNote } from '../lib/notes.js';
 import { picturePaths, relPath, renderMd } from '../lib/markdown.js';
 import { CONFLICT_MARK } from '../lib/merge.js';
 import { editToml } from '../lib/tomledit.js';
-import { AUTO_WAIT, sendsItself, syncMode } from '../lib/sync.js';
+import { AUTO_WAIT, saveState, sendsItself, syncMode } from '../lib/sync.js';
 import { viewOf } from '../lib/view.js';
 import { visibilityTag } from '../lib/works.js';
 import { $, show, toast } from './dom.js';
@@ -52,6 +52,8 @@ let view = null;
 // the episode open ('' = none)
 let current = '';
 let busy = false;
+/** @type {Set<string>} the files whose changes a send failed to deliver (FR-SAVE-07), until one goes */
+let failed = new Set();
 /** @type {import('../lib/works.js').RepoMeta | null} another repository under the work's name (FR-GH-12): not sent to */
 let stopped = null;
 /** @type {import('../lib/sync.js').SyncMode} how this work is sent (FR-GH-04), kept on the device for each work */
@@ -196,7 +198,12 @@ function neighbor(d) {
 function showCounts() {
   const text = $('body').value;
   $('episode-chars').textContent = current ? n(charsOf(text)) : '0';
-  $('save-state').textContent = drafts.has(current) ? '未送信（この端末に保存しました）' : '';
+  const w = work;
+  $('save-state').textContent = saveState({
+    draft: drafts.has(current),
+    failed: failed.has(current),
+    onGitHub: Boolean(current && w && !w.offline && mode !== 'off' && w.blobs[current]),
+  });
   const note = $('episode-note');
   note.hidden = !hasConflict(text);
   note.textContent = '両方の版が並んでいます。「――― ここから」の行を探して整理してください';
@@ -831,6 +838,7 @@ async function sendDrafts() {
   syncState('送っています…');
   try {
     const result = await sendAll(w, [...drafts.values()], edits);
+    failed = new Set();
     const next = new Map(drafts);
     for (const { draft, blob, both } of result.sent) {
       const after = afterSend(next.get(draft.path) ?? draft, draft.text, blob, both);
@@ -858,6 +866,8 @@ async function sendDrafts() {
     showCounts();
     showUpdated();
   } catch (err) {
+    failed = new Set(drafts.keys());
+    showCounts();
     syncState(
       err instanceof Overlapped
         ? `${err.message}。「再読み込み」で読み直してください（重なった話の追加・名前の変更・削除・並べ替えは取り消し、書いた文章は残します）`

@@ -77,6 +77,8 @@ test('GitHub not reached, or refusing: nothing is lost, the drafts stay to be se
   gh.down = true;
   await page.getByRole('button', { name: '送る（1）' }).click();
   await expect(page.locator('#sync-state')).toHaveText('GitHub につながりません（オフラインかもしれません）。書いたものはこの端末に残っています');
+  // FR-SAVE-07: not delivered, said on the episode too, until a send goes
+  await expect(page.locator('#save-state')).toHaveText('届けられませんでした（この端末に残っています。理由は「送る」の上）');
   gh.down = false;
   gh.fail = method => (method === 'POST' ? 403 : undefined);
   await page.getByRole('button', { name: '送る（1）' }).click();
@@ -88,6 +90,7 @@ test('GitHub not reached, or refusing: nothing is lost, the drafts stay to be se
   await page.getByRole('button', { name: '送る（1）' }).click();
   await expect(page.locator('#sync-state')).toHaveText(/^送りました（/);
   expect(work.text('chapters/01_first.md')).toBe('残る\n');
+  await expect(page.locator('#save-state')).toHaveText('GitHub に届いています');
 });
 
 test('reading again: the episodes come as they are on GitHub, but one with a draft shows the draft', async ({ page, gh, work }) => {

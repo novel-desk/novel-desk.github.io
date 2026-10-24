@@ -38,7 +38,7 @@ test('typing keeps a draft on the device with the blob it was written from; the 
   await page.locator('#body').click();
   await page.keyboard.press('Control+End');
   for (let i = 0; i < 3; i++) await page.keyboard.press('Backspace');
-  await expect(page.locator('#save-state')).toHaveText('');
+  await expect(page.locator('#save-state')).toHaveText('GitHub に届いています');
   await expect(page.locator('#send')).toBeDisabled();
   await expect.poll(() => stored(page, 'drafts')).toEqual([]);
 });

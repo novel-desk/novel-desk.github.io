@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest';
-import { AUTO_WAIT, SYNC_MODES, sendsItself, syncMode } from '../../lib/sync.js';
+import { AUTO_WAIT, SYNC_MODES, saveState, sendsItself, syncMode } from '../../lib/sync.js';
 
 describe('sync', () => {
   // FR-GH-04
@@ -18,5 +18,12 @@ describe('sync', () => {
     expect(sendsItself({ ...s, offline: true })).toBe(false);
     expect(sendsItself({ ...s, busy: true })).toBe(false);
     expect(AUTO_WAIT).toBeGreaterThanOrEqual(10000);
+  });
+  // FR-SAVE-07
+  test('saveState: delivered, on this device only, or not delivered', () => {
+    expect(saveState({ draft: false, failed: false, onGitHub: true })).toBe('GitHub に届いています');
+    expect(saveState({ draft: false, failed: true, onGitHub: false })).toBe('');
+    expect(saveState({ draft: true, failed: false, onGitHub: true })).toBe('未送信（この端末に保存しました）');
+    expect(saveState({ draft: true, failed: true, onGitHub: true })).toBe('届けられませんでした（この端末に残っています。理由は「送る」の上）');
   });
 });
