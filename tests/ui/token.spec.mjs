@@ -44,11 +44,11 @@ test.describe('a passkey', () => {
     await expect(page.locator('#unlock')).toBeVisible();
     await page.getByRole('button', { name: 'パスキーで開く' }).click();
     await page.getByRole('button', { name: /author\/novel/ }).click();
-    await expect(page.locator('#episode-title')).toHaveText('はじまり');
+    await expect(page.locator('#episode-title')).toHaveValue('はじまり');
     // opened again, straight into the work chosen
     await page.reload();
     await page.getByRole('button', { name: 'パスキーで開く' }).click();
-    await expect(page.locator('#episode-title')).toHaveText('はじまり');
+    await expect(page.locator('#episode-title')).toHaveValue('はじまり');
     page.once('dialog', d => d.accept());
     await page.getByRole('button', { name: 'ほかの作品' }).click();
     await page.getByRole('button', { name: 'トークンを忘れる' }).click();
@@ -116,7 +116,7 @@ test('the repositories: every page of them; the one chosen is remembered; a toke
   await expect(page.locator('#repo-list .work b')).toHaveText(['author/novel', 'author/other']);
   await expect(page.locator('#repo-list .work small')).toHaveText(['非公開・main', '公開・main']);
   await page.getByRole('button', { name: '戻る' }).click();
-  await expect(page.locator('#episode-title')).toHaveText('はじまり');
+  await expect(page.locator('#episode-title')).toHaveValue('はじまり');
   gh.fail = () => 401;
   await page.getByRole('button', { name: 'ほかの作品' }).click();
   await expect(page.locator('#repos-error')).toHaveText('トークンが使えません（期限切れか、消されたかもしれません）: test failure');

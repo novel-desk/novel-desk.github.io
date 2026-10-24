@@ -1,32 +1,48 @@
-// The desk: the table of contents of the work open, the episode being written, its preview, and sending and reading
-// again. The work, the drafts and the episode open are this module's: the others call open()
-import { afterSend, draftKey, draftOf } from '../lib/drafts.js';
-import { charsOf, esc, lineBreaks, n } from '../lib/format.js';
+// The desk: the table of contents of the work open, the episode being written, its preview, the episodes added,
+// renamed, put in the trash and reordered, and sending and reading again. The work, the changes not sent and the
+// episode open are this module's: the others call open() and the functions it gives them
+import { moveFiles, rebase, relabel, writeFile } from '../lib/changes.js';
+import { afterSend, draftKey, draftOf, typedOver } from '../lib/drafts.js';
+import * as plans from '../lib/episodes.js';
+import { charsOf, esc, n, whenLong } from '../lib/format.js';
 import { imageType } from '../lib/github.js';
 import { episodesOf, titleOf } from '../lib/layout.js';
 import { picturePaths, renderMd } from '../lib/markdown.js';
 import { CONFLICT_MARK } from '../lib/merge.js';
+import { editToml } from '../lib/tomledit.js';
+import { viewOf } from '../lib/view.js';
 import { $, show, toast } from './dom.js';
 import * as store from './db.js';
-import { bytes, contents, load } from './work.js';
-import { sendAll } from './send.js';
-import { GitHubError } from './github.js';
+import { bytes, contents, load, readShas } from './work.js';
+import { Overlapped, sendAll } from './send.js';
+import { GitHubError, lastChange } from './github.js';
+import { evenBreaks, inputBar, setKeepingCaret } from './textbox.js';
+import { stopReading, togglePreview, wireReading } from './reading.js';
 
 /** @typedef {import('../lib/drafts.js').Draft} Draft */
+/** @typedef {import('../lib/tomledit.js').TomlEdit & { op: string }} Edit a key of novel.toml set by an operation */
 /** @typedef {{ full_name: string, default_branch: string }} Repo */
 
 /** @type {Repo | null} */
 let repo = null;
 /** @type {import('./work.js').Work | null} */
 let work = null;
-/** @type {Map<string, Draft>} the drafts of this work, by path */
+/** @type {Map<string, Draft>} the changes of this work not sent, by path */
 let drafts = new Map();
+/** @type {Edit[]} novel.toml's keys set and not sent */
+let edits = [];
+/** @type {import('../lib/view.js').View | null} the work as shown: what was read, the changes over it */
+let view = null;
 // the episode open ('' = none)
 let current = '';
 let busy = false;
+// 「並べ替え」 on: the rows show ↑↓, the chapter to move to, and can be dragged
+let ordering = false;
 /** @type {Map<string, string>} the object URLs of the pictures shown, by blob */
 const pictures = new Map();
-// the drafts written to the device one after another, so that the last one typed is the one kept
+/** @type {Map<string, number>} when an episode was last changed on GitHub, by path and commit read */
+const changedAt = new Map();
+// the changes written to the device one after another, so that the last one typed is the one kept
 let writing = Promise.resolve();
 
 /** @param {string} text @param {'' | 'ok' | 'err'} [kind] */
@@ -36,127 +52,302 @@ function syncState(text, kind = '') {
   s.className = `sync-state ${kind}`;
 }
 const hasConflict = (/** @type {string} */ text) => text.includes(CONFLICT_MARK);
+const shown = () => /** @type {import('../lib/view.js').View} */ (view);
 /** @param {string} path */
-const textOf = path => drafts.get(path)?.text ?? work?.texts[path] ?? null;
+const textOf = path => shown().texts[path] ?? null;
+const episodes = () => episodesOf(shown().toc);
+/** @param {string} rel */
+const titleAt = rel => titleOf(shown().layout, rel, shown().headings);
+/** @param {string} path */
+const findEpisode = path => episodes().find(e => e.path === path);
+// the work as the plans of lib/episodes.js take it
+/** @returns {import('../lib/episodes.js').Shown} */
+const forPlans = () => ({ layout: shown().layout, toc: shown().toc, files: Object.keys(shown().files), headings: shown().headings, textOf });
+function refreshView() {
+  view = viewOf(/** @type {NonNullable<typeof work>} */ (work), drafts, edits);
+}
+
+// --- the changes kept on the device
+
+/** @param {Map<string, Draft>} next @param {Edit[]} [nextEdits] */
+function keep(next, nextEdits = edits) {
+  const w = /** @type {NonNullable<typeof work>} */ (work);
+  const before = drafts;
+  drafts = next;
+  const editsChanged = nextEdits !== edits;
+  edits = nextEdits;
+  const kept = edits;
+  writing = writing
+    .then(async () => {
+      for (const [path, d] of next) if (before.get(path) !== d) await store.put('drafts', draftKey(w.repo, path), d);
+      for (const path of before.keys()) if (!next.has(path)) await store.del('drafts', draftKey(w.repo, path));
+      if (editsChanged) await store.put('prefs', `edits:${w.repo}`, kept);
+    })
+    .catch(err => syncState(`この端末に保存できませんでした（${err.message ?? err}）`, 'err'));
+  refreshView();
+}
+// how many files the changes not sent change (novel.toml counts once)
+const unsent = () => drafts.size + (edits.length && !drafts.has('novel.toml') ? 1 : 0);
 
 // --- the table of contents
 
 function renderToc() {
+  const v = shown();
   const w = /** @type {NonNullable<typeof work>} */ (work);
-  /** @param {import('../lib/layout.js').TocEpisode} e */
-  const episode = e => {
+  const closed = new Set(/** @type {string[]} */ (folded));
+  const chapters = v.toc.filter(it => it.type === 'chapter');
+  /** @param {'episode' | 'chapter'} kind @param {string} path @param {string} [inChapter] */
+  const tools = (kind, path, inChapter = '') =>
+    `<span class="order-tools">${kind === 'chapter' ? `<button data-rename-chapter="${esc(path)}" title="章の題名を変更" aria-label="章の題名を変更">✎</button>` : ''}<button data-move="-1" data-path="${esc(path)}" aria-label="上へ">↑</button><button data-move="1" data-path="${esc(path)}" aria-label="下へ">↓</button>${
+      kind === 'episode' && chapters.length
+        ? `<select data-to-chapter data-path="${esc(path)}" aria-label="移動先の章"><option value="">章なし</option>${chapters
+            .map(c => `<option value="${esc(c.path)}"${inChapter === c.path ? ' selected' : ''}>${esc(titleAt(c.rel))}</option>`)
+            .join('')}</select>`
+        : ''
+    }</span>`;
+  /** @param {import('../lib/layout.js').TocEpisode} e @param {string} [inChapter] */
+  const episode = (e, inChapter) => {
     const text = textOf(e.path) ?? '';
     const tags = (drafts.has(e.path) ? '<span class="unsent-tag">未送信</span>' : '') + (hasConflict(text) ? '<span class="conflict">両方の版</span>' : '');
-    return `<button class="node episode${e.path === current ? ' active' : ''}" data-path="${esc(e.path)}"><span class="t">${esc(titleOf(w.layout, e.rel, w.headings))}</span>${tags}<span class="c">${n(charsOf(text))}</span></button>`;
+    return `<div class="node episode${e.path === current ? ' active' : ''}" role="button" tabindex="0" data-path="${esc(e.path)}" data-node="${esc(e.path)}" draggable="${ordering}"><span class="t">${esc(titleAt(e.rel))}</span>${tags}<span class="c">${n(charsOf(text))}</span>${tools('episode', e.path, inChapter)}</div>`;
   };
+  const chars = (/** @type {import('../lib/layout.js').TocEpisode[]} */ list) => list.reduce((sum, e) => sum + charsOf(textOf(e.path) ?? ''), 0);
   $('tree').innerHTML =
-    w.toc
+    v.toc
       .map(it =>
         it.type === 'episode'
           ? episode(it)
-          : `<div class="node chapter"><span class="t">${esc(titleOf(w.layout, it.rel, w.headings))}</span></div><div class="chapter-body">${it.episodes.map(episode).join('')}</div>`,
+          : `<div class="node chapter" role="button" tabindex="0" data-fold="${esc(it.path)}" data-node="${esc(it.path)}" draggable="${ordering}"><span class="fold">${closed.has(it.path) ? '▸' : '▾'}</span><span class="t">${esc(titleAt(it.rel))}</span><span class="c">${n(chars(it.episodes))}</span>${tools('chapter', it.path)}</div><div class="chapter-body${closed.has(it.path) && !it.episodes.some(e => e.path === current) ? ' closed' : ''}">${it.episodes.map(e => episode(e, it.path)).join('')}</div>`,
       )
-      .join('') || '<p class="muted small">話がありません。novel.toml の manuscript.dir と files を確かめてください。</p>';
-  const total = episodesOf(w.toc).reduce((sum, e) => sum + charsOf(textOf(e.path) ?? ''), 0);
-  $('work-chars').textContent = `${n(total)}字・${w.branch}`;
-  $('send').disabled = busy || drafts.size === 0;
-  $('send').textContent = drafts.size ? `送る（${drafts.size}）` : '送る';
+      .join('') || '<p class="muted small">話がありません。「＋ 話を追加」で追加できます。</p>';
+  $('toc').classList.toggle('reorder', ordering);
+  $('toggle-reorder').textContent = ordering ? '完了' : '並べ替え';
+  $('work-chars').textContent = n(chars(episodes()));
+  $('work-count').textContent = n(episodes().length);
+  $('work-updated').textContent = whenLong(Math.max(w.updated || 0, ...[...drafts.values()].map(d => d.at)));
+  $('work-branch').textContent = w.branch;
+  if (document.activeElement !== $('work-title')) $('work-title').value = v.layout.title || w.repo.split('/')[1];
+  $('send').disabled = busy || unsent() === 0;
+  $('send').textContent = unsent() ? `送る（${unsent()}）` : '送る';
   $('reload').disabled = busy;
+  for (const id of ['add-episode', 'add-chapter', 'toggle-reorder', 'trash-episode']) $(id).disabled = busy || (id === 'trash-episode' && !current);
+  $('prev-episode').disabled = !neighbor(-1);
+  $('next-episode').disabled = !neighbor(1);
 }
+/** @type {string[]} the chapters folded, by path (kept on the device for each work: FR-TOC-07) */
+let folded = [];
 
 // --- the episode open
 
+/** @param {number} d @returns {{ path: string, title: string } | null} */
+function neighbor(d) {
+  const eps = episodes(),
+    i = eps.findIndex(e => e.path === current);
+  const e = i < 0 ? null : eps[i + d];
+  return e ? { path: e.path, title: titleAt(e.rel) } : null;
+}
 function showCounts() {
   const text = $('body').value;
-  $('chars').textContent = current ? `${n(charsOf(text))}字` : '';
+  $('episode-chars').textContent = current ? n(charsOf(text)) : '0';
   $('save-state').textContent = drafts.has(current) ? '未送信（この端末に保存しました）' : '';
   const note = $('episode-note');
   note.hidden = !hasConflict(text);
   note.textContent = '両方の版が並んでいます。「――― ここから」の行を探して整理してください';
 }
-/** @param {string} path */
+// 最終更新 of the open episode: when this device wrote it (not sent), else its last commit on GitHub (FR-EDIT-02)
+async function showUpdated() {
+  const w = /** @type {NonNullable<typeof work>} */ (work);
+  const path = current;
+  const d = drafts.get(path);
+  const say = (/** @type {number} */ ms) => {
+    if (path === current) $('episode-updated').textContent = ms ? `最終更新 ${whenLong(ms)}` : '';
+  };
+  if (d) return say(d.at);
+  say(0);
+  const key = `${w.commit}\n${path}`;
+  if (!changedAt.has(key) && !w.offline && w.blobs[path]) {
+    try {
+      changedAt.set(key, await lastChange(w.repo, w.branch, path));
+    } catch {}
+  }
+  say(changedAt.get(key) ?? 0);
+}
+/** @param {string} path @returns {Promise<boolean>} */
 async function openEpisode(path) {
   const w = /** @type {NonNullable<typeof work>} */ (work);
   current = path;
-  const e = episodesOf(w.toc).find(e => e.path === path);
-  const text = textOf(path);
-  const area = $('body');
+  const e = findEpisode(path);
+  const text = e ? textOf(path) : null;
+  const area = /** @type {HTMLTextAreaElement} */ ($('body'));
   area.value = text ?? '';
   area.disabled = text === null;
-  $('episode-title').textContent = e ? titleOf(w.layout, e.rel, w.headings) : '';
-  $('preview-toggle').disabled = text === null;
+  area.scrollTop = 0;
+  $('episode-title').value = e ? titleAt(e.rel) : '';
+  $('episode-title').disabled = !e;
+  $('toggle-preview').disabled = text === null;
+  stopReading();
   showCounts();
-  if (text === null) {
+  if (e && text === null) {
     const note = $('episode-note');
     note.hidden = false;
     note.textContent = w.offline ? 'この話はまだこの端末に読み込まれていません（つながってから開いてください）' : '文字コードが UTF-8 ではないため開けません';
   }
-  if (!$('preview').hidden) await renderPreview();
   $('desk').classList.remove('toc-open');
   renderToc();
+  void showUpdated();
   await store.put('prefs', `episode:${w.repo}`, path);
+  return text !== null;
+}
+// no episode open (none in the work, or the open one put in the trash)
+function openNone() {
+  current = '';
+  $('body').value = '';
+  /** @type {HTMLTextAreaElement} */ ($('body')).disabled = true;
+  $('episode-title').value = '';
+  $('episode-title').disabled = true;
+  $('toggle-preview').disabled = true;
+  $('episode-updated').textContent = '';
+  stopReading();
+  showCounts();
+  renderToc();
 }
 // what was typed: kept on the device at once, with the blob it was written from
 function typed() {
   const w = /** @type {NonNullable<typeof work>} */ (work);
   const path = current,
     text = $('body').value;
-  const base = drafts.get(path)?.base ?? w.blobs[path].sha;
-  const draft = draftOf({ repo: w.repo, path, base, read: w.texts[path] ?? '', text, at: Date.now() });
-  if (draft) drafts.set(path, draft);
-  else drafts.delete(path);
-  const key = draftKey(w.repo, path);
-  writing = writing
-    .then(async () => {
-      if (draft) await store.put('drafts', key, draft);
-      else await store.del('drafts', key);
-    })
-    .catch(err => syncState(`この端末に保存できませんでした（${err.message ?? err}）`, 'err'));
+  const before = drafts.get(path);
+  const next = new Map(drafts);
+  /** @type {Draft | null} */
+  let draft;
+  if (before?.op) draft = typedOver(before, text, Date.now());
+  else draft = draftOf({ repo: w.repo, path, base: before?.base ?? w.blobs[path].sha, read: w.texts[path] ?? '', text, at: Date.now() });
+  if (draft) next.set(path, draft);
+  else next.delete(path);
+  keep(next);
   showCounts();
   renderToc();
+  void showUpdated();
 }
-// put a text in the box, the caret and the scroll where they were
-/** @param {HTMLTextAreaElement} area @param {string} text */
-function setKeepingCaret(area, text) {
-  const [a, b, top] = [area.selectionStart, area.selectionEnd, area.scrollTop];
-  area.value = text;
-  area.setSelectionRange(Math.min(a, text.length), Math.min(b, text.length));
-  area.scrollTop = top;
+
+// --- the operations on episodes and chapters: kept as changes not sent (lib/changes.js), sent with the texts
+
+const newOp = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+// an operation's plan made changes: the files moved and written, novel.toml's keys set. The open episode goes where it
+// moved (or to `open`). False when it cannot be kept (said in a toast)
+/** @param {import('../lib/episodes.js').Plan} plan @param {string} [open] the episode to open afterwards */
+async function apply(plan, open) {
+  const w = /** @type {NonNullable<typeof work>} */ (work);
+  const op = newOp(),
+    at = Date.now();
+  const opEdits = plan.edits.map(e => ({ ...e, op }));
+  // (novel.toml must take the keys: a file it cannot read is not changed)
+  const checked = editToml(w.config ?? '', [...edits, ...opEdits]);
+  if (checked.text === null) {
+    toast(checked.error);
+    return false;
+  }
+  let { changes, merged } = moveFiles(w.blobs, drafts, plan.moves, { repo: w.repo, op, at });
+  for (const { path, text } of plan.writes) {
+    const there = shown().files[path] && !plan.moves.some(m => m[1] === path);
+    if (there && !changes.get(path)?.op) {
+      // a text written into a file of the branch (a heading renamed): a draft of it, as when typed
+      const d = draftOf({ repo: w.repo, path, base: changes.get(path)?.base ?? w.blobs[path].sha, read: w.texts[path] ?? '', text, at });
+      if (d) changes.set(path, d);
+      else changes.delete(path);
+      continue;
+    }
+    const made = writeFile(w.blobs, changes, path, { text }, { repo: w.repo, op, at });
+    changes = made.changes;
+    for (const m of made.merged) merged.add(m);
+  }
+  keep(changes, [...relabel(edits, merged, op), ...opEdits]);
+  const moved = plan.moves.find(m => m[0] === current)?.[1];
+  const next = open ?? (moved && findEpisode(moved) ? moved : findEpisode(current) ? current : '');
+  if (next) await openEpisode(next);
+  else openNone();
+  return true;
 }
-// line and paragraph separators typed or pasted in the box (an iPhone puts them): made line breaks, the caret and the
-// scroll where they were (a character for a character), as the server version's textbox.js does. Not while a word is
-// being converted: a text put in the box then breaks the word; it is done when the word is (an input again)
-/** @param {HTMLTextAreaElement} area */
-function evenBreaks(area) {
-  area.addEventListener('input', e => {
-    if (!(/** @type {InputEvent} */ (e).isComposing) && lineBreaks(area.value) !== area.value) setKeepingCaret(area, lineBreaks(area.value));
-  });
-  area.addEventListener('compositionend', () => {
-    if (lineBreaks(area.value) !== area.value) area.dispatchEvent(new Event('input'));
-  });
+// a plan made, or why it cannot be (said in a toast)
+/** @param {() => import('../lib/episodes.js').Plan} make */
+function planned(make) {
+  try {
+    return make();
+  } catch (err) {
+    toast(err.message);
+    return null;
+  }
+}
+async function addEpisode() {
+  const chapter = shown().toc.find(it => it.type === 'chapter' && it.episodes.some(e => e.path === current));
+  const plan = planned(() => plans.addEpisode(forPlans(), chapter?.path ?? '', '新しい話'));
+  if (plan && (await apply(plan, plan.path))) $('episode-title').select();
+}
+async function addChapter() {
+  const title = prompt('章のタイトル', '新しい章');
+  if (title === null) return;
+  const plan = planned(() => plans.addChapter(forPlans(), title));
+  if (plan) await apply(plan, plan.path);
+}
+async function renameEpisode() {
+  if (!current) return;
+  const title = $('episode-title').value;
+  const e = findEpisode(current);
+  if (!e || title === titleAt(e.rel)) return;
+  const plan = planned(() => plans.rename(forPlans(), current, title));
+  if (!plan || !(await apply(plan, plan.path))) $('episode-title').value = titleAt(e.rel);
+}
+/** @param {string} path */
+async function renameChapter(path) {
+  const it = shown().toc.find(c => c.path === path);
+  if (!it) return;
+  const now = titleAt(it.rel);
+  const title = prompt('章の題名', now);
+  if (title === null || !title.trim() || title === now) return;
+  const plan = planned(() => plans.rename(forPlans(), path, title));
+  if (plan) await apply(plan);
+}
+async function trashEpisode() {
+  const e = findEpisode(current);
+  if (
+    !e ||
+    !confirm(`「${titleAt(e.rel)}」を削除しますか？（作品の _trash/ フォルダに移動します。完全には消えません。GitHub に送るのは「送る」を押したときです）`)
+  )
+    return;
+  const i = episodes().indexOf(e);
+  const plan = planned(() => plans.trash(forPlans(), current, Date.now()));
+  if (!plan) return;
+  const rest = episodes().filter(x => x !== e);
+  const next = rest[Math.max(0, i - 1)];
+  if (await apply(plan, next?.path ?? '')) toast('削除しました（_trash/ に移動。送るまではこの端末だけの変更です）');
+}
+/** @param {import('../lib/episodes.js').OrderItem[] | null} want */
+async function sendOrder(want) {
+  if (!want) return;
+  const plan = planned(() => plans.reorder(forPlans(), want));
+  if (plan) await apply(plan, current ? plans.placeAfter(shown().layout, want, current) : undefined);
+}
+async function renameWork() {
+  const title = $('work-title').value.trim();
+  if (!title || title === shown().layout.title) return renderToc();
+  await apply({ moves: [], writes: [], edits: [{ key: ['title'], value: title }], path: '' });
 }
 
 // --- the preview: the pictures read from GitHub (or the device), shown by object URLs
 
-async function renderPreview() {
+async function draw() {
+  const v = shown();
   const w = /** @type {NonNullable<typeof work>} */ (work);
   const text = $('body').value;
   for (const path of picturePaths(text, current)) {
-    const blob = w.blobs[path];
-    if (!blob || pictures.has(blob.sha)) continue;
+    const blob = v.files[path];
+    if (!blob?.sha || pictures.has(blob.sha)) continue;
     try {
       const got = w.offline ? await store.get('blobs', blob.sha) : await bytes(w.repo, blob.sha);
       if (got) pictures.set(blob.sha, URL.createObjectURL(new Blob([got], { type: imageType(path) })));
     } catch {}
   }
-  $('preview').innerHTML = renderMd(text, current, path => pictures.get(w.blobs[path]?.sha ?? '') ?? '');
-}
-async function togglePreview() {
-  const on = $('preview').hidden;
-  if (on) await renderPreview();
-  $('preview').hidden = !on;
-  $('body').hidden = on;
-  $('preview-toggle').textContent = on ? '書く' : 'プレビュー';
+  return renderMd(text, current, path => pictures.get(v.files[path]?.sha ?? '') ?? '');
 }
 
 // --- reading and sending
@@ -169,14 +360,38 @@ const readState = when =>
 const now = () => new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
 
 function renderWork() {
-  const w = /** @type {NonNullable<typeof work>} */ (work);
-  $('work-title').textContent = w.layout.title || w.repo.split('/')[1];
   const problems = $('layout-problems');
-  problems.hidden = w.problems.length === 0;
-  problems.innerHTML = w.problems.map(p => `<p>${esc(p)}</p>`).join('');
+  problems.hidden = shown().problems.length === 0;
+  problems.innerHTML = shown()
+    .problems.map(p => `<p>${esc(p)}</p>`)
+    .join('');
   renderToc();
 }
-// reads the work from GitHub again; the drafts stay as they are, and the episode open shows its draft if it has one
+// the texts of the files moved by the changes not sent, read when the device does not have them yet
+async function readMoved() {
+  const w = /** @type {NonNullable<typeof work>} */ (work);
+  await readShas(
+    w,
+    [...drafts.values()].flatMap(d => (d.sha && d.text === undefined ? [d.sha] : [])),
+  );
+}
+// the changes on the work read again: the operations whose files changed elsewhere are given up (their texts stay)
+async function rebaseChanges() {
+  const w = /** @type {NonNullable<typeof work>} */ (work);
+  if (w.offline) return;
+  const { changes, ops } = rebase(drafts, w.blobs);
+  if (!ops.size) return;
+  keep(
+    changes,
+    edits.filter(e => !ops.has(e.op)),
+  );
+  syncState(
+    'ほかの所でファイルが変わっていたので、この端末の話の追加・名前の変更・削除・並べ替えを取り消しました。書いた文章は残っています。やり直してください',
+    'err',
+  );
+  toast('ほかの所での変更と重なった操作を取り消しました（書いた文章は残っています）');
+}
+// reads the work from GitHub again; the changes stay as they are, and the episode open shows its draft if it has one
 async function reload() {
   const r = /** @type {Repo} */ (repo);
   busy = true;
@@ -189,12 +404,17 @@ async function reload() {
   } finally {
     busy = false;
   }
-  renderWork();
+  refreshView();
   readState(now());
-  const paths = episodesOf(work.toc).map(e => e.path);
+  await rebaseChanges();
+  await readMoved();
+  refreshView();
+  renderWork();
+  const paths = episodes().map(e => e.path);
   const last = await store.get('prefs', `episode:${work.repo}`);
   const open = paths.includes(current) ? current : paths.includes(last) ? last : (paths[0] ?? '');
   if (open) await openEpisode(open);
+  else openNone();
 }
 async function sendDrafts() {
   const w = /** @type {NonNullable<typeof work>} */ (work);
@@ -202,35 +422,39 @@ async function sendDrafts() {
   renderToc();
   syncState('送っています…');
   try {
-    const result = await sendAll(w, [...drafts.values()]);
+    const result = await sendAll(w, [...drafts.values()], edits);
+    const next = new Map(drafts);
     for (const { draft, blob, both } of result.sent) {
-      const next = afterSend(drafts.get(draft.path) ?? draft, draft.text, blob, both);
-      const key = draftKey(w.repo, draft.path);
-      if (next) {
-        drafts.set(draft.path, next);
-        await store.put('drafts', key, next);
-      } else {
-        drafts.delete(draft.path);
-        await store.del('drafts', key);
-      }
+      const after = afterSend(next.get(draft.path) ?? draft, draft.text, blob, both);
+      if (after) next.set(draft.path, after);
+      else next.delete(draft.path);
     }
-    work = await contents({ repo: w.repo, branch: w.branch, commit: result.commit, tree: result.tree, blobs: result.blobs, folders: result.folders }, false);
+    work = await contents(
+      { repo: w.repo, branch: w.branch, commit: result.commit, tree: result.tree, updated: result.updated, blobs: result.blobs, folders: result.folders },
+      false,
+    );
+    keep(next, []);
+    await readMoved();
+    refreshView();
     const sides = new Set(result.sent.filter(s => s.both).map(s => s.draft.path));
-    const titles = episodesOf(work.toc)
+    const titles = episodes()
       .filter(e => sides.has(e.path))
-      .map(e => titleOf(/** @type {NonNullable<typeof work>} */ (work).layout, e.rel, /** @type {NonNullable<typeof work>} */ (work).headings));
+      .map(e => titleAt(e.rel));
     if (sides.size) {
       syncState(`送りました。${titles.join('、')}はほかでも書き換えられていたので、両方の版を並べました（${result.message}）`, 'err');
       toast('ほかでも書き換えられていた話があります。両方の版を並べました');
     } else syncState(`送りました（${result.message}）`, 'ok');
     renderWork();
-    if (current && !drafts.has(current)) setKeepingCaret($('body'), work.texts[current] ?? '');
+    if (current && findEpisode(current) && !drafts.has(current)) setKeepingCaret(/** @type {HTMLTextAreaElement} */ ($('body')), textOf(current) ?? '');
     showCounts();
+    void showUpdated();
   } catch (err) {
     syncState(
-      err instanceof GitHubError && err.status === 0
-        ? `${err.message}。書いたものはこの端末に残っています`
-        : `送れませんでした: ${err.message}。書いたものはこの端末に残っています`,
+      err instanceof Overlapped
+        ? `${err.message}。「再読み込み」で読み直してください（重なった話の追加・名前の変更・削除・並べ替えは取り消し、書いた文章は残します）`
+        : err instanceof GitHubError && err.status === 0
+          ? `${err.message}。書いたものはこの端末に残っています`
+          : `送れませんでした: ${err.message}。書いたものはこの端末に残っています`,
       'err',
     );
   } finally {
@@ -246,16 +470,74 @@ export async function open(r) {
   repo = r;
   work = null;
   current = '';
+  ordering = false;
   show('desk');
   $('body').value = '';
-  $('body').disabled = true;
-  $('episode-title').textContent = '';
+  /** @type {HTMLTextAreaElement} */ ($('body')).disabled = true;
+  $('episode-title').value = '';
   $('tree').innerHTML = '';
-  $('work-title').textContent = r.full_name.split('/')[1];
+  $('work-title').value = r.full_name.split('/')[1];
   /** @type {Draft[]} */
   const kept = await store.all('drafts');
   drafts = new Map(kept.filter(d => d.repo === r.full_name).map(d => [d.path, d]));
+  edits = (await store.get('prefs', `edits:${r.full_name}`)) ?? [];
+  folded = (await store.get('prefs', `closed:${r.full_name}`)) ?? [];
   await reload();
+}
+
+// --- the table of contents' rows: opened, folded, moved
+
+/** @param {MouseEvent} e */
+async function treeClick(e) {
+  const t = /** @type {HTMLElement} */ (e.target);
+  if (t.closest('.order-tools')) {
+    const b = t.closest('[data-move]');
+    if (b instanceof HTMLElement) void sendOrder(plans.moveBy(plans.orderOf(shown().toc), /** @type {string} */ (b.dataset.path), Number(b.dataset.move)));
+    const rn = t.closest('[data-rename-chapter]');
+    if (rn instanceof HTMLElement) void renameChapter(/** @type {string} */ (rn.dataset.renameChapter));
+    return;
+  }
+  const node = t.closest('.node.episode');
+  if (node instanceof HTMLElement && node.dataset.path && !ordering) return void openEpisode(node.dataset.path);
+  const fold = t.closest('[data-fold]');
+  if (fold instanceof HTMLElement && !ordering) {
+    const path = /** @type {string} */ (fold.dataset.fold);
+    folded = folded.includes(path) ? folded.filter(p => p !== path) : [...folded, path];
+    renderToc();
+    await store.put('prefs', `closed:${/** @type {NonNullable<typeof work>} */ (work).repo}`, folded);
+  }
+}
+// drag and drop (a mouse): an episode on an episode goes before it, on a chapter at its end; a chapter before
+function wireDrag() {
+  /** @type {string | null} */
+  let dragging = null;
+  const clear = () => document.querySelectorAll('.drop-before,.drop-into').forEach(x => x.classList.remove('drop-before', 'drop-into'));
+  const tree = $('tree');
+  tree.addEventListener('dragstart', e => {
+    const node = /** @type {HTMLElement} */ (e.target).closest('[data-node]');
+    if (!(node instanceof HTMLElement)) return;
+    dragging = node.dataset.node ?? null;
+    if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
+  });
+  tree.addEventListener('dragover', e => {
+    const node = /** @type {HTMLElement} */ (e.target).closest('[data-node]');
+    if (!dragging || !(node instanceof HTMLElement) || node.dataset.node === dragging) return;
+    e.preventDefault();
+    clear();
+    node.classList.add(node.classList.contains('chapter') && dragging.endsWith('.md') ? 'drop-into' : 'drop-before');
+  });
+  tree.addEventListener('drop', e => {
+    const node = /** @type {HTMLElement} */ (e.target).closest('[data-node]');
+    clear();
+    if (!dragging || !(node instanceof HTMLElement)) return;
+    e.preventDefault();
+    const want = plans.dropOn(plans.orderOf(shown().toc), dragging, /** @type {string} */ (node.dataset.node), node.classList.contains('chapter'));
+    dragging = null;
+    void sendOrder(want);
+  });
+  tree.addEventListener('dragend', () => {
+    dragging = null;
+  });
 }
 
 let wired = false;
@@ -270,14 +552,42 @@ export function wire(on) {
     if (!(/** @type {InputEvent} */ (e).isComposing) && current) typed();
   });
   area.addEventListener('compositionend', () => current && typed());
-  $('tree').addEventListener('click', e => {
-    const node = /** @type {HTMLElement} */ (e.target).closest('.node.episode');
-    if (node instanceof HTMLElement && node.dataset.path) void openEpisode(node.dataset.path);
+  $('tree').addEventListener('click', e => void treeClick(e));
+  $('tree').addEventListener('keydown', e => {
+    const t = /** @type {HTMLElement} */ (e.target);
+    if (e.key === 'Enter' && t.matches('.node')) {
+      e.preventDefault();
+      t.click();
+    }
   });
+  $('tree').addEventListener('change', e => {
+    const s = /** @type {HTMLElement} */ (e.target).closest('[data-to-chapter]');
+    if (s instanceof HTMLSelectElement) void sendOrder(plans.moveToChapter(plans.orderOf(shown().toc), /** @type {string} */ (s.dataset.path), s.value));
+  });
+  wireDrag();
   $('send').addEventListener('click', () => void sendDrafts());
   $('reload').addEventListener('click', () => void reload());
-  $('preview-toggle').addEventListener('click', () => void togglePreview());
   $('change-repo').addEventListener('click', on.changeRepo);
   $('menu').addEventListener('click', () => $('desk').classList.toggle('toc-open'));
   $('scrim').addEventListener('click', () => $('desk').classList.remove('toc-open'));
+  $('add-episode').addEventListener('click', () => void addEpisode());
+  $('add-chapter').addEventListener('click', () => void addChapter());
+  $('trash-episode').addEventListener('click', () => void trashEpisode());
+  $('toggle-reorder').addEventListener('click', () => {
+    ordering = !ordering;
+    renderToc();
+  });
+  $('episode-title').addEventListener('change', () => void renameEpisode());
+  $('episode-title').addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      area.focus();
+    }
+  });
+  $('work-title').addEventListener('change', () => void renameWork());
+  $('work-title').addEventListener('keydown', e => {
+    if (e.key === 'Enter') $('work-title').blur();
+  });
+  inputBar($('kbar'), area, $('desk'), () => void togglePreview());
+  wireReading({ neighbor, open: openEpisode, draw });
 }

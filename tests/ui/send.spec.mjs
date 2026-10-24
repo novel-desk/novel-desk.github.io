@@ -7,7 +7,7 @@ import { OTHER_DEVICE_MARK } from '../../lib/merge.js';
 /** @param {import('@playwright/test').Page} page @param {string} title @param {string} text */
 async function write(page, title, text) {
   await page.locator('#tree .node', { hasText: title }).click();
-  await expect(page.locator('#episode-title')).toHaveText(title);
+  await expect(page.locator('#episode-title')).toHaveValue(title);
   await page.locator('#body').fill(text);
 }
 

@@ -99,3 +99,16 @@ describe('toml', () => {
 test('toml: an array not closed at the end of the file', () => {
   expect(parseToml('a = [1,').error).toBe('1 行目: 値がありません');
 });
+test('places: where each header and key statement is, with its value, in the text read', () => {
+  const src = '\uFEFFtitle = "t"\r\n[titles]\r\n"a.md" = "A" # c\r\nb.c = 1';
+  const r = parseToml(src);
+  const text = 'title = "t"\n[titles]\n"a.md" = "A" # c\nb.c = 1';
+  expect(r.places).toEqual([
+    { kind: 'key', path: ['title'], head: [], from: 0, to: 12, valueFrom: 8, valueTo: 11 },
+    { kind: 'table', path: ['titles'], head: [], from: 12, to: 21, valueFrom: 20, valueTo: 20 },
+    { kind: 'key', path: ['titles', 'a.md'], head: ['titles'], from: 21, to: 38, valueFrom: 30, valueTo: 33 },
+    { kind: 'key', path: ['titles', 'b', 'c'], head: ['titles'], from: 38, to: 45, valueFrom: 44, valueTo: 45 },
+  ]);
+  expect(text.slice(30, 33)).toBe('"A"');
+  expect(parseToml('a = ').places).toBeNull();
+});

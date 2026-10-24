@@ -15,6 +15,7 @@ import {
   chapterName,
   isEpisode,
   episodeHeading,
+  headingParts,
   titleOf,
   tableOfContents,
   episodesOf,
@@ -27,7 +28,22 @@ const layout = (over = {}) => ({ ...firstLayout(), ...over });
 describe('novel.toml', () => {
   test('the first layout: numbered episodes at the top', () => {
     expect(CONFIG).toBe('novel.toml');
-    expect(firstLayout()).toEqual({ title: '', dir: '', files: ['*.md'], exclude: [], prefixed: false, heading: false, titles: {}, branch: '' });
+    expect(firstLayout()).toEqual({
+      title: '',
+      dir: '',
+      files: ['*.md'],
+      exclude: [],
+      prefixed: false,
+      bare: false,
+      heading: false,
+      titles: {},
+      branch: '',
+      notes: '',
+      images: '',
+      plot: '',
+      characters: '',
+      links: {},
+    });
   });
   test('parseLayout: a work of the server version (dir, files, title = "heading", the branch, [titles])', () => {
     const src = [
@@ -43,6 +59,14 @@ describe('novel.toml', () => {
       'branch = " main "',
       '[titles]',
       '"02.md" = "二話"',
+      '[images]',
+      'dir = "notes/images/"',
+      '[plot]',
+      'file = " notes/plot.md "',
+      '[plot.links]',
+      '"02.md" = "出会い"',
+      '[characters]',
+      'file = "notes/人物.md"',
     ].join('\n');
     expect(parseLayout(src)).toEqual({
       layout: {
@@ -51,12 +75,22 @@ describe('novel.toml', () => {
         files: ['*.md'],
         exclude: ['01_memo.md'],
         prefixed: false,
+        bare: false,
         heading: true,
         titles: { '02.md': '二話' },
         branch: 'main',
+        notes: 'notes',
+        images: 'notes/images',
+        plot: 'notes/plot.md',
+        characters: 'notes/人物.md',
+        links: { '02.md': '出会い' },
       },
       problems: [],
     });
+  });
+  test('parseLayout: naming = "number" names by number alone; the chapter-number naming does too', () => {
+    expect(parseLayout('[manuscript]\nnaming = "number"').layout).toMatchObject({ bare: true, prefixed: false });
+    expect(parseLayout('[manuscript]\nnaming = "chapter-number"').layout).toMatchObject({ bare: true, prefixed: true });
   });
   test('parseLayout: files as a list; naming = "chapter-number"; an empty files is "*.md"', () => {
     expect(parseLayout('[manuscript]\nfiles = ["[0-9][0-9].md", "x.md"]\nnaming = "chapter-number"').layout).toMatchObject({
@@ -84,6 +118,8 @@ describe('novel.toml', () => {
       '[titles]',
       '"01.md" = 1',
       '"02.md" = "二"',
+      '[plot]',
+      'links = "x"',
     ].join('\n');
     expect(parseLayout(src)).toEqual({
       layout: { ...firstLayout(), titles: { '02.md': '二' } },
@@ -96,6 +132,7 @@ describe('novel.toml', () => {
         'manuscript.naming が文字列ではありません',
         'manuscript.title が文字列ではありません',
         '[titles] の「01.md」が文字列ではありません',
+        '[plot.links] が表ではありません',
       ],
     });
     expect(parseLayout('[manuscript]\nfiles = ["*.md", 1]\nexclude = [2, "a.md"]')).toEqual({
@@ -120,9 +157,9 @@ describe('names', () => {
     expect(numbered('memo.md')).toBeNull();
   });
   test('prefixed: chapter, number, part, title; chapter 1 when none', () => {
-    expect(prefixed('2-09.md')).toEqual({ chapter: 2, number: 9, part: 0, title: '' });
-    expect(prefixed('09.md')).toEqual({ chapter: 1, number: 9, part: 0, title: '' });
-    expect(prefixed('2-11-2_題名.md')).toEqual({ chapter: 2, number: 11, part: 2, title: '題名' });
+    expect(prefixed('2-09.md')).toEqual({ chapter: 2, number: 9, part: 0, title: '', hasChapter: true });
+    expect(prefixed('09.md')).toEqual({ chapter: 1, number: 9, part: 0, title: '', hasChapter: false });
+    expect(prefixed('2-11-2_題名.md')).toEqual({ chapter: 2, number: 11, part: 2, title: '題名', hasChapter: true });
     expect(prefixed('a.md')).toBeNull();
   });
   test('nameOrder: numbers as numbers, then the names', () => {
@@ -190,6 +227,9 @@ describe('episodes', () => {
     expect(episodeHeading('# 猫の耳')).toBe('猫の耳');
     expect(episodeHeading('# 第十二話')).toBe('第十二話');
     expect(episodeHeading('#  ')).toBeNull();
+    expect(headingParts('# 第3話 駅で\n')).toEqual({ number: '第3話', title: '駅で' });
+    expect(headingParts('# 猫の耳')).toEqual({ number: '', title: '猫の耳' });
+    expect(headingParts('本文')).toBeNull();
     expect(episodeHeading('本文')).toBeNull();
     expect(episodeHeading('')).toBeNull();
   });

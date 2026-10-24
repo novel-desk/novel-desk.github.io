@@ -12,7 +12,7 @@ test.describe('with the service worker', () => {
     await page.evaluate(() => navigator.serviceWorker.ready);
     await page.reload();
     await expect.poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller))).toBe(true);
-    await expect(page.locator('#episode-title')).toHaveText('はじまり');
+    await expect(page.locator('#episode-title')).toHaveValue('はじまり');
     gh.down = true;
     await context.setOffline(true);
     await page.reload();

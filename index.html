@@ -34,6 +34,20 @@
     <button class="primary" id="keep-token">パスキーで保管する</button>
     <p id="setup-error" class="error" role="alert"></p>
   </form>
+  <!-- ホーム画面に追加: iPhone の Safari のタブ（手順と、先に追加する理由）、またはインストールを勧めるブラウザー -->
+  <div class="auth-card install" id="install-ios" hidden>
+    <h2>先にホーム画面に追加してください</h2>
+    <p class="muted small">Safari のタブとホーム画面のアプリでは、この端末の保存場所が別になります。ここでトークンを入れても、ホーム画面のアプリからは見えません。ホーム画面に追加してから、そこから開いてトークンを入れてください。</p>
+    <ol class="small">
+      <li>画面の下（iPad では上）の共有ボタン（四角から矢印が出ている形）を押す</li>
+      <li>「ホーム画面に追加」を押し、「追加」を押す</li>
+      <li>ホーム画面の Novel Desk から開く</li>
+    </ol>
+  </div>
+  <div class="auth-card install" id="install-app" hidden>
+    <p class="muted small">この端末にアプリとして入れると、ホーム画面やアプリの一覧から開けます。</p>
+    <button id="install">インストール</button>
+  </div>
 </section>
 
 <!-- パスキーで開く -->
@@ -69,11 +83,16 @@
 <section id="desk" class="desk" hidden>
   <aside class="toc" id="toc">
     <div class="toc-head">
-      <button class="work-title" id="work-title"></button>
+      <input id="work-title" class="work-title" maxlength="80" aria-label="作品タイトル">
+      <button class="ghost" id="toggle-reorder" title="並べ替え">並べ替え</button>
     </div>
-    <p class="muted small" id="work-chars"></p>
+    <p class="muted small"><span id="work-chars">0</span> 字 ・ <span id="work-count">0</span> 話 ・ 最終更新 <span id="work-updated"></span></p>
     <div id="layout-problems" class="problems" role="alert" hidden></div>
     <nav class="tree" id="tree"></nav>
+    <div class="toc-add">
+      <button id="add-episode">＋ 話を追加</button>
+      <button id="add-chapter">＋ 章を追加</button>
+    </div>
     <div class="sync">
       <p id="sync-state" class="sync-state"></p>
       <div class="sync-row">
@@ -81,21 +100,33 @@
         <button id="reload">再読み込み</button>
         <button class="link" id="change-repo">ほかの作品</button>
       </div>
+      <p class="muted">ブランチ <span id="work-branch"></span></p>
     </div>
   </aside>
   <div class="scrim" id="scrim"></div>
   <main class="paper">
     <div class="paper-head">
       <button class="menu icon" id="menu" aria-label="目次">☰</button>
-      <span class="episode-title" id="episode-title"></span>
-      <button class="ghost" id="preview-toggle" disabled>プレビュー</button>
+      <input id="episode-title" class="episode-title" maxlength="80" aria-label="話のタイトル" disabled>
+      <button class="ghost icon danger" id="trash-episode" title="この話を削除（作品の _trash/ フォルダに移動。完全には消えません）" aria-label="この話を削除"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg></button>
     </div>
+    <p class="episode-meta muted"><span><span id="episode-chars">0</span> 字</span><span id="episode-updated"></span></p>
     <p id="episode-note" class="episode-note" hidden></p>
     <textarea id="body" class="body" spellcheck="false" disabled placeholder="目次から話を選んでください"></textarea>
     <div id="preview" class="preview" hidden></div>
+    <p id="pull-hint" class="pull-hint" hidden></p>
+    <div id="kbar" class="kbar" hidden>
+      <button data-wrap="「」">「」</button><button data-wrap="『』">『』</button><button data-ins="……">……</button><button data-ins="――">――</button><button data-ins="　" title="全角スペース" aria-label="全角スペース">□</button><button data-ruby title="ルビ（｜親文字《るび》）" aria-label="ルビ"><ruby>ルビ<rt>るび</rt></ruby></button>
+      <span class="kbar-sep" aria-hidden="true"></span>
+      <button data-cmd="undo" title="元に戻す" aria-label="元に戻す"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></button><button data-cmd="redo" title="やり直す" aria-label="やり直す"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/></svg></button><span class="kbar-sep" aria-hidden="true"></span><button data-view title="プレビュー" aria-label="プレビュー"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg></button>
+    </div>
     <footer class="paper-foot">
       <span id="save-state"></span>
-      <span id="chars"></span>
+      <span class="foot-tools">
+        <button class="ghost ep-step" id="prev-episode" title="前の話" disabled>‹ 前の話</button>
+        <button class="ghost ep-step" id="next-episode" title="次の話" disabled>次の話 ›</button>
+        <button class="ghost icon" id="toggle-preview" title="プレビュー" aria-label="プレビュー" disabled><span data-face="book"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg></span><span data-face="pen" hidden><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4z"/><path d="m13.5 6.5 4 4"/></svg></span></button>
+      </span>
     </footer>
   </main>
 </section>

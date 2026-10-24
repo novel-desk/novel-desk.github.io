@@ -25,8 +25,10 @@ export class FakeRepo {
     this.blobs = new Map();
     /** @type {Map<string, Record<string, { mode: string, sha: string }>>} */
     this.trees = new Map();
-    /** @type {Map<string, { tree: string, parents: string[], message: string }>} */
+    /** @type {Map<string, { tree: string, parents: string[], message: string, date: string }>} */
     this.commits = new Map();
+    // the time of the next commit (each one a minute after the one before)
+    this.clock = Date.parse('2026-10-01T00:00:00Z');
     /** @type {Record<string, string>} */
     this.refs = {};
     this.refs[this.defaultBranch] = this.commit(files, '最初', []);
@@ -54,7 +56,8 @@ export class FakeRepo {
   /** @param {string} tree @param {string} message @param {string[]} parents */
   commitTree(tree, message, parents) {
     const sha = sha1(`commit ${tree} ${parents.join(',')} ${message} ${this.commits.size}`);
-    this.commits.set(sha, { tree, parents, message });
+    this.clock += 60000;
+    this.commits.set(sha, { tree, parents, message, date: new Date(this.clock).toISOString() });
     return sha;
   }
   // a commit made elsewhere (another device): these files changed (null: deleted), on top of the branch
@@ -81,7 +84,18 @@ export class FakeRepo {
   }
   /** @param {string} [branch] */
   head(branch = this.defaultBranch) {
-    return /** @type {{ tree: string, parents: string[], message: string }} */ (this.commits.get(this.refs[branch]));
+    return /** @type {{ tree: string, parents: string[], message: string, date: string }} */ (this.commits.get(this.refs[branch]));
+  }
+  // the commits of a branch, the newest first (first parents), with the ones that changed `path` only when it is given
+  /** @param {string} from a commit @param {string} [path] */
+  log(from, path) {
+    const out = [];
+    for (let c = from; c; c = this.commits.get(c)?.parents[0] ?? '') {
+      const parent = this.commits.get(c)?.parents[0];
+      if (path && this.files(c)[path]?.sha === (parent ? this.files(parent)[path]?.sha : undefined)) continue;
+      out.push(c);
+    }
+    return out;
   }
   /** @param {string} ancestor @param {string} commit */
   descends(commit, ancestor) {
@@ -150,6 +164,28 @@ export class FakeGitHub {
       const more = page * this.perPage < all.length;
       return reply(200, list, more ? { Link: `<https://api.github.com/user/repos?page=${page + 1}>; rel="next"` } : {});
     }
+    const r = /^\/repos\/([^/]+\/[^/]+)\/commits$/.exec(path);
+    if (r && method === 'GET' && this.repos.get(r[1])) {
+      const repo = /** @type {FakeRepo} */ (this.repos.get(r[1]));
+      const from = repo.refs[url.searchParams.get('sha') ?? repo.defaultBranch] ?? url.searchParams.get('sha') ?? '';
+      const per = Number(url.searchParams.get('per_page') || 30),
+        page = Number(url.searchParams.get('page') || 1);
+      const all = repo.log(from, url.searchParams.get('path') ?? undefined);
+      const list = all.slice((page - 1) * per, page * per).map(sha => {
+        const c = /** @type {{ message: string, date: string, parents: string[] }} */ (repo.commits.get(sha));
+        return { sha, commit: { message: c.message, committer: { date: c.date }, author: { date: c.date } }, parents: c.parents.map(p => ({ sha: p })) };
+      });
+      const more = page * per < all.length;
+      return reply(
+        200,
+        list,
+        more
+          ? {
+              Link: `<https://api.github.com${url.pathname}?${new URLSearchParams({ ...Object.fromEntries(url.searchParams), page: String(page + 1) })}>; rel="next"`,
+            }
+          : {},
+      );
+    }
     const m = /^\/repos\/([^/]+\/[^/]+)\/git\/(.+)$/.exec(path);
     const repo = m && this.repos.get(m[1]);
     if (!m || !repo) return reply(404, { message: 'Not Found' });
@@ -161,7 +197,16 @@ export class FakeGitHub {
     }
     if (method === 'GET' && (g = /^commits\/(\w+)$/.exec(rest))) {
       const c = repo.commits.get(g[1]);
-      return c ? reply(200, { sha: g[1], tree: { sha: c.tree }, message: c.message, parents: c.parents.map(sha => ({ sha })) }) : reply(404, {});
+      return c
+        ? reply(200, {
+            sha: g[1],
+            tree: { sha: c.tree },
+            message: c.message,
+            committer: { date: c.date },
+            author: { date: c.date },
+            parents: c.parents.map(sha => ({ sha })),
+          })
+        : reply(404, {});
     }
     if (method === 'GET' && (g = /^trees\/(\w+)$/.exec(rest))) {
       const entries = repo.trees.get(g[1]);
@@ -188,7 +233,10 @@ export class FakeGitHub {
     if (method === 'POST' && rest === 'blobs') return reply(201, { sha: repo.blob(Buffer.from(body.content, body.encoding === 'base64' ? 'base64' : 'utf8')) });
     if (method === 'POST' && rest === 'trees') {
       const entries = { ...repo.trees.get(body.base_tree) };
-      for (const e of body.tree) entries[e.path] = { mode: e.mode, sha: e.sha };
+      for (const e of body.tree) {
+        if (e.sha === null) delete entries[e.path];
+        else entries[e.path] = { mode: e.mode, sha: e.sha };
+      }
       return reply(201, { sha: repo.tree(entries) });
     }
     if (method === 'POST' && rest === 'commits') return reply(201, { sha: repo.commitTree(body.tree, body.message, body.parents) });

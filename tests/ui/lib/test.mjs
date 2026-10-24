@@ -58,7 +58,7 @@ export async function openWork(page, first = 'はじまり') {
   await page.getByLabel('トークン').fill(TOKEN);
   await page.getByRole('button', { name: 'パスキーで保管する' }).click();
   await page.getByRole('button', { name: /author\/novel/ }).click();
-  if (first !== null) await expect(page.locator('#episode-title')).toHaveText(first);
+  if (first !== null) await expect(page.locator('#episode-title')).toHaveValue(first);
 }
 // what IndexedDB keeps in a store
 /** @param {import('@playwright/test').Page} page @param {string} store */

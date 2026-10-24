@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest';
-import { draftKey, draftOf, afterSend } from '../../lib/drafts.js';
+import { draftKey, draftOf, afterSend, typedOver } from '../../lib/drafts.js';
 
 describe('drafts', () => {
   test('draftKey: one for each repository and path', () => {
@@ -17,5 +17,23 @@ describe('drafts', () => {
     const more = { ...draft, text: '送った後も' };
     expect(afterSend(more, '送った', 's2', false)).toEqual({ ...more, base: 's2' });
     expect(afterSend(more, '送った', 's2', true)).toBe(more);
+  });
+  test("typedOver: a file an operation put there keeps being that operation's, with the text typed", () => {
+    const moved = { repo: 'o/r', path: '02.md', base: '', sha: 's1', from: { path: '01.md', base: 's1' }, op: 'op1', at: 1 };
+    expect(typedOver(moved, '書いた', 5)).toEqual({
+      repo: 'o/r',
+      path: '02.md',
+      base: '',
+      from: { path: '01.md', base: 's1' },
+      op: 'op1',
+      text: '書いた',
+      at: 5,
+    });
+  });
+  test('afterSend: a change of an operation goes once sent; with a text typed since, a draft of the blob sent', () => {
+    const gone = { repo: 'o/r', path: '01.md', base: 's1', gone: true, op: 'op1', at: 1 };
+    expect(afterSend(gone, undefined, '', false)).toBeNull();
+    const typed = { repo: 'o/r', path: '02.md', base: '', text: '後で', from: { path: '01.md', base: 's1' }, op: 'op1', at: 7 };
+    expect(afterSend(typed, '先に', 's2', false)).toEqual({ repo: 'o/r', path: '02.md', base: 's2', text: '後で', at: 7 });
   });
 });

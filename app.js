@@ -1,6 +1,7 @@
 // The app: the token (put in once, opened with a passkey each time), the repository chosen, and the desk. No server:
 // the page talks to GitHub's API only, and keeps what it needs on this device
 import { esc } from './lib/format.js';
+import { installHint, isIos } from './lib/install.js';
 import { $, show, toast } from './ui/dom.js';
 import * as store from './ui/db.js';
 import * as desk from './ui/desk.js';
@@ -120,5 +121,31 @@ $('repo-list').addEventListener('click', e => {
   if (b instanceof HTMLElement) void openRepo({ full_name: /** @type {string} */ (b.dataset.repo), default_branch: /** @type {string} */ (b.dataset.branch) });
 });
 desk.wire({ changeRepo: () => void chooseRepo() });
+
+// --- adding the app to the home screen (FR-APP-03): said on the first screen only, never once opened from there
+/** @type {any} the browser's offer to install the app (Chrome), kept for the button */
+let offer = null;
+function showInstall() {
+  const standalone = matchMedia('(display-mode: standalone)').matches || /** @type {any} */ (navigator).standalone === true;
+  const hint = installHint({ standalone, ios: isIos(navigator), offered: offer !== null });
+  $('install-ios').hidden = hint !== 'ios';
+  $('install-app').hidden = hint !== 'button';
+}
+addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  offer = e;
+  showInstall();
+});
+addEventListener('appinstalled', () => {
+  offer = null;
+  showInstall();
+});
+$('install').addEventListener('click', async () => {
+  if (!offer) return;
+  await offer.prompt();
+  offer = null;
+  showInstall();
+});
+showInstall();
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 void start();
