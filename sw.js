@@ -1,6 +1,6 @@
 // オフラインでも開けるように、アプリの画面のファイルだけを控える。いつもはネットワークを先に使い、届かないときだけ控えを出す。
 // GitHub の API への要求には手を出さない（作品の文章とトークンは、画面が IndexedDB に置く）
-const CACHE = 'novel-writer-js-v2';
+const CACHE = 'novel-writer-js-v3';
 // this worker (self, with the types of a service worker for the type check)
 const sw = /** @type {ServiceWorkerGlobalScope} */ (/** @type {unknown} */ (self));
 // every file of the screens (a test checks it against the files of the app)
@@ -16,14 +16,17 @@ const FILES = [
   'apple-touch-icon.png',
   'lib/changes.js',
   'lib/commit.js',
+  'lib/diff.js',
   'lib/drafts.js',
   'lib/episodes.js',
   'lib/format.js',
   'lib/github.js',
+  'lib/history.js',
   'lib/install.js',
   'lib/layout.js',
   'lib/markdown.js',
   'lib/merge.js',
+  'lib/notes.js',
   'lib/passkey.js',
   'lib/toml.js',
   'lib/tomledit.js',
@@ -32,6 +35,8 @@ const FILES = [
   'ui/desk.js',
   'ui/dom.js',
   'ui/github.js',
+  'ui/history.js',
+  'ui/images.js',
   'ui/reading.js',
   'ui/send.js',
   'ui/textbox.js',

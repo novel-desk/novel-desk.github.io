@@ -85,6 +85,17 @@ describe('changes', () => {
     expect(over.changes.get('y.md')).toEqual({ repo: 'o/r', path: 'y.md', base: '', text: 't', from: { path: 'a.md', base: 'sa' }, op: 'op2', at: 9 });
     expect(over.merged).toEqual(new Set(['op1']));
     expect(writeFile(blobs, new Map(), 'b.md', { text: 'x' }, o).changes.get('b.md')?.base).toBe('sb');
+    // a link rewritten by an operation (auto), not over a draft; over a draft, what was typed in it is not auto
+    expect(writeFile(blobs, new Map(), 'b.md', { text: 'x', auto: true }, o).changes.get('b.md')?.auto).toBe(true);
+    const typed = changes([{ repo: 'o/r', path: 'b.md', base: 'sb', text: '下書き', at: 1 }]);
+    expect(writeFile(blobs, typed, 'b.md', { text: 'x', auto: true }, o).changes.get('b.md')).toEqual({
+      repo: 'o/r',
+      path: 'b.md',
+      base: 'sb',
+      text: 'x',
+      op: 'op2',
+      at: 9,
+    });
   });
   test('relabel: the changes of the operations taken in become the new one', () => {
     expect(relabel([{ op: 'a' }, { op: 'b' }, {}], new Set(['a']), 'c')).toEqual([{ op: 'c' }, { op: 'b' }, {}]);
@@ -123,6 +134,12 @@ describe('changes', () => {
     ]);
     expect(rebase(busy, blobs).changes.get('z.md')).toEqual({ repo: 'o/r', path: 'z.md', base: '', text: '移した', at: 2 });
     expect(rebase(changes([]), blobs).ops.size).toBe(0);
+    // a text the operation wrote by itself (auto) goes with it
+    const auto = changes([
+      { repo: 'o/r', path: 'a.md', base: 'old', gone: true, op: 'op1', at: 1 },
+      { repo: 'o/r', path: 'b.md', base: 'sb', text: 'リンク', auto: true, op: 'op1', at: 1 },
+    ]);
+    expect(rebase(auto, blobs).changes.size).toBe(0);
     // both taken (where it came from by a draft, where it is by a text put back there first): nothing more
     const both = changes([
       { repo: 'o/r', path: 'k.md', base: 'bk', text: '下書き', at: 1 },

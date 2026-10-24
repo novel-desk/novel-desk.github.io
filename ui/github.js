@@ -78,6 +78,24 @@ export async function lastChange(repo, branch, path) {
 export const treeFiles = (repo, tree) => getJson(`/repos/${repoPath(repo)}/git/trees/${tree}?recursive=1`);
 /** @param {string} repo @param {string} sha @returns {Promise<string>} its content, base64 */
 export const blob = async (repo, sha) => (await getJson(`/repos/${repoPath(repo)}/git/blobs/${sha}`)).content;
+// the commits of a branch that changed a file, the newest first (500 at most)
+/** @param {string} repo @param {string} branch @param {string} path @returns {Promise<any[]>} */
+export async function commitsOf(repo, branch, path) {
+  /** @type {any[]} */
+  const found = [];
+  /** @type {string | null} */
+  let url = `/repos/${repoPath(repo)}/commits?sha=${encodeURIComponent(branch)}&path=${encodeURIComponent(path)}&per_page=100`;
+  for (let page = 0; url && page < 5; page++) {
+    const res = await request(url);
+    found.push(...(await res.json()));
+    url = nextPage(res.headers.get('Link'));
+  }
+  return found;
+}
+// a file as it was at a commit: its blob and its content (base64)
+/** @param {string} repo @param {string} path @param {string} ref @returns {Promise<{ sha: string, content: string }>} */
+export const fileAt = (repo, path, ref) =>
+  getJson(`/repos/${repoPath(repo)}/contents/${path.split('/').map(encodeURIComponent).join('/')}?ref=${encodeURIComponent(ref)}`);
 /** @param {string} repo @param {string} text @returns {Promise<string>} the new blob */
 export const newBlob = async (repo, text) => (await send('POST', `/repos/${repoPath(repo)}/git/blobs`, { content: text, encoding: 'utf-8' })).sha;
 /** @param {string} repo @param {string} base64 @returns {Promise<string>} the new blob of these bytes */

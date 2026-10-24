@@ -19,7 +19,7 @@ describe('drafts', () => {
     expect(afterSend(more, '送った', 's2', true)).toBe(more);
   });
   test("typedOver: a file an operation put there keeps being that operation's, with the text typed", () => {
-    const moved = { repo: 'o/r', path: '02.md', base: '', sha: 's1', from: { path: '01.md', base: 's1' }, op: 'op1', at: 1 };
+    const moved = { repo: 'o/r', path: '02.md', base: '', sha: 's1', from: { path: '01.md', base: 's1' }, op: 'op1', auto: true, at: 1 };
     expect(typedOver(moved, '書いた', 5)).toEqual({
       repo: 'o/r',
       path: '02.md',

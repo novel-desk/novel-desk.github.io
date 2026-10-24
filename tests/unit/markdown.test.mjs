@@ -1,9 +1,15 @@
 import { describe, test, expect } from 'vitest';
-import { dirOf, linkedPath, splitImages, picturePaths, renderMd } from '../../lib/markdown.js';
+import { dirOf, linkedPath, relPath, splitImages, picturePaths, renderMd } from '../../lib/markdown.js';
 
 const src = path => `blob:${path}`;
 
 describe('markdown', () => {
+  test('relPath: a path from the top as the link written in a file (FR-EDIT-07)', () => {
+    expect(relPath('chapters/01.md', 'notes/images/a.jpg')).toBe('../notes/images/a.jpg');
+    expect(relPath('notes/a/b.md', 'notes/images/a.jpg')).toBe('../images/a.jpg');
+    expect(relPath('01.md', 'images/a.jpg')).toBe('images/a.jpg');
+    expect(relPath('images/x.md', 'images/a.jpg')).toBe('a.jpg');
+  });
   test('dirOf: the folder of a path', () => {
     expect(dirOf('a/b/c.md')).toBe('a/b');
     expect(dirOf('c.md')).toBe('');

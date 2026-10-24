@@ -130,7 +130,7 @@ input:focus { border-color: var(--accent); }
 .order-tools button { padding: 2px 7px; font-size: 12px; border-radius: 6px; }
 .order-tools select { font-size: 12px; max-width: 90px; border: 1px solid var(--line); border-radius: 6px; background: var(--paper); color: var(--text); }
 .toc-head button { white-space: nowrap; }
-.toc-add { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 8px 0 4px; }
+.toc-add { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; padding: 8px 0 4px; }
 .toc-add button { white-space: nowrap; padding: 7px 8px; }
 
 /* the paper's tools */
@@ -159,3 +159,35 @@ input:focus { border-color: var(--accent); }
 .desk.writing .paper-foot { display: none; }
 .desk.writing #body { min-height: 0; padding-bottom: 40px; }
 .desk.writing .episode-meta { display: none; }
+
+/* the screens over the desk (画像): a bar and a column (the server version's settings) */
+.settings-main { max-width: 720px; margin: 0 auto; padding: 16px; display: grid; gap: 14px; }
+.settings-main > p { margin: 0; }
+.notes-folder { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; font-size: 13px; font-weight: 600; color: var(--muted); }
+.images-list { display: grid; gap: 4px; }
+.images-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 8px; }
+.images-list figure { margin: 0; display: grid; gap: 4px; }
+.images-list img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); background: var(--side); }
+.images-list figcaption { font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.image-tools { display: flex; flex-wrap: wrap; gap: 4px; } .image-tools button { font-size: 11px; padding: 4px 6px; min-height: 28px; }
+.image-tools .danger { color: var(--error); }
+
+/* 履歴: a dialog over the desk */
+.versions { width: min(92vw, 640px); max-height: 86vh; border: 1px solid var(--line); border-radius: 14px; background: var(--paper); color: var(--text); padding: 0; }
+.versions::backdrop { background: rgba(0,0,0,.35); }
+.versions header { display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--paper); }
+#versions-body { padding: 10px 14px 16px; display: grid; gap: 8px; }
+.version { text-align: left; display: grid; gap: 2px; } .version b { font-weight: 600; } .version small { color: var(--muted); font-size: 12px; }
+.version .tag { font-size: 10px; border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; margin-left: 6px; color: var(--muted); }
+.version-text { width: 100%; min-height: 50vh; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--text);
+  padding: 12px; font: 15px/1.9 var(--mincho); resize: vertical; }
+.version-text[hidden], .version-diff[hidden] { display: none; }
+.history-tabs { display: flex; gap: 6px; } .history-tabs button { flex: 1; font-size: 13px; white-space: nowrap; padding: 6px 4px; }
+.history-tabs button.on { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.hist-head { display: flex; align-items: center; gap: 8px; } .hist-head .back-history { padding: 4px 6px; white-space: nowrap; }
+/* the changes: what went and what came, from one version to the next */
+.diff { border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; margin: 8px 0; max-height: 60vh; overflow: auto; font: 15px/1.8 var(--mincho); }
+.diff p { margin: 0; white-space: pre-wrap; word-break: break-all; }
+.diff del { background: rgba(214, 69, 65, .18); color: inherit; text-decoration: line-through; text-decoration-color: rgba(214, 69, 65, .7); }
+.diff ins { background: rgba(46, 160, 67, .2); color: inherit; text-decoration: none; }
+.diff .diff-gap { color: var(--muted); text-align: center; }

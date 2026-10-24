@@ -92,6 +92,7 @@
     <div class="toc-add">
       <button id="add-episode">＋ 話を追加</button>
       <button id="add-chapter">＋ 章を追加</button>
+      <button id="open-images" title="作品の画像（名前の変更、削除）">画像</button>
     </div>
     <div class="sync">
       <p id="sync-state" class="sync-state"></p>
@@ -125,11 +126,33 @@
       <span class="foot-tools">
         <button class="ghost ep-step" id="prev-episode" title="前の話" disabled>‹ 前の話</button>
         <button class="ghost ep-step" id="next-episode" title="次の話" disabled>次の話 ›</button>
+        <button class="ghost icon" id="open-history" title="この話の履歴（この端末と GitHub）" aria-label="この話の履歴"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l3 2"/></svg></button>
+        <button class="ghost icon" id="insert-image" title="画像を挿入（縮小して作品の画像のフォルダに置き、ここに ![](…) を挿入）" aria-label="画像を挿入"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 17-5-5-9 8"/></svg></button>
         <button class="ghost icon" id="toggle-preview" title="プレビュー" aria-label="プレビュー" disabled><span data-face="book"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg></span><span data-face="pen" hidden><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4z"/><path d="m13.5 6.5 4 4"/></svg></span></button>
       </span>
     </footer>
   </main>
 </section>
+
+<!-- 画像: 作品の画像の一覧（名前の変更、削除） -->
+<section id="images" class="settings" hidden>
+  <header class="bar">
+    <button class="ghost" id="close-images">‹ 原稿へ</button>
+    <strong>画像</strong>
+    <button class="ghost" id="add-image">＋ 画像</button>
+  </header>
+  <main class="settings-main">
+    <p class="muted small" id="images-where"></p>
+    <div id="images-list" class="images-list"></div>
+  </main>
+</section>
+<input type="file" id="image-file" accept="image/*" hidden>
+
+<!-- 履歴: 版の一覧、差分、全文、復元 -->
+<dialog id="versions" class="versions" aria-labelledby="versions-title">
+  <header><strong id="versions-title">履歴</strong><button class="ghost" id="close-versions">閉じる</button></header>
+  <div id="versions-body"></div>
+</dialog>
 
 <div class="toast" id="toast" role="status"></div>
 </body>

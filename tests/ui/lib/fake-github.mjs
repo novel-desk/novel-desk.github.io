@@ -186,6 +186,15 @@ export class FakeGitHub {
           : {},
       );
     }
+    const f = /^\/repos\/([^/]+\/[^/]+)\/contents\/(.+)$/.exec(path);
+    if (f && method === 'GET' && this.repos.get(f[1])) {
+      const repo = /** @type {FakeRepo} */ (this.repos.get(f[1]));
+      const ref = url.searchParams.get('ref') ?? repo.defaultBranch;
+      const e = repo.commits.has(ref) ? repo.files(ref)[f[2]] : repo.refs[ref] ? repo.files(repo.refs[ref])[f[2]] : undefined;
+      if (!e) return reply(404, { message: 'Not Found' });
+      const b = /** @type {Buffer} */ (repo.blobs.get(e.sha));
+      return reply(200, { type: 'file', path: f[2], sha: e.sha, size: b.length, encoding: 'base64', content: b.toString('base64').replace(/.{60}/g, '$&\n') });
+    }
     const m = /^\/repos\/([^/]+\/[^/]+)\/git\/(.+)$/.exec(path);
     const repo = m && this.repos.get(m[1]);
     if (!m || !repo) return reply(404, { message: 'Not Found' });

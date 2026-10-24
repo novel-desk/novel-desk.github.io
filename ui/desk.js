@@ -7,7 +7,7 @@ import * as plans from '../lib/episodes.js';
 import { charsOf, esc, n, whenLong } from '../lib/format.js';
 import { imageType } from '../lib/github.js';
 import { episodesOf, titleOf } from '../lib/layout.js';
-import { picturePaths, renderMd } from '../lib/markdown.js';
+import { picturePaths, relPath, renderMd } from '../lib/markdown.js';
 import { CONFLICT_MARK } from '../lib/merge.js';
 import { editToml } from '../lib/tomledit.js';
 import { viewOf } from '../lib/view.js';
@@ -16,7 +16,11 @@ import * as store from './db.js';
 import { bytes, contents, load, readShas } from './work.js';
 import { Overlapped, sendAll } from './send.js';
 import { GitHubError, lastChange } from './github.js';
-import { evenBreaks, inputBar, setKeepingCaret } from './textbox.js';
+import { evenBreaks, inputBar, insertAt, setKeepingCaret } from './textbox.js';
+import { showHistory, wireHistory } from './history.js';
+import { pickImage, wireImages } from './images.js';
+import { snapshotted } from '../lib/history.js';
+import { mdFiles } from '../lib/notes.js';
 import { stopReading, togglePreview, wireReading } from './reading.js';
 
 /** @typedef {import('../lib/drafts.js').Draft} Draft */
@@ -221,13 +225,57 @@ function typed() {
   /** @type {Draft | null} */
   let draft;
   if (before?.op) draft = typedOver(before, text, Date.now());
-  else draft = draftOf({ repo: w.repo, path, base: before?.base ?? w.blobs[path].sha, read: w.texts[path] ?? '', text, at: Date.now() });
+  else draft = draftOf({ repo: w.repo, path, base: before?.base ?? w.blobs[path].sha, read: remoteText(path), text, at: Date.now() });
   if (draft) next.set(path, draft);
   else next.delete(path);
   keep(next);
   showCounts();
   renderToc();
   void showUpdated();
+  void snapshot(path, text, false);
+}
+// the text of a file as read from GitHub ('' when it is not there, or not read)
+/** @param {string} path */
+function remoteText(path) {
+  const w = /** @type {NonNullable<typeof work>} */ (work);
+  return w.texts[path] ?? w.shaTexts[w.blobs[path]?.sha ?? ''] ?? '';
+}
+// 履歴: a version of the episode kept on this device every 10 minutes of writing (or `force`: before one is put back)
+/** @type {Map<string, import('../lib/history.js').Snapshot[]>} */
+const snaps = new Map();
+/** @param {string} path @param {string} text @param {boolean} force */
+async function snapshot(path, text, force) {
+  const key = `snap:${/** @type {NonNullable<typeof work>} */ (work).repo}\n${path}`;
+  const list = snaps.get(key) ?? (await store.get('prefs', key)) ?? [];
+  const next = snapshotted(list, text, Date.now(), force);
+  snaps.set(key, next);
+  if (next !== list) await store.put('prefs', key, next);
+  return next;
+}
+async function openHistory() {
+  const w = /** @type {NonNullable<typeof work>} */ (work);
+  const path = current,
+    e = findEpisode(path);
+  if (!e) return;
+  const d = drafts.get(path);
+  const key = `snap:${w.repo}\n${path}`;
+  await showHistory({
+    repo: w.repo,
+    branch: w.branch,
+    path,
+    title: titleAt(e.rel),
+    draft: d?.text !== undefined ? { text: d.text, at: d.at } : null,
+    snapshots: snaps.get(key) ?? (await store.get('prefs', key)) ?? [],
+    remote: Boolean(w.blobs[path]),
+    now: () => $('body').value,
+    restore: async text => {
+      if (current !== path) return;
+      await snapshot(path, $('body').value, true);
+      setKeepingCaret(/** @type {HTMLTextAreaElement} */ ($('body')), text);
+      typed();
+      toast(`「${titleAt(e.rel)}」を復元しました（送るまではこの端末だけの変更です）`);
+    },
+  });
 }
 
 // --- the operations on episodes and chapters: kept as changes not sent (lib/changes.js), sent with the texts
@@ -235,8 +283,11 @@ function typed() {
 const newOp = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 // an operation's plan made changes: the files moved and written, novel.toml's keys set. The open episode goes where it
 // moved (or to `open`). False when it cannot be kept (said in a toast)
-/** @param {import('../lib/episodes.js').Plan} plan @param {string} [open] the episode to open afterwards */
-async function apply(plan, open) {
+/**
+ * @param {import('../lib/episodes.js').Plan} plan @param {string} [open] the episode to open afterwards
+ * @param {boolean} [stay] the open episode stays as it is in the text box (a picture added to it)
+ */
+async function apply(plan, open, stay = false) {
   const w = /** @type {NonNullable<typeof work>} */ (work);
   const op = newOp(),
     at = Date.now();
@@ -248,20 +299,24 @@ async function apply(plan, open) {
     return false;
   }
   let { changes, merged } = moveFiles(w.blobs, drafts, plan.moves, { repo: w.repo, op, at });
-  for (const { path, text } of plan.writes) {
+  for (const { path, text, bytes: put, bound } of plan.writes) {
     const there = shown().files[path] && !plan.moves.some(m => m[1] === path);
-    if (there && !changes.get(path)?.op) {
+    if (text !== undefined && !bound && there && !changes.get(path)?.op) {
       // a text written into a file of the branch (a heading renamed): a draft of it, as when typed
-      const d = draftOf({ repo: w.repo, path, base: changes.get(path)?.base ?? w.blobs[path].sha, read: w.texts[path] ?? '', text, at });
+      const d = draftOf({ repo: w.repo, path, base: changes.get(path)?.base ?? w.blobs[path].sha, read: remoteText(path), text, at });
       if (d) changes.set(path, d);
       else changes.delete(path);
       continue;
     }
-    const made = writeFile(w.blobs, changes, path, { text }, { repo: w.repo, op, at });
+    const made = writeFile(w.blobs, changes, path, put ? { bytes: put } : { text, ...(bound && { auto: true }) }, { repo: w.repo, op, at });
     changes = made.changes;
     for (const m of made.merged) merged.add(m);
   }
   keep(changes, [...relabel(edits, merged, op), ...opEdits]);
+  if (stay) {
+    renderToc();
+    return true;
+  }
   const moved = plan.moves.find(m => m[0] === current)?.[1];
   const next = open ?? (moved && findEpisode(moved) ? moved : findEpisode(current) ? current : '');
   if (next) await openEpisode(next);
@@ -336,18 +391,56 @@ async function renameWork() {
 // --- the preview: the pictures read from GitHub (or the device), shown by object URLs
 
 async function draw() {
-  const v = shown();
-  const w = /** @type {NonNullable<typeof work>} */ (work);
   const text = $('body').value;
-  for (const path of picturePaths(text, current)) {
-    const blob = v.files[path];
-    if (!blob?.sha || pictures.has(blob.sha)) continue;
-    try {
-      const got = w.offline ? await store.get('blobs', blob.sha) : await bytes(w.repo, blob.sha);
-      if (got) pictures.set(blob.sha, URL.createObjectURL(new Blob([got], { type: imageType(path) })));
-    } catch {}
+  for (const path of picturePaths(text, current)) await pictureUrl(path);
+  return renderMd(text, current, path => pictures.get(pictureKey(path)) ?? '');
+}
+// a picture shown by its blob, or (added on this device, not sent) by its bytes
+/** @param {string} path */
+const pictureKey = path => {
+  const c = drafts.get(path);
+  return c?.bytes ? `here:${path}:${c.at}` : (shown().files[path]?.sha ?? '');
+};
+// the object URL of a picture of the work ('' when it cannot be read)
+/** @param {string} path @returns {Promise<string>} */
+async function pictureUrl(path) {
+  const w = /** @type {NonNullable<typeof work>} */ (work);
+  const key = pictureKey(path);
+  if (!key || pictures.has(key)) return pictures.get(key) ?? '';
+  try {
+    const c = drafts.get(path);
+    const got = c?.bytes ?? (w.offline ? await store.get('blobs', key) : await bytes(w.repo, key));
+    if (got) pictures.set(key, URL.createObjectURL(new Blob([got], { type: imageType(path) })));
+  } catch {}
+  return pictures.get(key) ?? '';
+}
+// the texts of the work's .md files (episodes, notes), read when the device does not have them yet
+async function mdTexts() {
+  const w = /** @type {NonNullable<typeof work>} */ (work);
+  const files = mdFiles(Object.keys(shown().files));
+  await readShas(
+    w,
+    files.map(p => shown().files[p].sha).filter(s => s),
+  );
+  /** @type {Record<string, string>} */
+  const texts = {};
+  for (const p of files) {
+    const c = drafts.get(p);
+    const t = c ? (c.text ?? w.shaTexts[c.sha ?? ''] ?? null) : (w.texts[p] ?? w.shaTexts[w.blobs[p].sha] ?? null);
+    if (t !== null && t !== undefined) texts[p] = t;
   }
-  return renderMd(text, current, path => pictures.get(v.files[path]?.sha ?? '') ?? '');
+  return texts;
+}
+// a picture added to the open episode where the caret is: made small, put in the pictures folder, ![](…) written
+function insertImage() {
+  const path = current;
+  if (!path) return;
+  pickImage(async (file, put) => {
+    if (current !== path) return;
+    if (!(await apply({ moves: [], writes: [{ path: file, bytes: put }], edits: [], path: file }, undefined, true))) return;
+    insertAt(/** @type {HTMLTextAreaElement} */ ($('body')), `\n![](${relPath(path, file)})\n`);
+    toast('画像を挿入しました（送るまではこの端末だけの変更です）');
+  });
 }
 
 // --- reading and sending
@@ -590,4 +683,18 @@ export function wire(on) {
   });
   inputBar($('kbar'), area, $('desk'), () => void togglePreview());
   wireReading({ neighbor, open: openEpisode, draw });
+  wireHistory();
+  $('open-history').addEventListener('click', () => void openHistory());
+  $('insert-image').addEventListener('click', insertImage);
+  wireImages({
+    files: () => Object.keys(shown().files),
+    layout: () => shown().layout,
+    mdTexts,
+    pictureUrl,
+    apply: plan => apply(plan),
+    back: () => {
+      show('desk');
+      renderToc();
+    },
+  });
 }
