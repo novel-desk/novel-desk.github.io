@@ -145,6 +145,10 @@ test('a chapter folded stays folded on this device', async ({ page, gh }) => {
   await openWork(page);
   await page.locator('#tree .node.chapter').click();
   await expect(page.locator('#tree .node', { hasText: '坂の上' })).toBeHidden();
+  // (kept on the device before the page is loaded again)
+  await expect
+    .poll(async () => (await stored(page, 'prefs')).some(v => Array.isArray(v) && v.some(x => typeof x === 'string' && x.endsWith('03_part'))))
+    .toBe(true);
   await page.reload();
   await expect(page.locator('#tree .node.chapter .fold')).toHaveText('▸');
   await expect(page.locator('#tree .node', { hasText: '坂の上' })).toBeHidden();

@@ -9,7 +9,7 @@ import * as gh from './ui/github.js';
 import * as vault from './ui/vault.js';
 import { api } from './ui/shared.js';
 import { showWorks, wireWorks } from './ui/works.js';
-import { forgetDevice } from './ui/repo.js';
+import { forgetDevice, keepWork } from './ui/repo.js';
 
 /** @typedef {import('./ui/desk.js').Repo} Repo */
 
@@ -108,6 +108,7 @@ async function forgetToken() {
 
 /** @param {Repo} r */
 async function openRepo(r) {
+  await keepWork(r);
   await store.put('prefs', 'repo', r);
   await desk.open(r);
 }
@@ -228,7 +229,7 @@ $('repo-list').addEventListener('click', e => {
       visibility: /** @type {string} */ (b.dataset.visibility),
     });
 });
-wireWorks();
+wireWorks({ open: openRepo });
 desk.wire({ changeRepo: () => void chooseRepo(), open: openRepo, relist: chooseRepo });
 $('token-replace-form').addEventListener('submit', e => void replaceToken(/** @type {SubmitEvent} */ (e)));
 $('token-replace-open').addEventListener('click', () => {

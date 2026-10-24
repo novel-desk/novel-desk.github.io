@@ -1,7 +1,7 @@
 // The work's repository: a new work (FR-WORK-02, FR-GH-02: a private repository made with a separate token that has
 // Administration, or an empty one started), its name changed (FR-GH-10, the same separate token), followed when it
 // was renamed on GitHub, and stopped when its name is another repository now (FR-GH-12)
-import { test, expect, openWork, stored, FakeRepo, TOKEN } from './lib/test.mjs';
+import { test, expect, openRepo, openWork, stored, FakeRepo, TOKEN } from './lib/test.mjs';
 
 const ADMIN = 'admin-test-token-not-real';
 
@@ -53,8 +53,9 @@ test('a new work refused: the permission needed is said; a name GitHub would not
   expect([...gh.repos.keys()]).toEqual(['author/novel', 'author/other']);
 });
 
-// FR-WORK-02, FR-GH-02: made, but the token in use cannot read it yet: said what to do; once it can, opened from the
-// list and started as a work. An empty repository made on GitHub is started the same way
+// FR-WORK-02, FR-GH-02, FR-WORK-01: made, but the token in use cannot read it yet: said what to do; on this device's
+// list once made, and once the token can read it, opened from the list and started as a work. An empty repository made
+// on GitHub is started the same way
 test('made but not readable yet: said; then, and an empty repository made elsewhere, started from the list', async ({ page, gh }) => {
   gh.adminTokens = [ADMIN];
   gh.newReadable = false;
@@ -62,6 +63,15 @@ test('made but not readable yet: said; then, and an empty repository made elsewh
   empty.id = ++gh.ids;
   gh.repos.set('author/empty', empty);
   await openWork(page);
+  await page.getByRole('button', { name: 'ほかの作品' }).click();
+  // (opened, but not started yet)
+  const asked = [];
+  page.once('dialog', d => {
+    asked.push(d.message());
+    void d.dismiss();
+  });
+  await openRepo(page, 'author/empty');
+  await expect.poll(() => asked.length).toBe(1);
   await page.getByRole('button', { name: 'ほかの作品' }).click();
   await expect(page.locator('#repo-list .work', { hasText: 'author/empty' })).toContainText('空のリポジトリです（開くと作品として始められます）');
   await create(page, { title: '試験の新作', repo: 'later', token: ADMIN });

@@ -1,6 +1,6 @@
 // Reading a work and writing in it: the table of contents from novel.toml, the drafts kept on the device, the counts,
 // the preview, the phone's width
-import { test, expect, openWork, stored, WORK_FILES } from './lib/test.mjs';
+import { test, expect, openRepo, openWork, stored, WORK_FILES } from './lib/test.mjs';
 
 test('the table of contents: titles from the headings, the chapter folder, other files left out', async ({ page, gh }) => {
   await openWork(page);
@@ -73,7 +73,7 @@ test('another episode and another work keep their own drafts', async ({ page, gh
   await page.locator('#tree .node', { hasText: 'third' }).click();
   await expect(page.locator('#body')).toHaveValue('書き直した');
   await page.getByRole('button', { name: 'ほかの作品' }).click();
-  await page.getByRole('button', { name: /author\/other/ }).click();
+  await openRepo(page, 'author/other');
   await expect(page.locator('#tree')).toContainText('話がありません');
   await expect(page.locator('#send')).toBeDisabled();
 });

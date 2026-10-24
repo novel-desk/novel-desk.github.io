@@ -33,7 +33,7 @@ import { snapshotted } from '../lib/history.js';
 import { previewPlace, reading, showPreviewAt, stopReading, togglePreview, wireReading } from './reading.js';
 import { wireBranches } from './branches.js';
 import { wireUnsent } from './unsent.js';
-import { forgetWork, locate, moveRepo, relink, startWork, titleFor, wireRepo } from './repo.js';
+import { forgetWork, keepWork, locate, moveRepo, relink, startWork, titleFor, wireRepo } from './repo.js';
 
 /** @typedef {import('../lib/drafts.js').Draft} Draft */
 /** @typedef {import('../lib/tomledit.js').TomlEdit & { op: string }} Edit a key of novel.toml set by an operation */
@@ -759,6 +759,7 @@ export const settled = () => writing;
 // the work opened again by another repository (its name changed)
 /** @param {Repo} r */
 async function reopen(r) {
+  await keepWork(r);
   await store.put('prefs', 'repo', r);
   await open(r);
 }

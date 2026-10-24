@@ -1,15 +1,18 @@
-// 作品の一覧 (FR-WORK-01): every repository the token can read, each with its work summed up (title, length,
-// episodes, last change, the repository and the branch in use). The list is shown at once from what the device kept
-// (the last listing, each work's last summary), and its rows filled in as the works are read, a few at a time. A work's
+// 作品の一覧 (FR-WORK-01): the repositories opened on this device (ui/repo.js worksHere), each with its work summed up
+// (title, length, episodes, last change, the repository and the branch in use). The list is shown at once from what the
+// device kept (each work's last summary), and its rows filled in as the works are read, a few at a time. A work's
 // summary is kept by the refs it was read at: when they have not moved, a later visit costs one ref request a work;
 // when they have, the work is read again (the tree, novel.toml, the episodes' blobs, which the device keeps by sha).
-// The list and the summaries are this module's
+// Another repository is opened from 「リポジトリを開く」 (FR-WORK-03): GitHub's listing is read only then, and only the
+// names of the ones the token can write to are shown, nothing read of them. The list and the summaries are this module's
 import { esc, n, whenLong } from '../lib/format.js';
 import { viewOf } from '../lib/view.js';
-import { listed, stillHolds, summaryOf, visibilityTag } from '../lib/works.js';
+import { listed, offered, stillHolds, summaryOf, visibilityTag } from '../lib/works.js';
 import { $ } from './dom.js';
 import * as store from './db.js';
 import * as gh from './github.js';
+import { pick } from './picker.js';
+import { worksHere } from './repo.js';
 import { contents, each, readFiles } from './work.js';
 
 /** @typedef {import('../lib/works.js').Summary} Summary */
@@ -39,10 +42,10 @@ const rows = () => /** @type {HTMLElement[]} */ ([...$('repo-list').querySelecto
 function render(list, kept) {
   const state = (/** @type {Listed} */ r) => (kept.has(r.full_name) ? '' : '読み込んでいます…');
   const now = rows();
-  if (now.length !== list.length || now.some((b, i) => b.dataset.repo !== list[i].full_name)) {
+  if (!list.length || now.length !== list.length || now.some((b, i) => b.dataset.repo !== list[i].full_name)) {
     $('repo-list').innerHTML = list.length
       ? list.map(() => '<button class="work" data-repo=""></button>').join('')
-      : '<p class="muted small">トークンで読めるリポジトリがありません。トークンの Repository access を確かめてください。</p>';
+      : '<p class="muted small">この端末で開いた作品はまだありません。「リポジトリを開く」で作品のリポジトリを選んでください。</p>';
   }
   rows().forEach((b, i) => putRow(b, list[i], kept.get(list[i].full_name) ?? null, state(list[i])));
 }
@@ -100,7 +103,8 @@ async function shownOf(all) {
   renderOff(off);
   return shown;
 }
-export function wireWorks() {
+/** @param {{ open: (r: import('./desk.js').Repo) => Promise<void> }} on */
+export function wireWorks(on) {
   $('off-list').addEventListener('click', async e => {
     const b = /** @type {HTMLElement} */ (e.target).closest('[data-back-on]');
     if (!(b instanceof HTMLElement)) return;
@@ -113,47 +117,55 @@ export function wireWorks() {
     );
     await showWorks();
   });
+  $('open-other').addEventListener('click', () => void openOther(on.open));
 }
 
-// The list of works: the repositories (the listing kept, then GitHub's), each with its summary kept, filled in as read
+// リポジトリを開く (FR-WORK-03): GitHub's listing read now, the repositories the token can write to and the list does not
+// show offered by name, and the one chosen opened (and so put on the list)
+/** @param {(r: import('./desk.js').Repo) => Promise<void>} open */
+async function openOther(open) {
+  $('repos-error').textContent = '';
+  $('open-other').disabled = true;
+  /** @type {any[]} */
+  let all;
+  try {
+    all = await gh.repos();
+  } catch (err) {
+    $('repos-error').textContent = err.message;
+    return;
+  } finally {
+    $('open-other').disabled = false;
+  }
+  const on = listed(await worksHere(), (await store.get('prefs', 'off-list')) ?? []).shown;
+  const choices = offered(
+    all,
+    on.map(r => r.full_name),
+  );
+  if (!choices.length) {
+    $('repos-error').textContent = 'トークンで書き込めるリポジトリのうち、一覧に無いものはありません。トークンの Repository access を確かめてください。';
+    return;
+  }
+  const name = await pick({
+    title: 'リポジトリを開く',
+    items: choices.map(r => r.full_name),
+    help: 'トークンで書き込めるリポジトリのうち、一覧に無いものです。開くと一覧に載ります。',
+  });
+  const r = choices.find(x => x.full_name === name);
+  if (r) await open({ full_name: r.full_name, default_branch: r.default_branch, visibility: r.visibility });
+}
+
+// The list of works: the repositories opened on this device, each with its summary kept, filled in as read
 export async function showWorks() {
   const at = ++shown;
   $('repos-error').textContent = '';
-  /** @type {Listed[] | undefined} */
-  const keptList = await store.get('prefs', 'repos');
-  const before = keptList && (await shownOf(keptList));
+  const list = await shownOf(await worksHere());
   /** @type {Map<string, Summary>} */
   const kept = new Map();
-  const keptOf = async (/** @type {Listed[]} */ list) => {
-    for (const r of list) {
-      const s = kept.get(r.full_name) ?? (await store.get('prefs', summaryKey(r.full_name)));
-      if (s) kept.set(r.full_name, s);
-    }
-  };
-  if (before) {
-    await keptOf(before);
-    if (at === shown) render(before, kept);
-  } else $('repo-list').innerHTML = '<p class="muted small">読み込んでいます…</p>';
-  /** @type {Listed[]} */
-  let all;
-  try {
-    all = (await gh.repos()).map((/** @type {any} */ r) => ({
-      full_name: r.full_name,
-      default_branch: r.default_branch,
-      private: r.private,
-      visibility: r.visibility,
-    }));
-  } catch (err) {
-    if (at !== shown) return;
-    if (!before) $('repo-list').innerHTML = '';
-    else for (const r of before) if (!kept.has(r.full_name)) fill(r, null, '');
-    $('repos-error').textContent = err.message;
-    return;
+  for (const r of list) {
+    const s = await store.get('prefs', summaryKey(r.full_name));
+    if (s) kept.set(r.full_name, s);
   }
   if (at !== shown) return;
-  await store.put('prefs', 'repos', all);
-  const list = await shownOf(all);
-  await keptOf(list);
   render(list, kept);
   /** @type {import('../lib/drafts.js').Draft[]} */
   const drafts = await store.all('drafts');

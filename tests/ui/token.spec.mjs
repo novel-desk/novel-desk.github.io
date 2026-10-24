@@ -1,6 +1,6 @@
 // The token: kept encrypted with a passkey (PRF), or without PRF with a key that cannot be taken out; the CSP; the
 // repositories it can read
-import { test, expect, noPasskey, openWork, stored, TOKEN } from './lib/test.mjs';
+import { test, expect, noPasskey, openRepo, openWork, stored, TOKEN } from './lib/test.mjs';
 
 /** @param {import('@playwright/test').Page} page @param {boolean} hasPrf */
 async function authenticator(page, hasPrf) {
@@ -33,7 +33,7 @@ test.describe('a passkey', () => {
   test('with PRF: the token encrypted by a key from the passkey, opened with it each time; forgotten on asking', async ({ page, gh }) => {
     await authenticator(page, true);
     await putToken(page);
-    await expect(page.getByRole('button', { name: /author\/novel/ })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'リポジトリを開く' })).toBeVisible();
     await expect(page.locator('#vault-kind')).toHaveText(/パスキー（PRF）から作った鍵で暗号化/);
     const [vault] = /** @type {any[]} */ (await stored(page, 'vault'));
     expect(Object.keys(vault).sort()).toEqual(['credentialId', 'data', 'iv', 'kind', 'salt']);
@@ -43,7 +43,7 @@ test.describe('a passkey', () => {
     await page.reload();
     await expect(page.locator('#unlock')).toBeVisible();
     await page.getByRole('button', { name: 'パスキーで開く' }).click();
-    await page.getByRole('button', { name: /author\/novel/ }).click();
+    await openRepo(page, 'author/novel');
     await expect(page.locator('#episode-title')).toHaveValue('はじまり');
     // opened again, straight into the work chosen
     await page.reload();
@@ -91,7 +91,7 @@ test('no passkey in this browser: kept with a key that cannot be taken out; open
   expect(vault.kind).toBe('local');
   expect(await page.evaluate(() => 'PublicKeyCredential' in window && window.PublicKeyCredential)).toBeFalsy();
   await page.reload();
-  await expect(page.getByRole('button', { name: /author\/novel/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'リポジトリを開く' })).toBeVisible();
 });
 
 test('the CSP: no script but the app’s, nothing reached but GitHub’s API', async ({ page, gh }) => {
@@ -109,16 +109,34 @@ test('the CSP: no script but the app’s, nothing reached but GitHub’s API', a
   expect(ran).toEqual({ injected: false, reached: false });
 });
 
-test('the repositories: every page of them; the one chosen is remembered; a token GitHub refuses is said', async ({ page, gh }) => {
+// FR-WORK-03
+test('リポジトリを開く: every page of the repositories; the ones on the list not offered; the one chosen is remembered; a token GitHub refuses is said', async ({
+  page,
+  gh,
+}) => {
   gh.perPage = 1;
-  await openWork(page);
+  await noPasskey(page);
+  await putToken(page);
+  await page.getByRole('button', { name: 'リポジトリを開く' }).click();
+  await expect(page.locator('#picker-list button')).toHaveText(['author/novel', 'author/other']);
+  await page.locator('#picker-list button', { hasText: 'author/novel' }).click();
+  await expect(page.locator('#episode-title')).toHaveValue('はじまり');
+  await page.getByRole('button', { name: 'ほかの作品' }).click();
+  await expect(page.locator('#repo-list .work b')).toHaveText(['試験の作品']);
+  await page.getByRole('button', { name: 'リポジトリを開く' }).click();
+  await expect(page.locator('#picker-list button')).toHaveText(['author/other']);
+  await page.locator('#picker-list button').click();
+  await expect(page.locator('#work-repo a')).toHaveText('author/other');
   await page.getByRole('button', { name: 'ほかの作品' }).click();
   await expect(page.locator('#repo-list .work b')).toHaveText(['試験の作品', 'other']);
   await expect(page.locator('#repo-list .work small')).toHaveText([/author\/novel（main）非公開$/, /author\/other（main）公開$/]);
   await page.getByRole('button', { name: '戻る' }).click();
-  await expect(page.locator('#episode-title')).toHaveValue('はじまり');
-  gh.fail = () => 401;
+  await expect(page.locator('#work-repo a')).toHaveText('author/other');
+  await page.reload();
+  await expect(page.locator('#work-repo a')).toHaveText('author/other');
   await page.getByRole('button', { name: 'ほかの作品' }).click();
+  gh.fail = () => 401;
+  await page.getByRole('button', { name: 'リポジトリを開く' }).click();
   await expect(page.locator('#repos-error')).toHaveText('トークンが使えません（期限切れか、消されたかもしれません）: test failure');
 });
 
@@ -157,7 +175,7 @@ test('the expiry: 90 days filled in; from 14 days before, said on the screen; th
   await expect(page.locator('#token-notice')).toBeVisible();
   await expect(page.locator('#token-notice-text')).toHaveText(/^トークンの期限が \d+\/\d+ に切れます（あと 1[01] 日）。 GitHub のトークンの一覧/);
   await expect(page.locator('#token-notice a')).toHaveAttribute('href', 'https://github.com/settings/personal-access-tokens');
-  await page.getByRole('button', { name: /author\/novel/ }).click();
+  await openRepo(page, 'author/novel');
   await expect(page.locator('#token-notice')).toBeVisible();
   const [before] = /** @type {any[]} */ (await stored(page, 'vault'));
   // regenerated on GitHub: the old value no longer taken
@@ -180,7 +198,7 @@ test('the expiry: 90 days filled in; from 14 days before, said on the screen; th
   expect(work.text('chapters/01_first.md')).toBe('# 第1話 はじまり\n\n新しいトークンで\n');
   // (the refusal deleted what the device kept of the works, the choice of the work too: chosen again)
   await page.reload();
-  await page.getByRole('button', { name: /author\/novel/ }).click();
+  await openRepo(page, 'author/novel');
   await expect(page.locator('#episode-title')).toHaveValue('はじまり');
   await expect(page.locator('#token-notice')).toBeHidden();
 });

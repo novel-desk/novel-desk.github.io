@@ -3,7 +3,7 @@
 // its name: not sent to until the author says so, FR-GH-12), and what this device keeps of a work moved to the new
 // name. Making and renaming a repository needs Administration, which the token in use does not have: a separate
 // token is put in for it each time, used for that one request and not kept
-import { adminFailure, isWorkKey, keptAfterForget, movedKey, newWorkFiles, repoName, whereIs } from '../lib/works.js';
+import { adminFailure, isWorkKey, keptAfterForget, movedKey, newWorkFiles, repoName, whereIs, withWork } from '../lib/works.js';
 import { $, toast } from './dom.js';
 import * as store from './db.js';
 import * as gh from './github.js';
@@ -12,6 +12,32 @@ import * as gh from './github.js';
 
 /** @param {string} text */
 const base64 = text => btoa(Array.from(new TextEncoder().encode(text), c => String.fromCharCode(c)).join(''));
+
+// この端末の作品の一覧 (FR-WORK-01): the repositories opened on this device. A device that kept none yet starts from the
+// work it had open; the listing of every repository the token reads, kept before, is no longer used
+/** @returns {Promise<Repo[]>} */
+export async function worksHere() {
+  /** @type {Repo[] | undefined} */
+  const kept = await store.get('prefs', 'works');
+  if (kept) return kept;
+  await store.del('prefs', 'repos');
+  /** @type {Repo | undefined} */
+  const r = await store.get('prefs', 'repo');
+  return r ? [r] : [];
+}
+// a repository opened on this device: put on its list (and back on it, if it had been taken off)
+/** @param {Repo} r */
+export async function keepWork(r) {
+  await store.put('prefs', 'works', withWork(await worksHere(), r));
+  /** @type {string[]} */
+  const off = (await store.get('prefs', 'off-list')) ?? [];
+  if (off.includes(r.full_name))
+    await store.put(
+      'prefs',
+      'off-list',
+      off.filter(x => x !== r.full_name),
+    );
+}
 
 // What this device keeps of a work (its drafts, the work last read, its settings, the choice of it, the list's row),
 // moved from its repository's old name to the new one
@@ -28,14 +54,11 @@ export async function moveRepo(from, to) {
   }
   const chosen = await store.get('prefs', 'repo');
   if (chosen?.full_name === from) await store.put('prefs', 'repo', { ...chosen, full_name: to });
-  /** @type {{ full_name: string }[] | undefined} */
-  const listed = await store.get('prefs', 'repos');
-  if (listed)
-    await store.put(
-      'prefs',
-      'repos',
-      listed.map(r => (r.full_name === from ? { ...r, full_name: to } : r)),
-    );
+  await store.put(
+    'prefs',
+    'works',
+    (await worksHere()).map(r => (r.full_name === from ? { ...r, full_name: to } : r)),
+  );
 }
 
 // 作品の削除 (FR-WORK-05): the work taken off this device's list, and what the device keeps of it (its drafts, the
@@ -121,6 +144,7 @@ async function createWork(open, relist) {
     }
     $('admin-token').value = '';
     await store.put('prefs', `new-title:${made.full_name}`, title);
+    await keepWork({ full_name: made.full_name, default_branch: made.default_branch, visibility: made.visibility });
     if (!(await gh.repoMeta(made.full_name))) {
       say(
         `${made.full_name}（非公開）を作りました。いまのトークンではまだ読めないので、GitHub のトークンの一覧でいまのトークンを開き（Edit）、Repository access にこのリポジトリを足してから、一覧から開いてください。開くと作品を始めます`,

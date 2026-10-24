@@ -18,7 +18,7 @@ const CORS = {
 export class FakeRepo {
   /**
    * @param {string} fullName @param {Record<string, string | Buffer> | null} files (null: an empty repository, no commit)
-   * @param {{ branch?: string, private?: boolean }} [o]
+   * @param {{ branch?: string, private?: boolean, push?: boolean }} [o] push: false, a repository the token can only read
    */
   constructor(fullName, files, o = {}) {
     // (given by the FakeGitHub it is in)
@@ -26,6 +26,7 @@ export class FakeRepo {
     this.fullName = fullName;
     this.defaultBranch = o.branch ?? 'main';
     this.private = o.private ?? true;
+    this.writable = o.push ?? true;
     /** @type {Map<string, Buffer>} */
     this.blobs = new Map();
     /** @type {Map<string, Record<string, { mode: string, sha: string }>>} */
@@ -295,6 +296,7 @@ export class FakeGitHub {
         id: r.id,
         visibility: r.private ? 'private' : 'public',
         default_branch: r.defaultBranch,
+        permissions: { admin: false, push: r.writable, pull: true },
       }));
       const more = page * this.perPage < all.length;
       return reply(200, list, more ? { Link: `<https://api.github.com/user/repos?page=${page + 1}>; rel="next"` } : {});

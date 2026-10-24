@@ -57,8 +57,14 @@ export async function openWork(page, first = 'はじまり') {
   await page.goto('./');
   await page.getByLabel('トークン', { exact: true }).fill(TOKEN);
   await page.getByRole('button', { name: 'パスキーで保管する' }).click();
-  await page.getByRole('button', { name: /author\/novel/ }).click();
+  await openRepo(page, 'author/novel');
   if (first !== null) await expect(page.locator('#episode-title')).toHaveValue(first);
+}
+// A repository not on the list opened from 「リポジトリを開く」 (FR-WORK-03), on the list of works
+/** @param {import('@playwright/test').Page} page @param {string} name 「owner/name」 */
+export async function openRepo(page, name) {
+  await page.getByRole('button', { name: 'リポジトリを開く' }).click();
+  await page.locator('#picker-list button', { hasText: name }).click();
 }
 // what IndexedDB keeps in a store
 /** @param {import('@playwright/test').Page} page @param {string} store */

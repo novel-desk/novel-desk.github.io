@@ -6,11 +6,13 @@ import {
   listed,
   movedKey,
   newWorkFiles,
+  offered,
   repoName,
   stillHolds,
   summaryOf,
   visibilityTag,
   whereIs,
+  withWork,
 } from '../../lib/works.js';
 import { parseLayout } from '../../lib/layout.js';
 import { viewOf } from '../../lib/view.js';
@@ -118,6 +120,30 @@ describe('works', () => {
     const list = [{ full_name: 'o/a' }, { full_name: 'o/b' }];
     expect(listed(list, ['o/b', 'o/z'])).toEqual({ shown: [{ full_name: 'o/a' }], off: [{ full_name: 'o/b' }] });
     expect(listed(list, [])).toEqual({ shown: list, off: [] });
+  });
+  // FR-WORK-01
+  test('withWork: put on this device’s list once, at its end; one already on it replaced in its place', () => {
+    const list = [
+      { full_name: 'o/a', default_branch: 'main' },
+      { full_name: 'o/b', default_branch: 'main' },
+    ];
+    expect(withWork(list, { full_name: 'o/c', default_branch: 'main' }).map(r => r.full_name)).toEqual(['o/a', 'o/b', 'o/c']);
+    expect(withWork(list, { full_name: 'o/a', default_branch: 'draft' })).toEqual([
+      { full_name: 'o/a', default_branch: 'draft' },
+      { full_name: 'o/b', default_branch: 'main' },
+    ]);
+    expect(withWork([], { full_name: 'o/a', default_branch: 'main' })).toEqual([{ full_name: 'o/a', default_branch: 'main' }]);
+  });
+  // FR-WORK-03
+  test('offered: the repositories the token can write to that the list does not show', () => {
+    const all = [
+      { full_name: 'o/a', permissions: { push: true } },
+      { full_name: 'o/b', permissions: { push: true } },
+      { full_name: 'x/tools', permissions: { push: false } },
+      { full_name: 'x/none' },
+    ];
+    expect(offered(all, ['o/a']).map(r => r.full_name)).toEqual(['o/b']);
+    expect(offered(all, [])).toEqual(all.slice(0, 2));
   });
   // NFR-SEC-16
   test('keptAfterForget: nothing, but what the drafts kept need', () => {
