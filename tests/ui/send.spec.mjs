@@ -78,7 +78,7 @@ test('GitHub not reached, or refusing: nothing is lost, the drafts stay to be se
   await page.getByRole('button', { name: '送る（1）' }).click();
   await expect(page.locator('#sync-state')).toHaveText('GitHub につながりません（オフラインかもしれません）。書いたものはこの端末に残っています');
   // FR-SAVE-07: not delivered, said on the episode too, until a send goes
-  await expect(page.locator('#save-state')).toHaveText('届けられませんでした（この端末に残っています。理由は「送る」の上）');
+  await expect(page.locator('#save-state')).toHaveText('届けられず、端末に保存済み');
   gh.down = false;
   gh.fail = method => (method === 'POST' ? 403 : undefined);
   await page.getByRole('button', { name: '送る（1）' }).click();
@@ -90,7 +90,7 @@ test('GitHub not reached, or refusing: nothing is lost, the drafts stay to be se
   await page.getByRole('button', { name: '送る（1）' }).click();
   await expect(page.locator('#sync-state')).toHaveText(/^送りました（/);
   expect(work.text('chapters/01_first.md')).toBe('残る\n');
-  await expect(page.locator('#save-state')).toHaveText('GitHub に届いています');
+  await expect(page.locator('#save-state')).toHaveText('GitHub に保存済み');
 });
 
 test('reading again: the episodes come as they are on GitHub, but one with a draft shows the draft', async ({ page, gh, work }) => {
@@ -100,7 +100,7 @@ test('reading again: the episodes come as they are on GitHub, but one with a dra
   await page.getByRole('button', { name: '再読み込み' }).click();
   await expect(page.locator('#sync-state')).toHaveText(/GitHub から読みました/);
   await expect(page.locator('#body')).toHaveValue('# 第1話 はじまり\n\n下書き\n');
-  await expect(page.locator('#save-state')).toHaveText('未送信（この端末に保存しました）');
+  await expect(page.locator('#save-state')).toHaveText('端末に保存済み（未送信）');
   await page.locator('#tree .node', { hasText: '駅で' }).click();
   await expect(page.locator('#body')).toHaveValue('# 第2話 駅で\n\nほかで変えた\n');
   // the draft, sent, keeps the other version too: it was written from the text before
@@ -212,7 +212,7 @@ test('typed while sending: what was typed since stays, not sent; typed back to t
   expect(work.text('chapters/01_first.md')).toBe(`${read}送る分\n`);
   await expect(page.locator('#body')).toHaveValue(`${read}送る分\nその後\n`);
   await expect(page.locator('#send')).toHaveText('送る（1）');
-  await expect(page.locator('#save-state')).toHaveText('未送信（この端末に保存しました）');
+  await expect(page.locator('#save-state')).toHaveText('端末に保存済み（未送信）');
   // typed back to the text read while it is sent
   await page.unrouteAll();
   const now = work.text('chapters/01_first.md');

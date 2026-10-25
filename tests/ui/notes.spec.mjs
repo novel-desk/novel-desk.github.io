@@ -25,7 +25,7 @@ test('the notes listed (the ones used most on top, then by folder); one written 
   await expect(page.getByLabel('資料の本文')).toHaveValue(NOTES['notes/world.md']);
   await page.getByLabel('資料の本文').press('Control+End');
   await page.keyboard.type('海も青い。');
-  await expect(page.locator('#note-state')).toHaveText('未送信（この端末に保存しました）');
+  await expect(page.locator('#note-state')).toHaveText('端末に保存済み（未送信）');
   await expect.poll(async () => (await stored(page, 'drafts')).map(d => d.path)).toEqual(['notes/world.md']);
   // the preview: the heading, and the picture read from GitHub
   await page.locator('#note-preview-toggle').click();
@@ -125,7 +125,7 @@ test("a note's history: its versions on GitHub and this device", async ({ page, 
   page.once('dialog', d => void d.accept());
   await page.locator('#versions').getByRole('button', { name: 'この版を復元' }).click();
   await expect(page.getByLabel('資料の本文')).toHaveValue(NOTES['notes/world.md']);
-  await expect(page.locator('#note-state')).toHaveText('未送信（この端末に保存しました）');
+  await expect(page.locator('#note-state')).toHaveText('端末に保存済み（未送信）');
 });
 
 // FR-NOTE-01, FR-NOTE-02: only the plot note (no 「そのほか」); a note no encoding reads, said, not opened; one without a
@@ -275,7 +275,7 @@ test("a note's history shows its draft; a word being converted kept once convert
   });
   await expect(page.locator('#note-state')).toHaveText('');
   await area.evaluate(a => a.dispatchEvent(new CompositionEvent('compositionend')));
-  await expect(page.locator('#note-state')).toHaveText('未送信（この端末に保存しました）');
+  await expect(page.locator('#note-state')).toHaveText('端末に保存済み（未送信）');
   await page.getByRole('button', { name: 'この資料の履歴' }).click();
   await expect(page.locator('#versions .version .tag').first()).toHaveText('未送信');
 });

@@ -133,11 +133,14 @@ input:focus { border-color: var(--accent); }
   .desk.toc-open .toc { transform: none; box-shadow: 0 0 40px rgba(0,0,0,.25); }
   .desk.toc-open .scrim { display: block; position: fixed; inset: 0; z-index: 9; background: rgba(0,0,0,.3); }
   .menu { display: inline-block; }
-  /* 16px: iOS zooms in on tapping a text under 16px (the server version keeps 14px with maximum-scale=1, set by a
-     script, which this page's CSP does not run) */
-  .body { padding: 18px 14px 50vh; font-size: 16px; }
+  /* the text written stays 14px, as the server version's: iOS zooms in on tapping a text under 16px, but app.js sets
+     maximum-scale=1 on iOS (lib/install.js viewportOf), which keeps it from that (pinching still zooms). The other fields
+     are 16px, as the server version's */
+  .body { padding: 18px 14px 50vh; }
   .preview { padding-left: 14px; padding-right: 14px; }
   input, textarea { font-size: 16px; }
+  /* what the foot says of the episode (FR-SAVE-07) beside its buttons: in two lines when it does not go in one, never cut */
+  #save-state { white-space: normal; line-height: 1.35; overflow-wrap: anywhere; }
 }
 
 /* the install hint of the first screen */

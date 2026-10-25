@@ -45,7 +45,7 @@ test('typing keeps a draft on the device with the blob it was written from; the 
   await page.keyboard.press('End');
   await page.keyboard.type('足した');
   await expect(page.locator('#episode-chars')).toHaveText('16');
-  await expect(page.locator('#save-state')).toHaveText('未送信（この端末に保存しました）');
+  await expect(page.locator('#save-state')).toHaveText('端末に保存済み（未送信）');
   await expect(page.locator('#tree .node.active .unsent-tag')).toHaveText('未送信');
   await expect(page.locator('#send')).toHaveText('送る（1）');
   const base = work.files(work.refs.main)['chapters/01_first.md'].sha;
@@ -64,12 +64,12 @@ test('typing keeps a draft on the device with the blob it was written from; the 
     ]);
   await page.reload();
   await expect(page.locator('#body')).toHaveValue(`${WORK_FILES['chapters/01_first.md']}足した`);
-  await expect(page.locator('#save-state')).toHaveText('未送信（この端末に保存しました）');
+  await expect(page.locator('#save-state')).toHaveText('端末に保存済み（未送信）');
   // typed back to the text read: nothing to send
   await page.locator('#body').click();
   await page.keyboard.press('Control+End');
   for (let i = 0; i < 3; i++) await page.keyboard.press('Backspace');
-  await expect(page.locator('#save-state')).toHaveText('GitHub に届いています');
+  await expect(page.locator('#save-state')).toHaveText('GitHub に保存済み');
   await expect(page.locator('#send')).toBeDisabled();
   await expect.poll(() => stored(page, 'drafts')).toEqual([]);
 });
@@ -151,6 +151,50 @@ test.describe('an iPhone width', () => {
     await expect(page.locator('#toc')).not.toBeInViewport();
     // nothing wider than the screen
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  });
+});
+
+const IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
+const ANDROID = 'Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Mobile Safari/537.36';
+test.describe('an iPhone (its Safari, touch)', () => {
+  test.use({ userAgent: IPHONE, viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+  // NFR-USE-02: the text written in 14px, as the server version's; Safari kept from zooming in on tapping it
+  test('the text is 14px, and the viewport has maximum-scale=1', async ({ page, gh }) => {
+    await openWork(page);
+    await expect(page.locator('meta[name="viewport"]')).toHaveAttribute('content', /,maximum-scale=1$/);
+    expect(await page.locator('#body').evaluate(b => getComputedStyle(b).fontSize)).toBe('14px');
+  });
+  // FR-SAVE-07: what the foot says of the episode (each of the three) read whole beside its buttons: not cut, not
+  // higher than the buttons
+  test('what the foot says of the episode is never cut', async ({ page, gh }) => {
+    await openWork(page);
+    const said = await page.evaluate(async () => {
+      const { saveState } = await import('./lib/sync.js');
+      const state = /** @type {HTMLElement} */ (document.getElementById('save-state'));
+      const button = /** @type {HTMLElement} */ (document.getElementById('open-history'));
+      return [
+        { draft: false, failed: false, onGitHub: true },
+        { draft: true, failed: false, onGitHub: true },
+        { draft: true, failed: true, onGitHub: true },
+      ].map(s => {
+        state.textContent = saveState(s);
+        return {
+          text: state.textContent,
+          wide: state.scrollWidth > state.clientWidth,
+          tall: state.scrollHeight > state.clientHeight || state.offsetHeight > button.offsetHeight,
+        };
+      });
+    });
+    expect(said.map(s => s.text)).toEqual(['GitHub に保存済み', '端末に保存済み（未送信）', '届けられず、端末に保存済み']);
+    for (const s of said) expect(s, s.text).toMatchObject({ wide: false, tall: false });
+  });
+});
+// NFR-USE-02: Android not given maximum-scale=1 (it would stop pinching too)
+test.describe('an Android phone', () => {
+  test.use({ userAgent: ANDROID, viewport: { width: 412, height: 915 }, hasTouch: true, isMobile: true });
+  test('the viewport has no maximum-scale', async ({ page, gh }) => {
+    await openWork(page);
+    await expect(page.locator('meta[name="viewport"]')).toHaveAttribute('content', 'width=device-width,initial-scale=1,viewport-fit=cover');
   });
 });
 

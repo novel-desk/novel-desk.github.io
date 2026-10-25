@@ -1,7 +1,7 @@
 // The app: the token (put in once, opened with a passkey each time), the repository chosen, and the desk. No server:
 // the page talks to GitHub's API only, and keeps what it needs on this device
 import { dayAfter, endOf, expiryNotice } from './lib/expiry.js';
-import { installHint, isIos, switchNow } from './lib/install.js';
+import { installHint, isIos, switchNow, viewportOf } from './lib/install.js';
 import { $, show, toast } from './ui/dom.js';
 import * as store from './ui/db.js';
 import * as desk from './ui/desk.js';
@@ -12,6 +12,13 @@ import { showWorks, wireWorks } from './ui/works.js';
 import { appOf, importKey, madeApp, startManifest } from './ui/appkey.js';
 import { authorOf, HOUR, installUrl, returnOf, sameOwner, startedHere } from './lib/appkey.js';
 import { forgetDevice, keepWork } from './ui/repo.js';
+
+// First of all (NFR-USE-02): on iOS, no zooming in on tapping the text. Set here, not in index.html as the server version
+// does: the page's CSP runs no script written in the page. In time: nothing to type in is shown before this runs
+{
+  const meta = /** @type {HTMLMetaElement} */ (document.querySelector('meta[name="viewport"]'));
+  meta.content = viewportOf(meta.content, navigator);
+}
 
 /** @typedef {import('./ui/desk.js').Repo} Repo */
 /** @typedef {import('./ui/vault.js').AppVault} AppVault */

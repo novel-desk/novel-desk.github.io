@@ -45,9 +45,9 @@ describe('sync', () => {
   });
   // FR-SAVE-07
   test('saveState: delivered, on this device only, or not delivered', () => {
-    expect(saveState({ draft: false, failed: false, onGitHub: true })).toBe('GitHub に届いています');
+    expect(saveState({ draft: false, failed: false, onGitHub: true })).toBe('GitHub に保存済み');
     expect(saveState({ draft: false, failed: true, onGitHub: false })).toBe('');
-    expect(saveState({ draft: true, failed: false, onGitHub: true })).toBe('未送信（この端末に保存しました）');
-    expect(saveState({ draft: true, failed: true, onGitHub: true })).toBe('届けられませんでした（この端末に残っています。理由は「送る」の上）');
+    expect(saveState({ draft: true, failed: false, onGitHub: true })).toBe('端末に保存済み（未送信）');
+    expect(saveState({ draft: true, failed: true, onGitHub: true })).toBe('届けられず、端末に保存済み');
   });
 });

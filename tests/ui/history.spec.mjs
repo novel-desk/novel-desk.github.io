@@ -33,7 +33,7 @@ test("GitHub's versions listed; one compared with the one before, with now, read
   await dlg.getByRole('button', { name: 'この版を復元' }).click();
   await expect(dlg).toBeHidden();
   await expect(page.locator('#body')).toHaveValue('# 第1話 はじまり\n\n朝が来た。鳥が鳴いた。\n');
-  await expect(page.locator('#save-state')).toHaveText('未送信（この端末に保存しました）');
+  await expect(page.locator('#save-state')).toHaveText('端末に保存済み（未送信）');
   // the tab chosen stays; the text before is in this device's versions, and the draft is a version too
   await page.getByRole('button', { name: 'この話の履歴' }).click();
   await expect(dlg.locator('.version .tag')).toHaveText(['GitHub', 'GitHub', 'GitHub']);

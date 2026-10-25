@@ -80,7 +80,7 @@ test('read in on the notes screen: the note open follows GitHub, its caret kept;
   await inFront(page);
   await expect(page.locator('#toast')).toHaveText('ほかの所での変更を読み込みました');
   await expect(page.getByLabel('資料の本文')).toHaveValue('# 世界観\n\nここで書いた。\n');
-  await expect(page.locator('#note-state')).toHaveText('未送信（この端末に保存しました）');
+  await expect(page.locator('#note-state')).toHaveText('端末に保存済み（未送信）');
   await leave(page);
   await expect.poll(() => work.text('notes/world.md')).toBe(`# 世界観\n\nここで書いた。\n\n${OTHER_DEVICE_MARK}\n\n# 世界観\n\nほかで書いた。\n`);
   // (sent: the note open shows both versions, as the branch has it)

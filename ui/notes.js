@@ -139,7 +139,7 @@ function showState() {
   $('note-state').textContent = text.includes(CONFLICT_MARK)
     ? '両方の版が並んでいます。「――― ここから」の行を探して整理してください'
     : api.drafts().has(/** @type {string} */ (notePath))
-      ? '未送信（この端末に保存しました）'
+      ? '端末に保存済み（未送信）'
       : '';
 }
 // only the lines start..end in the box, the rest of the note kept aside (put back around them when kept)
