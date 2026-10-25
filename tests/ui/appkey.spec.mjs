@@ -18,6 +18,7 @@ function makeApp(gh, repos = ['author/novel', 'author/other']) {
 /** @param {import('@playwright/test').Page} page @param {string} pem @param {{ id?: string, name?: string }} [o] */
 async function putKey(page, pem, { id = APP_ID, name = 'novel-desk.private-key.pem' } = {}) {
   await page.goto('./');
+  await page.getByText('鍵のファイルがあるとき').click();
   await page.locator('#app-id').fill(id);
   await page.locator('#app-key').setInputFiles({ name, mimeType: 'application/x-pem-file', buffer: Buffer.from(pem) });
   await page.locator('#app-name').fill(AUTHOR.name);

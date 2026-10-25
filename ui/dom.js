@@ -4,7 +4,7 @@
 /** @param {string} id @returns {El} */
 export const $ = id => /** @type {El} */ (document.getElementById(id));
 
-const SCREENS = ['loading', 'setup', 'unlock', 'repos', 'desk', 'notes', 'plot', 'characters', 'record'];
+const SCREENS = ['loading', 'setup', 'app-install', 'unlock', 'repos', 'desk', 'notes', 'plot', 'characters', 'record'];
 // one screen at a time
 /** @param {string} id */
 export function show(id) {

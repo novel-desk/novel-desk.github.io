@@ -9,10 +9,13 @@ import * as gh from './ui/github.js';
 import * as vault from './ui/vault.js';
 import { api } from './ui/shared.js';
 import { showWorks, wireWorks } from './ui/works.js';
-import { appOf, importKey } from './ui/appkey.js';
+import { appOf, importKey, madeApp, startManifest } from './ui/appkey.js';
+import { authorOf, HOUR, installUrl, returnOf, startedHere } from './lib/appkey.js';
 import { forgetDevice, keepWork } from './ui/repo.js';
 
 /** @typedef {import('./ui/desk.js').Repo} Repo */
+/** @typedef {import('./ui/vault.js').AppVault} AppVault */
+/** @typedef {import('./lib/appkey.js').Pending} Pending */
 
 // what the screen says of how the token is kept ('' none kept yet)
 const KINDS = {
@@ -28,6 +31,10 @@ const KINDS = {
 let kind = '';
 /** @type {string} the token in use ('' none yet) */
 let using = '';
+/** @type {AppVault | null} the GitHub App in use, as kept */
+let appVault = null;
+/** @type {import('./ui/github.js').App | null} the GitHub App in use */
+let appInUse = null;
 
 // --- the token
 
@@ -118,6 +125,8 @@ async function forgetToken() {
   await vault.forget();
   await vault.forgetApp();
   gh.useApp(null);
+  appVault = appInUse = null;
+  $('author-notice').hidden = true;
   await forgetDevice(left > 0 && !dropDrafts);
   await store.del('prefs', 'token-expires');
   hideNotice();
@@ -134,6 +143,7 @@ async function forgetToken() {
 async function openRepo(r) {
   await keepWork(r);
   await store.put('prefs', 'repo', r);
+  void proposeAuthor(r.full_name);
   await desk.open(r);
 }
 // この端末の画面 (FR-APP-05): its size, its scale, the room the status bar and the home bar take, and whether it is the
@@ -231,9 +241,11 @@ async function withToken(token) {
 }
 // the work chosen before, or the list of works
 async function openFirst() {
+  /** @type {Repo | undefined} */
   const r = await store.get('prefs', 'repo');
-  if (r) await desk.open(r);
-  else await chooseRepo();
+  if (!r) return chooseRepo();
+  void proposeAuthor(r.full_name);
+  await desk.open(r);
 }
 
 // --- a GitHub App's private key in place of the token (FR-GH-01, NFR-SEC-15: ui/appkey.js, ui/vault.js keepApp)
@@ -259,7 +271,7 @@ async function keepApp(/** @type {SubmitEvent} */ e) {
     if (!repos.length)
       throw new Error('この GitHub App は、どのリポジトリにも入っていません。GitHub の App の設定の Install App で、作品のリポジトリに入れてください');
     await checkLogin(`app:${appId}`, 'この秘密鍵');
-    const v = await vault.keepApp({ appId, key, author });
+    const v = await vault.keepApp({ appId, key, author, credentialId: await vault.appPasskey() });
     await vault.forget();
     /** @type {HTMLFormElement} */ (/** @type {unknown} */ ($('app-form'))).reset();
     if (!v.credentialId) toast('パスキーに対応していないため、パスキーなしで保管しました');
@@ -270,27 +282,177 @@ async function keepApp(/** @type {SubmitEvent} */ e) {
     $('keep-app').disabled = false;
   }
 }
-/** @param {import('./ui/vault.js').AppVault} v @param {import('./ui/github.js').App} [app] the one it was checked with */
-async function withApp(v, app = appOf(v.appId, v.key, v.author)) {
+/** @param {AppVault} v @param {import('./ui/github.js').App} [app] the one it was checked with */
+function useApp(v, app = appOf(v.appId, v.key, v.author)) {
   kind = v.credentialId ? 'app' : 'app-local';
   gh.useToken('');
   gh.useApp(app);
   using = 'app';
+  appVault = v;
+  appInUse = app;
   hideNotice();
-  await openFirst();
+}
+/** @param {AppVault} v @param {import('./ui/github.js').App} [app] */
+async function withApp(v, app) {
+  useApp(v, app);
+  // (an App made by the manifest flow, no work chosen yet: where the author installed it)
+  if (v.slug && !(await store.get('prefs', 'repo'))) await installed(false);
+  else await openFirst();
+}
+
+// --- a GitHub App made by GitHub's manifest flow (FR-GH-01, NFR-SEC-05, NFR-SEC-10: ui/appkey.js startManifest,
+// madeApp). One button here; on GitHub, Create, then the repositories and Install; back here, the work opened
+
+// the flow started: the passkey for the key made now (while the press is fresh), then the page leaves for GitHub. The
+// field to paste a code in is shown at once, for a way back that opens somewhere else (README: iPhone)
+async function makeApp() {
+  $('app-make-error').textContent = '';
+  $('make-app').disabled = true;
+  try {
+    const credentialId = await vault.appPasskey();
+    $('app-paste-form').hidden = false;
+    await startManifest(credentialId);
+  } catch (err) {
+    $('app-make-error').textContent = err.message;
+  } finally {
+    $('make-app').disabled = false;
+  }
+}
+// whether a flow started on this device is waited for (the field to paste its code in shown)
+async function showPaste() {
+  /** @type {Pending | undefined} */
+  const p = await store.get('prefs', 'app-manifest');
+  $('app-paste-form').hidden = !(p && Date.now() - p.at < HOUR);
+}
+// GitHub came back with the App made: taken only by the flow started here (its state, within the hour, once). Back
+// somewhere else (another browser, or Safari and not the app on the home screen): not taken there, and the code shown
+// to be pasted where the flow was started
+/** @param {{ code: string, state: string }} back */
+async function cameBack(back) {
+  /** @type {Pending | undefined} */
+  const p = await store.get('prefs', 'app-manifest');
+  if (startedHere(p, back.state, Date.now())) return finishApp(back.code, /** @type {Pending} */ (p));
+  show('setup');
+  await showPaste();
+  $('app-bridge-code').value = `${back.state}.${back.code}`;
+  $('app-bridge').hidden = false;
+}
+async function pasteCode(/** @type {SubmitEvent} */ e) {
+  e.preventDefault();
+  $('app-paste-error').textContent = '';
+  const back = returnOf($('app-paste').value);
+  /** @type {Pending | undefined} */
+  const p = await store.get('prefs', 'app-manifest');
+  if (!back || !startedHere(p, back.state, Date.now())) {
+    $('app-paste-error').textContent =
+      'このコードは、ここで始めた GitHub App のものではありません（1 時間を過ぎたかもしれません）。もう一度「GitHub App を作って始める」を押してください';
+    return;
+  }
+  $('app-paste').value = '';
+  await finishApp(back.code, /** @type {Pending} */ (p));
+}
+// The code turned into the App: its key kept (cannot be taken out; the private key's text not kept), then GitHub's
+// page to install it on the work's repositories. The state is used up first: the code is taken once
+/** @param {string} code @param {Pending} p */
+async function finishApp(code, p) {
+  await store.del('prefs', 'app-manifest');
+  show('setup');
+  $('app-paste-form').hidden = true;
+  try {
+    const { appId, slug, key } = await madeApp(code);
+    await checkLogin(`app:${appId}`, 'この GitHub App');
+    const v = await vault.keepApp({ appId, slug, key, author: null, credentialId: p.credentialId });
+    await vault.forget();
+    // (back from installing it, opened once without the passkey made a moment ago)
+    await store.put('prefs', 'app-installing', Date.now());
+    useApp(v);
+    await installed(true);
+  } catch (err) {
+    $('app-make-error').textContent = `GitHub App を受け取れませんでした（${err.message}）`;
+  }
+}
+// The repositories the App is installed on: one, opened; several, offered (リポジトリを開く); none yet, GitHub's page
+// to install it on them (gone to at once when `leave`; looked at again when the author comes back)
+/** @param {boolean} leave */
+async function installed(leave) {
+  const v = /** @type {AppVault} */ (appVault);
+  $('app-install-error').textContent = '';
+  /** @type {any[]} */
+  let repos;
+  try {
+    repos = await gh.repos();
+  } catch (err) {
+    show('app-install');
+    $('app-install-error').textContent = err.message;
+    return;
+  }
+  if (!repos.length) {
+    $('app-install-link').setAttribute('href', installUrl(/** @type {string} */ (v.slug)));
+    show('app-install');
+    if (leave) location.assign(installUrl(/** @type {string} */ (v.slug)));
+    return;
+  }
+  await store.del('prefs', 'app-installing');
+  if (repos.length === 1) return openRepo({ full_name: repos[0].full_name, default_branch: repos[0].default_branch, visibility: repos[0].visibility });
+  await chooseRepo();
+  $('open-other').click();
+}
+// the app shown again: an App installed meanwhile, or a key kept meanwhile by another page of this app
+async function recheck() {
+  if (!$('app-install').hidden) return installed(false);
+  if (!$('setup').hidden && (await vault.keptApp())) await start();
+}
+// Who an App's commits are written by, when it is not known yet (an App made by the manifest flow): proposed from the
+// latest commit of the work opened (or the account the App is installed on), kept at once, and shown with the way to
+// change it, before anything is sent
+/** @param {string} repo */
+async function proposeAuthor(repo) {
+  if (!appInUse || appInUse.author) return;
+  /** @type {any[]} */
+  let commits = [];
+  try {
+    commits = await gh.latest(repo);
+  } catch {}
+  const author = authorOf(commits, await appInUse.account(`/repos/${repo}/`));
+  if (!author) return;
+  await keepAuthor(author);
+  $('author-name').value = author.name;
+  $('author-email').value = author.email;
+  $('author-notice').hidden = false;
+}
+/** @param {{ name: string, email: string }} author */
+async function keepAuthor(author) {
+  const v = /** @type {AppVault} */ (appVault);
+  v.author = author;
+  /** @type {import('./ui/github.js').App} */ (appInUse).author = author;
+  await vault.keepApp(v);
+}
+async function changeAuthor(/** @type {SubmitEvent} */ e) {
+  e.preventDefault();
+  await keepAuthor({ name: $('author-name').value.trim(), email: $('author-email').value.trim() });
+  $('author-notice').hidden = true;
 }
 
 async function start() {
+  const back = returnOf(location.href);
+  // (what GitHub gave back is not left in the address, nor in the history)
+  if (location.search) history.replaceState(null, '', location.pathname);
+  if (back) return cameBack(back);
   const a = await vault.keptApp();
   if (a) {
-    if (!a.credentialId) return withApp(a);
+    /** @type {number} */
+    const installing = (await store.get('prefs', 'app-installing')) ?? 0;
+    if (!a.credentialId || Date.now() - installing < HOUR) return withApp(a);
     kind = 'app';
     $('unlock-note').textContent = KINDS.app;
     return show('unlock');
   }
   const v = await vault.kept();
   kind = v?.kind ?? '';
-  if (!v) return show('setup');
+  if (!v) {
+    show('setup');
+    return showPaste();
+  }
   if (v.kind === 'local') {
     try {
       return await withToken(await vault.open(v));
@@ -306,6 +468,20 @@ async function start() {
 
 $('setup-form').addEventListener('submit', e => void keepToken(/** @type {SubmitEvent} */ (e)));
 $('app-form').addEventListener('submit', e => void keepApp(/** @type {SubmitEvent} */ (e)));
+$('make-app').addEventListener('click', () => void makeApp());
+$('app-paste-form').addEventListener('submit', e => void pasteCode(/** @type {SubmitEvent} */ (e)));
+$('author-notice').addEventListener('submit', e => void changeAuthor(/** @type {SubmitEvent} */ (e)));
+$('forget-token-install').addEventListener('click', () => void forgetToken());
+$('copy-bridge').addEventListener('click', () =>
+  navigator.clipboard.writeText($('app-bridge-code').value).then(
+    () => toast('コードを写しました。始めた Novel Desk に戻って貼ってください'),
+    () => {
+      $('app-bridge-code').select();
+      toast('写せませんでした。コードを長押しして写してください');
+    },
+  ),
+);
+document.addEventListener('visibilitychange', () => void recheck());
 $('open-token').addEventListener('click', () => void openToken());
 $('forget-token').addEventListener('click', () => void forgetToken());
 $('forget-token-unlock').addEventListener('click', () => void forgetToken());

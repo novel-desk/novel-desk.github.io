@@ -1,7 +1,7 @@
 // A GitHub of the screen tests: the REST API that the app uses (the repositories of the token, refs, commits, trees,
 // blobs), kept in memory and answered through Playwright's routing. Nothing reaches the real GitHub: every request that
 // is not to this page's server is answered here or refused (and noted in `outside`)
-import { createHash, verify } from 'node:crypto';
+import { createHash, generateKeyPairSync, verify } from 'node:crypto';
 
 export const TOKEN = 'test-token-not-real';
 const sha1 = (/** @type {string | Buffer} */ s) => createHash('sha1').update(s).digest('hex');
@@ -27,6 +27,8 @@ export class FakeRepo {
     this.defaultBranch = o.branch ?? 'main';
     this.private = o.private ?? true;
     this.writable = o.push ?? true;
+    // who its commits are written by, as its listing of commits says (made up for the tests)
+    this.author = { name: '試験の作者', email: 'author@example.invalid' };
     /** @type {Map<string, Buffer>} */
     this.blobs = new Map();
     /** @type {Map<string, Record<string, { mode: string, sha: string }>>} */
@@ -227,6 +229,81 @@ export class FakeGitHub {
     this.installationPerPage = 100;
     /** @type {{ author?: unknown, committer?: unknown }[]} who the commits made through the API were written by, as sent */
     this.written = [];
+    // --- the manifest flow (github.com's pages): the manifests posted (with the state in the address), the Apps made
+    // from them by their codes, and the pages of installing them visited
+    /** @type {{ manifest: any, state: string | null }[]} */
+    this.manifests = [];
+    /** @type {Map<string, { used: boolean, id: number, clientId: string, slug: string, pem: string, publicKey: import('node:crypto').KeyObject, setup: string }>} */
+    this.codes = new Map();
+    // the author presses Create at once (false: the page stays on GitHub, nothing sent back)
+    this.createNow = true;
+    /** @type {string[] | null} the repositories the author installs the App on when its page opens (null: not installed, the page stays) */
+    this.installRepos = ['author/novel'];
+    /** @type {string[]} the pages of installing an App visited */
+    this.installPages = [];
+  }
+  // github.com's pages of the manifest flow: the manifest posted (the App made, and back to its redirect_url with the
+  // code and the state), and the page of installing it (installed, and back to its setup_url)
+  /** @param {import('@playwright/test').Route} route @param {URL} url */
+  answerWeb(route, url) {
+    const req = route.request();
+    /** @param {string} to */
+    const back = to =>
+      route.fulfill({
+        status: 200,
+        contentType: 'text/html; charset=utf-8',
+        body: `<!doctype html><meta http-equiv="refresh" content="0;url=${to}"><p>GitHub</p>`,
+      });
+    const stay = () =>
+      route.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body: '<!doctype html><meta charset="utf-8"><p>GitHub（試験の偽物）</p>' });
+    if (url.pathname === '/settings/apps/new' && req.method() === 'POST') {
+      const manifest = JSON.parse(String(new URLSearchParams(req.postData() ?? '').get('manifest')));
+      const state = url.searchParams.get('state');
+      this.manifests.push({ manifest, state });
+      const n = this.codes.size + 1;
+      const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
+      const code = `testcode${n}${'0'.repeat(8)}`;
+      const slug = String(manifest.name).toLowerCase().replace(/ /g, '-');
+      this.codes.set(code, {
+        used: false,
+        id: 900 + n,
+        clientId: `Iv23testclient${n}`,
+        slug,
+        pem: privateKey.export({ type: 'pkcs1', format: 'pem' }).toString(),
+        publicKey,
+        setup: manifest.setup_url,
+      });
+      if (!this.createNow) return stay();
+      return back(`${manifest.redirect_url}?${new URLSearchParams({ code, state: String(state) })}`);
+    }
+    const inst = /^\/apps\/([^/]+)\/installations\/new$/.exec(url.pathname);
+    const made = inst && [...this.codes.values()].find(c => c.slug === inst[1]);
+    if (made && req.method() === 'GET') {
+      this.installPages.push(url.pathname);
+      if (!this.installRepos) return stay();
+      /** @type {NonNullable<FakeGitHub['app']>} */ (this.app).installations.push({ id: 8, account: 'author', repos: this.installRepos });
+      return back(`${made.setup}?installation_id=8&setup_action=install`);
+    }
+    this.outside.push(url.href);
+    return route.abort('blockedbyclient');
+  }
+  // an App made from its manifest: its code turned into the App and its private key, once (GitHub's conversions)
+  /** @param {string} code @param {(status: number, body: unknown) => Promise<void>} reply */
+  convert(code, reply) {
+    const c = this.codes.get(code);
+    if (!c || c.used) return reply(404, { message: 'Not Found' });
+    c.used = true;
+    this.app = { id: c.clientId, publicKey: c.publicKey, installations: [] };
+    return reply(201, {
+      id: c.id,
+      slug: c.slug,
+      client_id: c.clientId,
+      name: c.slug,
+      owner: { login: 'author', id: 1001 },
+      client_secret: 'test-client-secret-not-real',
+      webhook_secret: null,
+      pem: c.pem,
+    });
   }
   // whether a request comes with a JWT of the App: signed by its key, its own, not ended, and for 10 minutes at most
   /** @param {string | undefined} auth */
@@ -266,7 +343,7 @@ export class FakeGitHub {
     if (url.pathname === '/app/installations' && method === 'GET')
       return reply(
         200,
-        app.installations.map(i => ({ id: i.id, account: { login: i.account } })),
+        app.installations.map(i => ({ id: i.id, account: { login: i.account, id: 1001 } })),
       );
     const m = /^\/app\/installations\/(\d+)\/access_tokens$/.exec(url.pathname);
     if (m && method === 'POST' && app.installations.some(i => i.id === Number(m[1]))) {
@@ -291,6 +368,7 @@ export class FakeGitHub {
     await context.route('**/*', async route => {
       const url = new URL(route.request().url());
       if (url.origin === origin) return route.continue();
+      if (url.origin === 'https://github.com') return this.answerWeb(route, url);
       if (url.origin !== 'https://api.github.com') {
         this.outside.push(url.href);
         return route.abort('blockedbyclient');
@@ -311,6 +389,8 @@ export class FakeGitHub {
     const reply = (status, body, headers = {}) =>
       route.fulfill({ status, headers: { ...CORS, 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body) });
     const headers = req.headers();
+    const conversion = /^\/app-manifests\/([^/]+)\/conversions$/.exec(url.pathname);
+    if (conversion && method === 'POST') return this.convert(conversion[1], reply);
     if (this.app && (url.pathname.startsWith('/app/') || url.pathname === '/installation/repositories'))
       return this.answerApp(method, url, headers.authorization, reply);
     const admin = this.adminTokens.some(t => headers.authorization === `Bearer ${t}`);
@@ -378,7 +458,11 @@ export class FakeGitHub {
       const all = repo.log(from, url.searchParams.get('path') ?? undefined);
       const list = all.slice((page - 1) * per, page * per).map(sha => {
         const c = /** @type {{ message: string, date: string, parents: string[] }} */ (repo.commits.get(sha));
-        return { sha, commit: { message: c.message, committer: { date: c.date }, author: { date: c.date } }, parents: c.parents.map(p => ({ sha: p })) };
+        return {
+          sha,
+          commit: { message: c.message, committer: { date: c.date }, author: { ...repo.author, date: c.date } },
+          parents: c.parents.map(p => ({ sha: p })),
+        };
       });
       const more = page * per < all.length;
       return reply(

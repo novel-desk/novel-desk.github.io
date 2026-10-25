@@ -1,7 +1,7 @@
 // A GitHub App's private key in PKCS#8, and the JWT it signs. The keys are made here for the test (never a real one)
 import { describe, test, expect } from 'vitest';
 import { generateKeyPairSync, verify, createPrivateKey, sign } from 'node:crypto';
-import { base64url, jwtBody, ownerOf, pkcs8Of, renewNow } from '../../lib/appkey.js';
+import { authorOf, base64url, HOUR, installUrl, jwtBody, manifestOf, ownerOf, pkcs8Of, renewNow, returnOf, startedHere, suffixOf } from '../../lib/appkey.js';
 
 const pair = bits => generateKeyPairSync('rsa', { modulusLength: bits });
 describe('appkey', () => {
@@ -41,5 +41,51 @@ describe('appkey', () => {
     expect(ownerOf('https://api.github.com/repos/o/r/contents/a?ref=b')).toBe('o');
     expect(ownerOf('/user/repos?per_page=1')).toBe('');
     expect(ownerOf('/repositories/12')).toBe('');
+  });
+  // FR-GH-01, NFR-SEC-11: the App made from the manifest: the app's own address to come back to, no webhook, on the
+  // author's account only, Contents to write and Metadata to read and nothing else, no events
+  test('manifestOf: named with the suffix; back to the app; no webhook; private; contents write, metadata read', () => {
+    const base = 'https://novel-desk.github.io/';
+    expect(manifestOf(base, 'k3x9a1')).toEqual({
+      name: 'Novel Desk k3x9a1',
+      url: base,
+      description: 'Novel Desk で小説のリポジトリを読み書きする',
+      redirect_url: base,
+      setup_url: base,
+      public: false,
+      hook_attributes: { url: base, active: false },
+      default_permissions: { contents: 'write', metadata: 'read' },
+      default_events: [],
+    });
+    expect(suffixOf(new Uint8Array([0, 35, 36, 255]))).toBe('0z03');
+    expect(installUrl('novel-desk-k3x9a1')).toBe('https://github.com/apps/novel-desk-k3x9a1/installations/new');
+  });
+  // FR-GH-01, NFR-SEC-10: what came back, from the address or pasted; taken only by the flow started here, in the hour
+  test('returnOf and startedHere: the address or 「state.code」; the same state within the hour only', () => {
+    expect(returnOf('https://novel-desk.github.io/?code=abc123&state=s-1_x')).toEqual({ code: 'abc123', state: 's-1_x' });
+    expect(returnOf('  s-1_x.abc123\n')).toEqual({ code: 'abc123', state: 's-1_x' });
+    expect(returnOf('https://novel-desk.github.io/?code=abc123')).toBeNull();
+    expect(returnOf('https://novel-desk.github.io/?state=s')).toBeNull();
+    expect(returnOf('https://novel-desk.github.io/')).toBeNull();
+    expect(returnOf('コードではない')).toBeNull();
+    expect(returnOf('a.b.c')).toBeNull();
+    const p = { state: 's1', at: 1000, credentialId: null };
+    expect(startedHere(p, 's1', 1000 + HOUR - 1)).toBe(true);
+    expect(startedHere(p, 's1', 1000 + HOUR)).toBe(false);
+    expect(startedHere(p, 's2', 1000)).toBe(false);
+    expect(startedHere(undefined, 's1', 1000)).toBe(false);
+  });
+  // FR-GH-01: the commits' author proposed from the latest commit, or the account's noreply address
+  test('authorOf: the latest commit’s author; none, the account; neither, nothing', () => {
+    const account = { login: 'author', id: 42 };
+    const commits = [
+      { commit: { author: { name: '試験の作者', email: 'author@example.invalid', date: 'x' } } },
+      { commit: { author: { name: 'b', email: 'b@x' } } },
+    ];
+    expect(authorOf(commits, account)).toEqual({ name: '試験の作者', email: 'author@example.invalid' });
+    expect(authorOf([], account)).toEqual({ name: 'author', email: '42+author@users.noreply.github.com' });
+    expect(authorOf([{ commit: { author: { name: '名前だけ' } } }], account)).toEqual({ name: 'author', email: '42+author@users.noreply.github.com' });
+    expect(authorOf([{ commit: { author: { email: 'a@x' } } }], undefined)).toBeNull();
+    expect(authorOf([{}], undefined)).toBeNull();
   });
 });

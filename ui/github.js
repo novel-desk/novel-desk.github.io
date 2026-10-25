@@ -11,7 +11,7 @@ export const onRefused = f => refusals.addEventListener('refused', f);
 /**
  * A GitHub App in use in place of the token (ui/appkey.js): the installation's token for a request (`fresh`: asked
  * for again, the one before refused), the repositories it is installed on, and who the commits are written by
- * @typedef {{ tokenFor: (url: string, fresh: boolean) => Promise<string>, repos: () => Promise<any[]>, author: { name: string, email: string } }} App
+ * @typedef {{ tokenFor: (url: string, fresh: boolean) => Promise<string>, repos: () => Promise<any[]>, account: (url: string) => Promise<{ login: string, id: number } | undefined>, author: { name: string, email: string } | null }} App
  */
 /** @type {App | null} */
 let app = null;
@@ -93,6 +93,9 @@ export async function commitOf(repo, commit) {
 /** @param {string} repo @param {string} commit @returns {Promise<string>} the commit's tree */
 export const treeOf = async (repo, commit) => (await commitOf(repo, commit)).tree;
 // when a file was last changed on a branch (its last commit; 0 when it has none)
+// the latest commit of the repository's default branch (none: an empty repository, GitHubError 409)
+/** @param {string} repo @returns {Promise<any[]>} */
+export const latest = repo => getJson(`/repos/${repoPath(repo)}/commits?per_page=1`);
 /** @param {string} repo @param {string} branch @param {string} path @returns {Promise<number>} */
 export async function lastChange(repo, branch, path) {
   const list = await getJson(`/repos/${repoPath(repo)}/commits?sha=${encodeURIComponent(branch)}&path=${encodeURIComponent(path)}&per_page=1`);
@@ -178,8 +181,9 @@ export const newTree = async (repo, base, tree) => (await send('POST', `/repos/$
 /** @param {string} repo @param {string} message @param {string} tree @param {string} parent */
 export const newCommit = async (repo, message, tree, parent) =>
   (await send('POST', `/repos/${repoPath(repo)}/git/commits`, { message, tree, parents: [parent], ...writtenBy() })).sha;
-// who a commit is written by: an App's commits, the author (GitHub would write them as the App); a token's, its user
-const writtenBy = () => (app ? { author: app.author, committer: app.author } : {});
+// who a commit is written by: an App's commits, the author (GitHub would write them as the App; so it does when the
+// author is not known yet); a token's, its user
+const writtenBy = () => (app?.author ? { author: app.author, committer: app.author } : {});
 // moves the branch onto the commit, only forward (a branch moved on elsewhere since: GitHubError 422)
 /** @param {string} repo @param {string} branch @param {string} commit */
 export const moveBranch = (repo, branch, commit) => send('PATCH', `/repos/${repoPath(repo)}/git/refs/heads/${refPath(branch)}`, { sha: commit, force: false });
@@ -233,4 +237,17 @@ export async function createRepo(as, owner, name, description) {
 export async function renameRepo(as, repo, name) {
   const r = await sendAs(as, 'PATCH', `/repos/${repoPath(repo)}`, { name });
   return { id: r.id, full_name: r.full_name, default_branch: r.default_branch, visibility: r.visibility, private: r.private };
+}
+
+// A GitHub App made from its manifest (GitHub's manifest flow): the code GitHub gave back turned into the App, with its
+// private key (pem). Asked without a token: the code is the proof, and it is taken once, within the hour
+/** @param {string} code @returns {Promise<{ id: number, client_id: string, slug: string, pem: string }>} */
+export async function convertManifest(code) {
+  const res = await fetch(`${API}/app-manifests/${encodeURIComponent(code)}/conversions`, {
+    method: 'POST',
+    cache: 'no-store',
+    headers: { Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' },
+  });
+  if (!res.ok) throw new GitHubError(failure(res.status), res.status);
+  return res.json();
 }

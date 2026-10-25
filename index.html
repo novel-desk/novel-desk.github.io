@@ -3,8 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<!-- the token is in this page: no script but the app's own, and nothing sent anywhere but GitHub's API -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; connect-src https://api.github.com; img-src 'self' blob: data:; object-src 'none'; base-uri 'none'; form-action 'none'">
+<!-- the token is in this page: no script but the app's own, and nothing sent anywhere but GitHub's API (and the one
+     form, the GitHub App's manifest, to github.com) -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; connect-src https://api.github.com; img-src 'self' blob: data:; object-src 'none'; base-uri 'none'; form-action https://github.com">
 <meta name="referrer" content="no-referrer">
 <meta name="theme-color" content="#f2eee6" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#16171a" media="(prefers-color-scheme: dark)">
@@ -23,10 +24,29 @@
 <!-- 読み込み中 -->
 <section id="loading" class="auth"><p class="muted">読み込んでいます…</p></section>
 
-<!-- トークンを入れる -->
+<!-- 始める: GitHub App を作る（いちばん上）、トークン、鍵のファイル -->
 <section id="setup" class="auth" hidden>
-  <form class="auth-card" id="setup-form">
+  <div class="auth-card" id="app-make">
     <h1>Novel Desk</h1>
+    <p class="muted small">GitHub に Novel Desk 専用の GitHub App を作って始めます。GitHub の画面で「Create GitHub App」を押し、続けて作品のリポジトリを選んで「Install」を押すと、作品を開けます。鍵のファイルや設定を扱うことはありません。秘密鍵はこの端末の取り出せない鍵として置きます。</p>
+    <button class="primary" id="make-app">GitHub App を作って始める</button>
+    <p id="app-make-error" class="error" role="alert"></p>
+    <form id="app-paste-form" class="paste-form" hidden>
+      <p class="muted small">GitHub から戻った画面が別の所（Safari など）で開き、コードが出たときは、それを写してここに貼ってください。</p>
+      <label>コード<input id="app-paste" autocomplete="off" spellcheck="false" required></label>
+      <button id="paste-app">続ける</button>
+      <p id="app-paste-error" class="error" role="alert"></p>
+    </form>
+  </div>
+  <!-- GitHub から戻った所が、始めた所と別だったとき -->
+  <div class="auth-card" id="app-bridge" hidden>
+    <h2>始めた Novel Desk に戻ってください</h2>
+    <p class="muted small">GitHub App はできましたが、この画面は「GitHub App を作って始める」を押した所（ホーム画面の Novel Desk など）とは別の所で開いています。ここでは受け取りません。下のコードを写し、押したほうの Novel Desk に貼ってください。コードは GitHub App を作ってから 1 時間だけ使えます。</p>
+    <input id="app-bridge-code" readonly aria-label="コード">
+    <button class="primary" id="copy-bridge">コードを写す</button>
+  </div>
+  <form class="auth-card" id="setup-form">
+    <h2>トークンで始める</h2>
     <p class="muted small">GitHub で作った fine-grained トークンを入れてください（作品のリポジトリだけ、Contents の読み書きと Metadata の読み）。トークンはこの端末の中に暗号化して置き、GitHub の API にだけ送ります。</p>
     <a class="button" id="make-token" href="https://github.com/settings/personal-access-tokens/new?name=Novel+Desk&amp;description=For+novel-desk.github.io&amp;expires_in=90&amp;contents=write" target="_blank" rel="noopener noreferrer">GitHub でトークンを作る</a>
     <p class="muted small">開いた画面で、Repository access の「Only select repositories」から作品のリポジトリを選び、Generate token を押して、出たトークンを下に貼ってください（名前、期限、Contents の読み書きは入れてあります）。</p>
@@ -36,10 +56,11 @@
     <button class="primary" id="keep-token">パスキーで保管する</button>
     <p id="setup-error" class="error" role="alert"></p>
   </form>
-  <!-- GitHub App の秘密鍵で始める -->
-  <form class="auth-card" id="app-form">
-    <h2>GitHub App の秘密鍵で始める</h2>
-    <p class="muted small">トークンの代わりに、作品のリポジトリに入れた GitHub App の秘密鍵（.pem）で始めます。期限が無いので、90 日ごとに作り直さなくて済みます。秘密鍵はこの端末の取り出せない鍵として置き、ファイルの中身は残しません。作り方は README の「GitHub App の秘密鍵で始める」にあります。</p>
+  <!-- 鍵のファイルがあるとき: GitHub App の秘密鍵で始める -->
+  <details class="auth-card" id="app-key-details">
+  <summary>鍵のファイルがあるとき</summary>
+  <form id="app-form" class="key-form">
+    <p class="muted small">作品のリポジトリに入れた GitHub App の秘密鍵（.pem）で始めます。秘密鍵はこの端末の取り出せない鍵として置き、ファイルの中身は残しません。ふつうは上の「GitHub App を作って始める」を使ってください。</p>
     <label>App ID（または Client ID）<input id="app-id" autocomplete="off" spellcheck="false" required></label>
     <label>秘密鍵（.pem）<input id="app-key" type="file" accept=".pem" required></label>
     <label>コミットに書く名前<input id="app-name" autocomplete="name" required></label>
@@ -48,10 +69,11 @@
     <button class="primary" id="keep-app">秘密鍵を保管する</button>
     <p id="app-error" class="error" role="alert"></p>
   </form>
+  </details>
   <!-- ホーム画面に追加: iPhone の Safari のタブ（手順と、先に追加する理由）、またはインストールを勧めるブラウザー -->
   <div class="auth-card install" id="install-ios" hidden>
     <h2>先にホーム画面に追加してください</h2>
-    <p class="muted small">Safari のタブとホーム画面のアプリでは、この端末の保存場所が別になります。ここでトークンを入れても、ホーム画面のアプリからは見えません。ホーム画面に追加してから、そこから開いてトークンを入れてください。</p>
+    <p class="muted small">Safari のタブとホーム画面のアプリでは、この端末の保存場所が別になります。ここで始めても、ホーム画面のアプリからは見えません。ホーム画面に追加してから、そこから開いて始めてください。</p>
     <ol class="small">
       <li>画面の下（iPad では上）の共有ボタン（四角から矢印が出ている形）を押す</li>
       <li>「ホーム画面に追加」を押し、「追加」を押す</li>
@@ -61,6 +83,17 @@
   <div class="auth-card install" id="install-app" hidden>
     <p class="muted small">この端末にアプリとして入れると、ホーム画面やアプリの一覧から開けます。</p>
     <button id="install">インストール</button>
+  </div>
+</section>
+
+<!-- GitHub App を作ったあと、作品のリポジトリに入れる -->
+<section id="app-install" class="auth" hidden>
+  <div class="auth-card">
+    <h1>Novel Desk</h1>
+    <p class="muted small">GitHub App ができました。GitHub の画面で作品のリポジトリを選び、「Install」を押してください。戻ると、作品を開けます。</p>
+    <a class="button primary" id="app-install-link" href="./">GitHub で作品のリポジトリを選ぶ</a>
+    <button class="ghost" id="forget-token-install">ログアウト</button>
+    <p id="app-install-error" class="error" role="alert"></p>
   </div>
 </section>
 
@@ -297,6 +330,15 @@
 </dialog>
 
 <!-- トークンの期限が近い、または GitHub がトークンを断った: 作り直して入れ替える -->
+<!-- GitHub App のコミットの作者（作品を初めて開いたときに、最新のコミットから決めて出す） -->
+<form id="author-notice" class="token-notice author-notice" hidden>
+  <p id="author-notice-text">GitHub App で送るコミットの作者を、このリポジトリの最新のコミットと同じにします。変えるときは書き換えてください。</p>
+  <div class="token-notice-row">
+    <label>名前<input id="author-name" autocomplete="name" required></label>
+    <label>メールアドレス<input id="author-email" type="email" autocomplete="email" required></label>
+    <button id="author-ok">これでよい</button>
+  </div>
+</form>
 <div id="token-notice" class="token-notice" role="alert" hidden>
   <p id="token-notice-text"></p>
   <div class="token-notice-row">
