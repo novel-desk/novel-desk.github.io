@@ -157,6 +157,9 @@ async function importWork(open) {
 // changed first
 export async function showWorks() {
   const at = ++shown;
+  // (the names offered read again when they are asked for next, as the server version's shelf reads them each time;
+  // emptied before anything is awaited, so that the field taken up meanwhile reads them)
+  $('repo-options').innerHTML = '';
   const all = listed(await worksHere(), await offList()).shown;
   /** @type {Map<string, Summary>} */
   const kept = new Map();
@@ -169,8 +172,6 @@ export async function showWorks() {
   if (at !== shown) return;
   const list = byUpdated(all, kept);
   render(list, kept);
-  // (the names offered read again when they are asked for next, as the server version's shelf reads them each time)
-  $('repo-options').innerHTML = '';
   /** @type {import('../lib/drafts.js').Draft[]} */
   const drafts = await store.all('drafts');
   /** @type {Map<string, Summary>} the summaries as read now */

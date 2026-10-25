@@ -100,6 +100,31 @@ test('GitHub リポジトリをインポート: only the repositories the token 
   expect(gh.calls.some(c => c.includes('someone/tools'))).toBe(false);
 });
 
+// FR-WORK-03
+test('GitHub リポジトリをインポート: the names offered emptied as the list is shown, so the field taken up before the list is read reads them again', async ({
+  page,
+  gh,
+}) => {
+  void gh;
+  await openWork(page);
+  await toShelf(page);
+  await openImport(page);
+  await expect.poll(() => offered(page)).toEqual(['author/other']);
+  await page.locator('#works .work').first().click();
+  await expect(page.locator('#shelf')).toBeHidden();
+  // the names offered counted the moment the list is shown, before anything is read for it
+  await page.evaluate(() => {
+    const shelf = /** @type {HTMLElement} */ (document.getElementById('shelf'));
+    new MutationObserver((_, o) => {
+      if (shelf.hidden) return;
+      /** @type {any} */ (window).offeredOnShow = document.querySelectorAll('#repo-options option').length;
+      o.disconnect();
+    }).observe(shelf, { attributes: true, attributeFilter: ['hidden'] });
+  });
+  await toShelf(page);
+  await expect.poll(() => page.evaluate(() => /** @type {any} */ (window).offeredOnShow)).toBe(0);
+});
+
 // FR-WORK-01: a device that kept the listing of every repository the token reads (before the list was this device's):
 // the list is the work it had open, the old listing not shown again
 test('a device that kept the old listing of every repository: only the work it had open is listed', async ({ page, gh }) => {
