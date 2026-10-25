@@ -4,6 +4,7 @@
 import { filesOf, bytesOf, japaneseText, textOf } from '../lib/github.js';
 import { CONFIG, firstLayout, parseLayout, tableOfContents, episodesOf } from '../lib/layout.js';
 import { foldersOf } from '../lib/changes.js';
+import { calledOtherwise } from '../lib/merge.js';
 import * as gh from './github.js';
 import * as store from './db.js';
 
@@ -164,4 +165,23 @@ export async function readShas(work, shas) {
       } catch {}
     },
   );
+}
+// The texts written alone whose file changed between `was` and `now` (the files, and novel.toml's text) and is called
+// otherwise now than when they were written (lib/merge.js calledOtherwise): their paths. Their texts read by their
+// blobs (kept on the device)
+/**
+ * @param {string} repo @param {import('../lib/drafts.js').Draft[]} drafts
+ * @param {{ blobs: Record<string, { sha: string }>, config: string | null }} was @param {{ blobs: Record<string, { sha: string }>, config: string | null }} now
+ * @param {boolean} offline @returns {Promise<Set<string>>}
+ */
+export async function renamedPaths(repo, drafts, was, now, offline) {
+  /** @type {Set<string>} */
+  const out = new Set();
+  for (const d of drafts) {
+    const there = now.blobs[d.path]?.sha;
+    if (d.op || !d.base || !there || there === d.base) continue;
+    const before = { config: was.config, text: await textAt(repo, d.base, offline) };
+    if (calledOtherwise(d.path, before, { config: now.config, text: await textAt(repo, there, offline) })) out.add(d.path);
+  }
+  return out;
 }

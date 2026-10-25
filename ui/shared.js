@@ -30,6 +30,9 @@
  * @property {() => ReturnType<typeof import('../lib/changes.js').unsentList>} unsentItems the changes not sent, as listed
  * @property {(item: import('../lib/changes.js').Unsent) => Promise<void>} discard a change not sent given up
  * @property {() => string} otherBranch the branch the changes not sent were written on, when it is not the one open ('' none)
+ * @property {() => Draft[]} parked the texts set aside (their file gone, or another file now, when they were to be sent)
+ * @property {(d: Draft, how: 'send' | 'put' | 'drop') => Promise<void>} unpark a text set aside, as the author chooses
+ * @property {() => import('../lib/sync.js').SyncMode} mode how the work is sent
  */
 /** @type {Api} */
 export const api = /** @type {any} */ ({});

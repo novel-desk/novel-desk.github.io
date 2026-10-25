@@ -313,4 +313,7 @@ input:focus { border-color: var(--accent); }
 .unsent-item { display: flex; justify-content: space-between; align-items: center; gap: 8px; border-bottom: 1px solid var(--line); padding: 6px 0; }
 .unsent-item div { display: grid; gap: 2px; min-width: 0; } .unsent-item small { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
 .unsent-item .danger { color: var(--error); flex-shrink: 0; }
+.unsent-item.parked > div { flex: 1; }
+.parked-text { width: 100%; min-height: 6em; max-height: 30vh; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--text); padding: 8px; font: 14px/1.8 var(--mincho); resize: vertical; }
+.parked-tools { display: flex; flex-wrap: wrap; gap: 6px; }
 .picker-form { display: flex; gap: 8px; padding: 8px 14px; } .picker-form input { flex: 1; min-width: 0; }

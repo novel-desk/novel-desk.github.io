@@ -2,17 +2,18 @@
 // ui/github.js over lib/) talking to the fake GitHub of the screen tests (tests/ui/lib/fake-github.mjs) through
 // fetch, and what the desk (ui/desk.js) does around them, step by step as it does it: a text typed kept as a change
 // (keepText), an operation's plan made changes (apply), a send and what is left after it (sendDrafts), the work read
-// again and the operations whose files changed elsewhere given up (readIn, rebaseChanges). The store on the device
+// again and the operations whose files changed elsewhere given up (readIn, rebaseChanges), and the texts whose file is
+// gone there or is another file now set aside (lib/changes.js settle, the send's refused). The store on the device
 // (ui/db.js) is the in-memory one of memory-db.mjs (the tests mock it). Nothing here reaches the real GitHub
 import { FakeGitHub, FakeRepo, TOKEN } from '../../ui/lib/fake-github.mjs';
-import { moveFiles, rebase, relabel, writeFile } from '../../../lib/changes.js';
+import { moveFiles, rebase, relabel, settle, writeFile } from '../../../lib/changes.js';
 import { afterSend, draftOf, goneWhileSent, typedOver } from '../../../lib/drafts.js';
 import { episodesOf } from '../../../lib/layout.js';
 import { editToml } from '../../../lib/tomledit.js';
 import { viewOf } from '../../../lib/view.js';
 import * as gh from '../../../ui/github.js';
 import { sendAll } from '../../../ui/send.js';
-import { contents, load } from '../../../ui/work.js';
+import { contents, load, renamedPaths } from '../../../ui/work.js';
 
 export { FakeGitHub, FakeRepo };
 
@@ -33,10 +34,11 @@ export const TOML = [
   'branch = "main"',
   '',
 ].join('\n');
+// (each episode holds a mark of its own, ［E1］, so that a test can tell which episode a text is)
 export const FILES = {
   'novel.toml': TOML,
-  'chapters/01.md': '# 第1話 はじまり\n\n',
-  'chapters/02.md': '# 第2話 駅で\n\n',
+  'chapters/01.md': '# 第1話 はじまり\n\n［E1］\n',
+  'chapters/02.md': '# 第2話 駅で\n\n［E2］\n',
   'notes/memo.md': '# メモ\n',
 };
 
@@ -84,6 +86,8 @@ export class Device {
     this.changes = new Map();
     /** @type {any[]} novel.toml's keys set and not sent */
     this.edits = [];
+    /** @type {import('../../../lib/drafts.js').Draft[]} the texts set aside (their file gone, or another file now) */
+    this.parked = [];
     this.ops = 0;
     this.at = 0;
   }
@@ -157,22 +161,32 @@ export class Device {
       if (after) next.set(draft.path, after);
       else next.delete(draft.path);
     }
+    for (const d of result.refused) {
+      const now = next.get(d.path);
+      if (now) this.parked.push(now);
+      next.delete(d.path);
+    }
     this.work = await contents(
       { repo: w.repo, branch: w.branch, commit: result.commit, tree: result.tree, updated: result.updated, blobs: result.blobs, folders: result.folders },
       false,
     );
-    this.changes = next;
+    const { changes: left, parked } = settle(next, w.blobs, result.blobs, await renamedPaths(w.repo, [...next.values()], w, this.work, false));
+    this.parked.push(...parked);
+    this.changes = left;
     this.edits = [];
     return result;
   }
   // the work read again (ui/desk.js readIn and rebaseChanges): the operations whose files changed there given up
   async readIn() {
+    const before = this.work;
     this.work = await load(this.repo.fullName, this.repo.defaultBranch, '');
-    const { changes, ops } = rebase(this.changes, this.work.blobs);
-    if (ops.size) {
-      this.changes = changes;
-      this.edits = this.edits.filter(e => !ops.has(e.op));
-    }
+    const { changes, ops, parked: homeless } = rebase(this.changes, this.work.blobs);
+    this.parked.push(...homeless);
+    const renamed = await renamedPaths(this.repo.fullName, [...changes.values()], before, this.work, false);
+    const { changes: left, parked } = settle(changes, before.blobs, this.work.blobs, renamed);
+    this.changes = left;
+    this.parked.push(...parked);
+    this.edits = this.edits.filter(e => !ops.has(e.op));
   }
 }
 
@@ -182,8 +196,12 @@ export function headTexts(repo) {
   const files = repo.files(repo.refs[repo.defaultBranch]);
   return Object.fromEntries(Object.entries(files).map(([p, e]) => [p, repo.blobs.get(e.sha)?.toString() ?? '']));
 }
-// the texts a device still keeps that are not sent (a text written, or a blob of the branch put elsewhere)
+// the texts a device still keeps that are not sent (a text written, or a blob of the branch put elsewhere, or a text
+// set aside)
 /** @param {Device} d */
 export function keptTexts(d) {
-  return [...d.changes.values()].map(c => c.text ?? (c.sha ? (d.repo.blobs.get(c.sha)?.toString() ?? '') : ''));
+  return [
+    ...[...d.changes.values()].map(c => c.text ?? (c.sha ? (d.repo.blobs.get(c.sha)?.toString() ?? '') : '')),
+    ...d.parked.map(c => /** @type {string} */ (c.text)),
+  ];
 }

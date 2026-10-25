@@ -51,7 +51,17 @@ test('typing keeps a draft on the device with the blob it was written from; the 
   const base = work.files(work.refs.main)['chapters/01_first.md'].sha;
   await expect
     .poll(() => stored(page, 'drafts'))
-    .toEqual([{ repo: 'author/novel', path: 'chapters/01_first.md', base, text: `${WORK_FILES['chapters/01_first.md']}足した`, at: expect.any(Number) }]);
+    .toEqual([
+      {
+        repo: 'author/novel',
+        path: 'chapters/01_first.md',
+        base,
+        text: `${WORK_FILES['chapters/01_first.md']}足した`,
+        at: expect.any(Number),
+        branch: 'main',
+        sync: 'auto',
+      },
+    ]);
   await page.reload();
   await expect(page.locator('#body')).toHaveValue(`${WORK_FILES['chapters/01_first.md']}足した`);
   await expect(page.locator('#save-state')).toHaveText('未送信（この端末に保存しました）');

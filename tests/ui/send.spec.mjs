@@ -342,8 +342,11 @@ test('the work’s title sent: novel.toml unreadable on GitHub now, said; the sa
   await expect(page.locator('#sync-state')).toHaveText(/^送れませんでした: .*chapters/);
   const same = (before ?? '').replace('"試験の作品"', '"別の題"');
   work.push({ 'novel.toml': same });
+  const head = work.refs.main;
   await page.getByRole('button', { name: '送る（1）' }).click();
-  await expect(page.locator('#sync-state')).toHaveText(/^送りました（/);
+  // (nothing to change: no commit made)
+  await expect(page.locator('#sync-state')).toHaveText('送る変更はありませんでした（GitHub にもう同じ内容があります）');
+  expect(work.refs.main).toBe(head);
   expect(work.text('novel.toml')).toBe(same);
   await page.getByRole('button', { name: 'ほかの作品' }).click();
   await openRepo(page, 'author/other');

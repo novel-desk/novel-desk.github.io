@@ -1,6 +1,8 @@
 // 未送信の一覧 (FR-SAVE-09): the changes not sent, each read before it is sent or given up: a text written (its
 // episode or file), or an operation (the files it moves, adds or deletes, and the keys of novel.toml it sets). One given
-// up goes from this device; the text written in an operation's files stays as a draft
+// up goes from this device; the text written in an operation's files stays as a draft. A text set aside (its file
+// gone, or another file now, when it was to be sent) is shown whole, to be sent beside what is there now, put at the
+// end of the episode open, or given up
 import { kindsOf } from '../lib/commit.js';
 import { esc } from '../lib/format.js';
 import { $ } from './dom.js';
@@ -9,6 +11,8 @@ import { api } from './shared.js';
 const dialog = () => /** @type {HTMLDialogElement} */ (/** @type {unknown} */ ($('unsent')));
 /** @type {ReturnType<typeof api.unsentItems>} */
 let items = [];
+/** @type {import('../lib/drafts.js').Draft[]} */
+let aside = [];
 // a path as the list says it: an episode by its title, anything else by its path
 /** @param {string} path */
 const said = path => api.episodes().find(e => e.path === path)?.title ?? path;
@@ -26,6 +30,14 @@ function render() {
       return `<div class="unsent-item"><div><b>操作</b><small>${lines.join('<br>')}</small></div><button class="ghost danger" data-discard="${i}">取り消す</button></div>`;
     })
     .join('');
+  aside = [...api.parked()];
+  const open = Boolean(api.current());
+  $('unsent-body').innerHTML += aside
+    .map(
+      (d, i) =>
+        `<div class="unsent-item parked"><div><b>${esc(d.path)}</b><small>送れなかった文章（${esc(/** @type {string} */ (d.parked))}ため）</small><textarea class="parked-text" readonly aria-label="送れなかった文章">${esc(/** @type {string} */ (d.text))}</textarea><span class="parked-tools">${api.mode() === 'off' ? '' : `<button data-unpark-send="${i}">送る（GitHub の版と並べて残す）</button>`}${open ? `<button data-unpark-put="${i}">開いている話の末尾に入れる</button>` : ''}<button class="ghost danger" data-unpark-drop="${i}">捨てる</button></span></div></div>`,
+    )
+    .join('');
 }
 /** @param {number} i */
 async function discard(i) {
@@ -38,8 +50,21 @@ async function discard(i) {
   // (the text given up kept in the history: a text written alone always has one)
   if (it.kind === 'text') await api.snapshot(it.path, /** @type {string} */ (api.drafts().get(it.path)?.text), true);
   await api.discard(it);
-  if (api.unsent()) render();
+  redraw();
+}
+// the list drawn again, or closed when nothing is left
+function redraw() {
+  if (api.unsent() || api.parked().length) render();
   else dialog().close();
+}
+// a text set aside, as the author chooses (put in the episode open: the list closed, to show it there)
+/** @param {'send' | 'put' | 'drop'} how @param {number} i */
+async function unpark(how, i) {
+  const d = aside[i];
+  if (how === 'drop' && !confirm(`「${d.path}」に書いて送れなかった文章を捨てますか？（この端末の履歴に残ります）`)) return;
+  if (how === 'put') dialog().close();
+  await api.unpark(d, how);
+  if (how !== 'put') redraw();
 }
 export function wireUnsent() {
   $('open-unsent').addEventListener('click', () => {
@@ -48,7 +73,13 @@ export function wireUnsent() {
   });
   $('close-unsent').addEventListener('click', () => dialog().close());
   $('unsent-body').addEventListener('click', e => {
-    const b = /** @type {HTMLElement} */ (e.target).closest('[data-discard]');
+    const t = /** @type {HTMLElement} */ (e.target);
+    const b = t.closest('[data-discard]');
     if (b instanceof HTMLElement) void discard(Number(b.dataset.discard));
+    const u = t.closest('[data-unpark-send], [data-unpark-put], [data-unpark-drop]');
+    if (u instanceof HTMLElement) {
+      const how = u.dataset.unparkSend ? 'send' : u.dataset.unparkPut ? 'put' : 'drop';
+      void unpark(how, Number(u.dataset.unparkSend ?? u.dataset.unparkPut ?? u.dataset.unparkDrop));
+    }
   });
 }

@@ -174,7 +174,7 @@ export async function showWorks() {
     try {
       const s = await summarize(
         r,
-        drafts.filter(d => d.repo === r.full_name),
+        drafts.filter(d => d.repo === r.full_name && !d.parked),
       );
       if (at === shown) fill(r, s);
     } catch (err) {

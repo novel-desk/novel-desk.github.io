@@ -1,7 +1,7 @@
 // The desk: the table of contents of the work open, the episode being written, its preview, the episodes added,
 // renamed, put in the trash and reordered, and sending and reading again. The work, the changes not sent and the
 // episode open are this module's: the others call open() and the functions it gives them
-import { moveFiles, rebase, relabel, unsentList, withoutOp, writeFile } from '../lib/changes.js';
+import { moveFiles, rebase, relabel, settle, unsentList, withoutOp, writeFile } from '../lib/changes.js';
 import { afterSend, draftKey, draftOf, goneWhileSent, typedOver } from '../lib/drafts.js';
 import * as plans from '../lib/episodes.js';
 import { charsOf, esc, n, rowTimes, whenLong } from '../lib/format.js';
@@ -9,14 +9,15 @@ import { imageType } from '../lib/github.js';
 import { episodesOf, isEpisode, titleOf } from '../lib/layout.js';
 import { isNote } from '../lib/notes.js';
 import { picturePaths, relPath, renderMd } from '../lib/markdown.js';
-import { CONFLICT_MARK } from '../lib/merge.js';
+import { CONFLICT_MARK, keptBoth } from '../lib/merge.js';
+import { noteHeading } from '../lib/notes.js';
 import { editToml } from '../lib/tomledit.js';
 import { AUTO_WAIT, keptMode, onOtherBranch, saveState, sendsItself, stamped, syncMode, writtenOn } from '../lib/sync.js';
 import { viewOf } from '../lib/view.js';
 import { visibilityTag } from '../lib/works.js';
 import { $, show, toast } from './dom.js';
 import * as store from './db.js';
-import { bytes, contents, converted, load, readShas } from './work.js';
+import { bytes, contents, converted, load, readShas, renamedPaths } from './work.js';
 import { Overlapped, sendAll } from './send.js';
 import { GitHubError, headOf, lastChange } from './github.js';
 import { evenBreaks, inputBar, insertAt, setKeepingCaret } from './textbox.js';
@@ -109,10 +110,17 @@ function keep(given, nextEdits = edits) {
       for (const path of before.keys()) if (!next.has(path)) await store.del('drafts', draftKey(w.repo, path));
       if (editsChanged) await store.put('prefs', `edits:${w.repo}`, kept);
     })
-    .catch(err => syncState(`この端末に保存できませんでした（${err.message ?? err}）`, 'err'));
+    .catch(saveFailed);
   refreshView();
   sendSoon();
 }
+/** @param {any} err */
+const saveFailed = err => syncState(`この端末に保存できませんでした（${err.message ?? err}）`, 'err');
+// a write to the device after the ones before it (a text set aside, or taken back)
+/** @param {() => Promise<unknown>} write */
+const thenWrite = write => {
+  writing = writing.then(async () => void (await write())).catch(saveFailed);
+};
 // a change not sent given up by hand (FR-SAVE-09): a text written alone (by its path), or an operation (its changes
 // and keys; the text written in its files stays as a draft). The open episode is shown again, or the first
 /** @param {import('../lib/changes.js').Unsent} item */
@@ -120,6 +128,7 @@ async function discard(item) {
   if (item.kind === 'op') {
     const left = withoutOp(drafts, edits, item.op);
     keep(left.changes, left.edits);
+    park(left.parked, TAKEN);
   } else {
     const next = new Map(drafts);
     next.delete(item.path);
@@ -177,7 +186,7 @@ function renderToc() {
   $('work-repo').innerHTML =
     `<a href="https://github.com/${esc(w.repo)}/tree/${esc(encodeURIComponent(w.branch))}" target="_blank" rel="noopener noreferrer">${esc(w.repo)}</a>${visibilityTag(/** @type {Repo} */ (repo))}` +
     `<button class="link" id="gh-rename" title="GitHub のリポジトリの名前を変更">名前を変更</button>${stopped ? '<button class="link" id="gh-relink" title="いまの名前のリポジトリにつなぎ直す">つなぎ直す</button>' : ''}`;
-  $('open-unsent').hidden = unsent() === 0;
+  $('open-unsent').hidden = unsent() === 0 && !parked.length;
   if (document.activeElement !== $('work-title')) $('work-title').value = v.layout.title || w.repo.split('/')[1];
   $('send').disabled = busy || unsent() === 0 || mode === 'off' || Boolean(stopped);
   $('send').textContent = unsent() ? `送る（${unsent()}）` : '送る';
@@ -619,20 +628,85 @@ async function readMoved() {
   );
 }
 // the changes on the work read again: the operations whose files changed elsewhere are given up (their texts stay)
-async function rebaseChanges() {
+// The texts written whose file is gone, or is another file now, set aside (lib/changes.js settle; `before`: the files
+// the changes were read against until now, and novel.toml then). Returns how many were set aside
+/** @param {{ blobs: import('../lib/changes.js').Blobs, config: string | null }} before */
+async function rebaseChanges(before) {
   const w = /** @type {NonNullable<typeof work>} */ (work);
-  if (w.offline) return;
-  const { changes, ops } = rebase(drafts, w.blobs);
-  if (!ops.size) return;
+  if (w.offline) return 0;
+  const { changes, ops, parked: homeless } = rebase(drafts, w.blobs);
+  const { changes: left, parked: moved } = settle(changes, before.blobs, w.blobs, await renamedPaths(w.repo, [...changes.values()], before, w, false));
+  if (!ops.size && !moved.length) return 0;
   keep(
-    changes,
+    left,
     edits.filter(e => !ops.has(e.op)),
   );
+  if (ops.size) {
+    syncState(
+      'ほかの所でファイルが変わっていたので、この端末の話の追加・名前の変更・削除・並べ替えを取り消しました。書いた文章は残っています。やり直してください',
+      'err',
+    );
+    toast('ほかの所での変更と重なった操作を取り消しました（書いた文章は残っています）');
+  }
+  park(homeless, TAKEN);
+  park(moved, MOVED);
+  return homeless.length + moved.length;
+}
+// --- the texts set aside (FR-SAVE-09): written where the file is gone now, or is another file. Kept on the device (in
+// the drafts' store, by their own keys) until the author sends them, puts them in the text open, or gives them up
+
+/** @type {Draft[]} this work's texts set aside */
+let parked = [];
+/** @param {Draft} d its key: of its repository and path, and its own id (two can be set aside from one path) */
+const parkedKey = d => `parked:${draftKey(d.repo, d.path)}\n${d.aside}`;
+// why a text is set aside (said on the screen and in the list)
+const MOVED = 'ほかの所で削除されたか、動かされたか、別のファイルに替わっていた';
+const TAKEN = '取り消した操作の中で書いた文章で、元の場所にも今の場所にも別の書きかけがあった';
+// what a text set aside is called: its heading, else its file
+/** @param {Draft} d */
+const parkedName = d => noteHeading(/** @type {string} */ (d.text)) ?? d.path;
+/** @param {Draft[]} list @param {string} why */
+function park(list, why) {
+  if (!list.length) return;
+  for (const d of list) {
+    const p = { ...d, parked: why, aside: newOp() };
+    parked = [...parked, p];
+    thenWrite(() => store.put('drafts', parkedKey(p), p));
+  }
   syncState(
-    'ほかの所でファイルが変わっていたので、この端末の話の追加・名前の変更・削除・並べ替えを取り消しました。書いた文章は残っています。やり直してください',
+    `「${list.map(parkedName).join('」「')}」は、${why}ので、書いた文章を送らずにこの端末に残しました。「未送信の一覧」で、送る・本文に入れる・捨てるを選べます`,
     'err',
   );
-  toast('ほかの所での変更と重なった操作を取り消しました（書いた文章は残っています）');
+  toast('送れなかった書きかけを、この端末に残しました（未送信の一覧）');
+  renderToc();
+}
+// A text set aside, as the author chooses: 'send' (put back where it was written, beside what is there now, and sent),
+// 'put' (at the end of the episode open, as typed), 'drop' (given up; kept in the history)
+/** @param {Draft} d @param {'send' | 'put' | 'drop'} how */
+async function unpark(d, how) {
+  if (how === 'send' && drafts.has(d.path)) return void toast('その場所には、まだ送っていない書きかけがあります。「送る」で送ってから、もう一度押してください');
+  /** @type {string | null} */
+  let there = '';
+  if (how === 'send' && shown().files[d.path]) there = (await texts([d.path]))[d.path];
+  if (there === null) return void toast('その場所のファイルを読めないので、送れません（文字コードが UTF-8 ではないか、この端末にまだ読み込まれていません）');
+  parked = parked.filter(p => p !== d);
+  thenWrite(() => store.del('drafts', parkedKey(d)));
+  if (how === 'drop') {
+    await snapshot(d.path, /** @type {string} */ (d.text), true);
+    return renderToc();
+  }
+  if (how === 'put') {
+    const area = /** @type {HTMLTextAreaElement} */ ($('body'));
+    area.setSelectionRange(area.value.length, area.value.length);
+    return insertAt(area, `\n\n――― 未送信の書きかけ（${parkedName(d)}）―――\n\n${d.text}\n`);
+  }
+  const w = /** @type {NonNullable<typeof work>} */ (work);
+  const text = /** @type {string} */ (d.text);
+  const next = new Map(drafts);
+  next.set(d.path, { repo: w.repo, path: d.path, base: w.blobs[d.path]?.sha ?? '', text: there ? keptBoth(text, there).text : text, at: Date.now() });
+  keep(next);
+  renderWork();
+  await sendDrafts();
 }
 // the texts read from another encoding than UTF-8 (FR-WORK-03), episodes and notes: kept as drafts, made UTF-8, so
 // that the next send puts them on GitHub as UTF-8 (the server version does it when the work is taken in)
@@ -658,10 +732,13 @@ async function reload() {
   let gone = '';
   /** @type {{ m: import('../lib/works.js').RepoMeta | null }} the repository found renamed or moved on GitHub */
   const moving = { m: null };
+  /** @type {import('./work.js').Files | undefined} the work as last read on this device: the files the changes were read against */
+  let lastRead;
   try {
+    lastRead = await store.get('snapshots', r.full_name);
     const chosen = await chosenBranch(r.full_name);
     // 同期しない (FR-GH-04): nothing read in from GitHub; the work as last read on this device, when it has it
-    const kept = mode === 'off' ? await store.get('snapshots', r.full_name) : null;
+    const kept = mode === 'off' ? lastRead : null;
     /** @type {import('./work.js').Work & { gone: string }} */
     let read;
     if (kept && (!chosen || kept.branch === chosen)) read = { ...(await contents(kept, false)), gone: '' };
@@ -673,9 +750,8 @@ async function reload() {
       stopped = where?.kind === 'other' ? where.meta : null;
       if (where?.kind === 'moved') moving.m = where.meta;
       else if (stopped) {
-        const last = await store.get('snapshots', r.full_name);
-        if (!last) throw new Error(stopSaid(r.full_name));
-        read = { ...(await contents(last, true)), gone: '' };
+        if (!lastRead) throw new Error(stopSaid(r.full_name));
+        read = { ...(await contents(lastRead, true)), gone: '' };
       } else if (where?.meta) repo = { ...r, visibility: where.meta.visibility };
     }
     // (a repository moved: read by its new name, below)
@@ -709,7 +785,10 @@ async function reload() {
   readState(now());
   if (stopped) syncState(stopSaid(r.full_name), 'err');
   else if (mode !== 'off' && otherBranch()) syncState(otherBranchSaid(otherBranch()), 'err');
-  await rebaseChanges();
+  const got = /** @type {NonNullable<typeof work>} */ (work);
+  // (none read before on this branch: only the files gone are known)
+  // (novel.toml as read now: the one before is not kept with the files)
+  await rebaseChanges({ blobs: lastRead?.branch === got.branch ? lastRead.blobs : got.blobs, config: got.config });
   await readMoved();
   refreshView();
   await keepConverted();
@@ -758,11 +837,11 @@ async function deleteWork() {
   const title = $('work-title').value;
   if (!confirm(`「${title}」を作品の一覧から外しますか？（GitHub のリポジトリ ${r.full_name} は消しません。この端末に残した控え・履歴・設定は消します）`))
     return;
-  const left = unsent();
+  const left = unsent() + parked.length;
   if (left) {
     if (confirm(`GitHub に送っていない変更が ${left} 件あります。先に送りますか？（「キャンセル」なら、送らずに捨てるかを聞きます）`)) {
       await sendDrafts();
-      if (unsent()) return void toast('送れなかったので、一覧から外しませんでした。書いたものはこの端末に残っています');
+      if (unsent() || parked.length) return void toast('送れなかったので、一覧から外しませんでした。書いたものはこの端末に残っています');
     } else if (!confirm(`送っていない変更 ${left} 件を捨てて、一覧から外しますか？（取り消せません）`)) return;
   }
   clearTimeout(autoTimer);
@@ -771,6 +850,7 @@ async function deleteWork() {
   await forgetWork(r.full_name);
   work = null;
   drafts = new Map();
+  parked = [];
   edits = [];
   toast(`「${title}」を一覧から外しました（GitHub のリポジトリはそのままです。「一覧から外した作品」から戻せます）`);
   changeRepo();
@@ -821,11 +901,19 @@ async function readIn() {
   if (work !== w || busy) return;
   work = next;
   refreshView();
-  await rebaseChanges();
+  const set = await rebaseChanges(w);
   await readMoved();
   refreshView();
   await keepConverted();
   renderWork();
+  await showOpen();
+  await trace('ReadIn');
+  // (what was set aside is said instead)
+  if (!set) toast('ほかの所での変更を読み込みました');
+}
+// the episode open, after the work changed under it (read in, or sent): gone, the first one opened; else, with no
+// draft of it, what the branch has now shown, the caret and the place read where they were (FR-SAVE-08)
+async function showOpen() {
   if (current && !findEpisode(current)) {
     const first = episodes()[0];
     if (first) await openEpisode(first.path);
@@ -833,6 +921,9 @@ async function readIn() {
   } else if (current && !drafts.has(current)) {
     const text = textOf(current);
     const area = /** @type {HTMLTextAreaElement} */ ($('body'));
+    // (another episode at its path now: its title too)
+    if (document.activeElement !== $('episode-title'))
+      $('episode-title').value = titleAt(/** @type {import('../lib/layout.js').TocEpisode} */ (findEpisode(current)).rel);
     if (text !== null && text !== area.value) {
       setKeepingCaret(area, text);
       showCounts();
@@ -842,8 +933,6 @@ async function readIn() {
       }
     }
   }
-  await trace('ReadIn');
-  toast('ほかの所での変更を読み込みました');
 }
 // 自動 (FR-SAVE-03, FR-GH-04): the changes not sent go by themselves a while after the last one (AUTO_WAIT), when the
 // page is left (hidden), and when the device is back online, as 送る sends them (the same handling of what changed
@@ -890,13 +979,21 @@ async function sendDrafts() {
       if (after) next.set(draft.path, after);
       else next.delete(draft.path);
     }
-    // (what is left was typed during the send, over what it sent: of the branch sent to)
-    for (const [path, d] of next) next.set(path, { ...d, branch: w.branch });
-    work = await contents(
+    // the texts refused (their file gone there, or another file now), as the device has them now: set aside
+    const refused = result.refused.flatMap(d => {
+      const now = next.get(d.path);
+      next.delete(d.path);
+      return now ? [now] : [];
+    });
+    // (what is left was typed during the send: on what the branch is now, of the branch sent to)
+    const sent = await contents(
       { repo: w.repo, branch: w.branch, commit: result.commit, tree: result.tree, updated: result.updated, blobs: result.blobs, folders: result.folders },
       false,
     );
-    keep(next, []);
+    const { changes: left, parked: moved } = settle(next, w.blobs, result.blobs, await renamedPaths(w.repo, [...next.values()], w, sent, false));
+    for (const [path, d] of left) left.set(path, { ...d, branch: w.branch });
+    work = sent;
+    keep(left, []);
     await readMoved();
     refreshView();
     const sides = new Set(result.sent.filter(s => s.both).map(s => s.draft.path));
@@ -906,10 +1003,12 @@ async function sendDrafts() {
     if (sides.size) {
       syncState(`送りました。${titles.join('、')}はほかでも書き換えられていたので、両方の版を並べました（${result.message}）`, 'err');
       toast('ほかでも書き換えられていた話があります。両方の版を並べました');
-    } else syncState(`送りました（${result.message}）`, 'ok');
+    } else if (result.message) syncState(`送りました（${result.message}）`, 'ok');
+    else syncState('送る変更はありませんでした（GitHub にもう同じ内容があります）', 'ok');
     renderWork();
     void noteNow();
-    if (current && findEpisode(current) && !drafts.has(current)) setKeepingCaret(/** @type {HTMLTextAreaElement} */ ($('body')), textOf(current) ?? '');
+    await showOpen();
+    park([...refused, ...moved], MOVED);
     showCounts();
     showUpdated();
     await trace('Sent');
@@ -950,7 +1049,8 @@ export async function open(r) {
   $('work-title').value = r.full_name.split('/')[1];
   /** @type {Draft[]} */
   const kept = await store.all('drafts');
-  drafts = new Map(kept.filter(d => d.repo === r.full_name).map(d => [d.path, d]));
+  drafts = new Map(kept.filter(d => d.repo === r.full_name && !d.parked).map(d => [d.path, d]));
+  parked = kept.filter(d => d.repo === r.full_name && d.parked);
   edits = (await store.get('prefs', `edits:${r.full_name}`)) ?? [];
   folded = (await store.get('prefs', `closed:${r.full_name}`)) ?? [];
   changed = new Map(Object.entries((await store.get('prefs', `changed:${r.full_name}`)) ?? {}));
@@ -1117,6 +1217,9 @@ export function wire(on) {
     unsent,
     unsentItems: () => unsentList(drafts, edits),
     otherBranch,
+    parked: () => parked,
+    unpark,
+    mode: () => mode,
     discard,
   });
   wireRepo(on, { repo: () => /** @type {Repo} */ (repo), settled: () => writing, reopen });

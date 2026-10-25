@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest';
-import { conflictsOf, foldersOf, moveFiles, rebase, relabel, unsentList, viewFiles, withoutOp, writeFile } from '../../lib/changes.js';
+import { conflictsOf, foldersOf, moveFiles, rebase, relabel, settle, unsentList, viewFiles, withoutOp, writeFile } from '../../lib/changes.js';
 
 const blobs = { 'a.md': { sha: 'sa', mode: '100644' }, 'b.md': { sha: 'sb', mode: '100755' }, 'c/d.md': { sha: 'sd', mode: '100644' } };
 const o = { repo: 'o/r', op: 'op2', at: 9 };
@@ -135,6 +135,13 @@ describe('changes', () => {
     expect(over.changes.get('y.md')).toEqual({ repo: 'o/r', path: 'y.md', base: '', text: 't', from: { path: 'a.md', base: 'sa' }, op: 'op2', at: 9 });
     expect(over.merged).toEqual(new Set(['op1']));
     expect(writeFile(blobs, new Map(), 'b.md', { text: 'x' }, o).changes.get('b.md')?.base).toBe('sb');
+    // over a file an operation took away (put in the trash): a file made here, its text given up as one
+    const gone = changes([{ repo: 'o/r', path: 'b.md', base: 'sb', gone: true, op: 'op1', at: 1 }]);
+    const made = writeFile(blobs, gone, 'b.md', { text: '新しい話' }, o).changes;
+    expect(made.get('b.md')).toEqual({ repo: 'o/r', path: 'b.md', base: 'sb', text: '新しい話', from: { path: 'b.md', base: '' }, op: 'op2', at: 9 });
+    expect([...rebase(made, { ...blobs, 'b.md': { sha: 'sb2', mode: '100644' } }).changes.values()]).toEqual([
+      { repo: 'o/r', path: 'b.md', base: '', text: '新しい話', at: 9 },
+    ]);
     // a link rewritten by an operation (auto), not over a draft; over a draft, what was typed in it is not auto
     expect(writeFile(blobs, new Map(), 'b.md', { text: 'x', auto: true }, o).changes.get('b.md')?.auto).toBe(true);
     const typed = changes([{ repo: 'o/r', path: 'b.md', base: 'sb', text: '下書き', at: 1 }]);
@@ -190,20 +197,49 @@ describe('changes', () => {
       { repo: 'o/r', path: 'b.md', base: 'sb', text: 'リンク', auto: true, op: 'op1', at: 1 },
     ]);
     expect(rebase(auto, blobs).changes.size).toBe(0);
-    // both taken (where it came from by a draft, where it is by a text put back there first): nothing more
+    // both taken (where it came from by a draft, where it is by a text put back there first): set aside, not lost
     const both = changes([
       { repo: 'o/r', path: 'k.md', base: 'bk', text: '下書き', at: 1 },
       { repo: 'o/r', path: 'p.md', base: '', text: 'one', from: { path: 'r.md', base: 'b1' }, op: 'op1', at: 2 },
       { repo: 'o/r', path: 'r.md', base: 'old', text: 'two', from: { path: 'k.md', base: 'bk' }, op: 'op1', at: 2 },
     ]);
-    expect([...rebase(both, {}).changes.values()]).toEqual([
+    const given = rebase(both, {});
+    expect([...given.changes.values()]).toEqual([
       { repo: 'o/r', path: 'k.md', base: 'bk', text: '下書き', at: 1 },
       { repo: 'o/r', path: 'r.md', base: 'b1', text: 'one', at: 2 },
     ]);
+    expect(given.parked).toEqual([{ repo: 'o/r', path: 'r.md', base: 'old', text: 'two', at: 2 }]);
+    expect(rebase(busy, blobs).parked).toEqual([]);
+    // moved onto a file of the branch, the place it came from taken: set aside, not put on that other file
+    const onto = changes([
+      { repo: 'o/r', path: 'k.md', base: 'bk', text: '下書き', at: 1 },
+      { repo: 'o/r', path: 'r.md', base: 'old', text: 'two', from: { path: 'k.md', base: 'bk' }, op: 'op1', at: 2 },
+    ]);
+    expect(rebase(onto, {})).toEqual({
+      changes: changes([onto.get('k.md')]),
+      ops: new Set(['op1']),
+      parked: [{ repo: 'o/r', path: 'r.md', base: 'old', text: 'two', at: 2 }],
+    });
   });
 });
 
 // FR-SAVE-09: the changes not sent, listed, one given up by hand
+// FR-TOC-04, FR-TOC-06, FR-NOTE-05, FR-NOTE-06, FR-SAVE-09: a text whose file is gone on the branch read again, or is
+// another file now, is set aside; the others, and the changes of operations, stay as they are
+test('settle: the texts written alone whose file is gone or is another file now set aside; the rest kept as they are', () => {
+  const after = { 'a.md': { sha: 'sa2', mode: '100644' }, 'c/d.md': { sha: 'sb', mode: '100644' }, '_trash/b.md': { sha: 'sb', mode: '100755' } };
+  const edited = { repo: 'o/r', path: 'a.md', base: 'sa', text: 'ここで', at: 1 };
+  const moved = { repo: 'o/r', path: 'b.md', base: 'sb', text: '動いた話に', at: 2 };
+  const replaced = { repo: 'o/r', path: 'c/d.md', base: 'sd', text: '別の話になった', at: 3 };
+  const op = { repo: 'o/r', path: 'b.md', base: 'sb', gone: true, op: 'op1', at: 4 };
+  const { changes: kept, parked } = settle(changes([edited, moved, replaced]), blobs, after);
+  expect([...kept.values()]).toEqual([edited]);
+  expect(parked).toEqual([moved, replaced]);
+  expect(settle(changes([op]), blobs, after)).toEqual({ changes: changes([op]), parked: [] });
+  // (called otherwise now: another file there)
+  expect(settle(changes([edited]), blobs, after, new Set(['a.md']))).toEqual({ changes: new Map(), parked: [edited] });
+});
+
 describe('the list of changes not sent', () => {
   const list = changes([
     { repo: 'o/r', path: 'a.md', base: 'sa', gone: true, op: 'op1', at: 1 },
@@ -232,7 +268,8 @@ describe('the list of changes not sent', () => {
     expect([...withoutOp(other, [], 'op5').changes.values()]).toEqual([other.get('k.md')]);
   });
   test('withoutOp: the operation given up, the text written in it kept where it came from; its keys gone', () => {
-    const { changes: next, edits: left } = withoutOp(list, edits, 'op1');
+    const { changes: next, edits: left, parked } = withoutOp(list, edits, 'op1');
+    expect(parked).toEqual([]);
     expect([...next.values()]).toEqual([
       { repo: 'o/r', path: 'b.md', base: 'sb', text: '下書き', at: 2 },
       { repo: 'o/r', path: 'n.md', base: '', text: '', op: 'op3', at: 3 },
