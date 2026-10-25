@@ -1,7 +1,16 @@
 import { describe, test, expect } from 'vitest';
-import { draftKey, draftOf, afterSend, goneWhileSent, typedOver } from '../../lib/drafts.js';
+import { draftKey, draftOf, afterSend, goneWhileSent, sameVersion, typedOver } from '../../lib/drafts.js';
 
 describe('drafts', () => {
+  // FR-SAVE-01: a draft sent is deleted from the device only while it is still the version this page wrote; another
+  // tab's written since (another text, or the same text written again) stays
+  test('sameVersion: the same text written at the same time; none kept, another text or another time: not', () => {
+    const mine = { repo: 'o/r', path: 'a.md', base: 'b1', text: '書いた', at: 10 };
+    expect(sameVersion({ ...mine }, mine)).toBe(true);
+    expect(sameVersion(undefined, mine)).toBe(false);
+    expect(sameVersion({ ...mine, text: '別のタブ' }, mine)).toBe(false);
+    expect(sameVersion({ ...mine, at: 11 }, mine)).toBe(false);
+  });
   test('draftKey: one for each repository and path', () => {
     expect(draftKey('o/r', 'a/01.md')).toBe('o/r\na/01.md');
   });

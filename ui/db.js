@@ -34,6 +34,17 @@ export const get = (store, key) => run(store, 'readonly', s => s.get(key));
 export const put = (store, key, value) => run(store, 'readwrite', s => s.put(value, key));
 /** @param {Store} store @param {string} key */
 export const del = (store, key) => run(store, 'readwrite', s => s.delete(key));
+// Deletes the value at `key` only while it is still the one `same` takes (read, compared and deleted in one
+// transaction: what another tab of the app wrote there meanwhile stays)
+/** @param {Store} store @param {string} key @param {(value: any) => boolean} same */
+export const delIf = (store, key, same) =>
+  run(store, 'readwrite', s => {
+    const req = s.get(key);
+    req.onsuccess = () => {
+      if (same(req.result)) s.delete(key);
+    };
+    return req;
+  });
 /** @param {Store} store @returns {Promise<any[]>} */
 export const all = store => run(store, 'readonly', s => s.getAll());
 /** @param {Store} store @returns {Promise<IDBValidKey[]>} */

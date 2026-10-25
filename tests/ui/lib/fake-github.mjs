@@ -199,6 +199,8 @@ export class FakeGitHub {
     this.tokens = [TOKEN];
     /** @type {Record<string, string>} the GitHub user of a token ('author' when not given) */
     this.logins = {};
+    /** @type {Record<string, number>} the GitHub accounts' numbers, by login (one not here is given the next) */
+    this.userIds = { author: 1001 };
     /** @type {string[]} the requests that came with an admin token */
     this.adminCalls = [];
     /** @type {string[]} the requests made to anything but this page's server and the API (refused) */
@@ -219,7 +221,8 @@ export class FakeGitHub {
      * A GitHub App (its ID or Client ID, the public key of its private key, and where it is installed: the owners and
      * their repositories), or none. Its JWTs are checked with the key; its installations' tokens are given for an hour
      * (appTokenLife) and taken until they end or are revoked
-     * @type {{ id: string, publicKey: import('node:crypto').KeyObject, installations: { id: number, account: string, repos: string[] }[] } | null}
+     * (`appId`: its number, when `id` is its Client ID; `owner`: the account that made it, the author's when not given)
+     * @type {{ id: string, appId?: number, owner?: string, publicKey: import('node:crypto').KeyObject, installations: { id: number, account: string, repos: string[] }[] } | null}
      */
     this.app = null;
     this.appTokenLife = 3600000;
@@ -237,6 +240,8 @@ export class FakeGitHub {
     this.codes = new Map();
     // the author presses Create at once (false: the page stays on GitHub, nothing sent back)
     this.createNow = true;
+    // the account an App is made on (the one logged in to github.com)
+    this.makeOwner = 'author';
     /** @type {string[] | null} the repositories the author installs the App on when its page opens (null: not installed, the page stays) */
     this.installRepos = ['author/novel'];
     /** @type {string[]} the pages of installing an App visited */
@@ -293,7 +298,7 @@ export class FakeGitHub {
     const c = this.codes.get(code);
     if (!c || c.used) return reply(404, { message: 'Not Found' });
     c.used = true;
-    this.app = { id: c.clientId, publicKey: c.publicKey, installations: [] };
+    this.app = { id: c.clientId, appId: c.id, owner: this.makeOwner, publicKey: c.publicKey, installations: [] };
     return reply(201, {
       id: c.id,
       slug: c.slug,
@@ -314,7 +319,14 @@ export class FakeGitHub {
     if (!this.app || !s) return false;
     if (!verify('sha256', Buffer.from(`${h}.${c}`), this.app.publicKey, Buffer.from(s, 'base64url'))) return false;
     const claims = JSON.parse(Buffer.from(c, 'base64url').toString());
-    return claims.iss === this.app.id && claims.exp * 1000 > Date.now() && claims.exp - claims.iat <= 660;
+    // (GitHub takes the App's Client ID or its number)
+    return (claims.iss === this.app.id || claims.iss === String(this.app.appId)) && claims.exp * 1000 > Date.now() && claims.exp - claims.iat <= 660;
+  }
+  // a GitHub account's number (one not known yet given the next)
+  /** @param {string} login */
+  userId(login) {
+    this.userIds[login] ??= 1001 + Object.keys(this.userIds).length;
+    return this.userIds[login];
   }
   // the installation an installation's token is of (undefined: not one, ended, or revoked)
   /** @param {string | undefined} auth */
@@ -343,8 +355,13 @@ export class FakeGitHub {
     if (url.pathname === '/app/installations' && method === 'GET')
       return reply(
         200,
-        app.installations.map(i => ({ id: i.id, account: { login: i.account, id: 1001 } })),
+        app.installations.map(i => ({ id: i.id, account: { login: i.account, id: this.userId(i.account) } })),
       );
+    // the App itself: its number, its Client ID, the account that made it
+    if (url.pathname === '/app' && method === 'GET') {
+      const owner = app.owner ?? 'author';
+      return reply(200, { id: app.appId ?? Number(app.id), client_id: app.id, owner: { login: owner, id: this.userId(owner) } });
+    }
     const m = /^\/app\/installations\/(\d+)\/access_tokens$/.exec(url.pathname);
     if (m && method === 'POST' && app.installations.some(i => i.id === Number(m[1]))) {
       const token = `ghs_test_${this.appTokens.size + 1}`;
@@ -391,7 +408,7 @@ export class FakeGitHub {
     const headers = req.headers();
     const conversion = /^\/app-manifests\/([^/]+)\/conversions$/.exec(url.pathname);
     if (conversion && method === 'POST') return this.convert(conversion[1], reply);
-    if (this.app && (url.pathname.startsWith('/app/') || url.pathname === '/installation/repositories'))
+    if (this.app && (url.pathname === '/app' || url.pathname.startsWith('/app/') || url.pathname === '/installation/repositories'))
       return this.answerApp(method, url, headers.authorization, reply);
     const admin = this.adminTokens.some(t => headers.authorization === `Bearer ${t}`);
     if (admin) this.adminCalls.push(`${method} ${url.pathname}`);
@@ -402,7 +419,10 @@ export class FakeGitHub {
     const body = method === 'GET' ? null : req.postDataJSON();
     const path = decodeURIComponent(url.pathname);
     // the repository itself: as GitHub says it (a renamed one's old name sent on), made, renamed
-    if (path === '/user' && method === 'GET') return reply(200, { login: this.logins[String(headers.authorization).replace(/^Bearer /, '')] ?? 'author' });
+    if (path === '/user' && method === 'GET') {
+      const login = this.logins[String(headers.authorization).replace(/^Bearer /, '')] ?? 'author';
+      return reply(200, { login, id: this.userId(login) });
+    }
     if ((path === '/user/repos' || /^\/orgs\/[^/]+\/repos$/.test(path)) && method === 'POST') {
       if (!admin) return reply(403, { message: 'Resource not accessible by personal access token' });
       const owner = path === '/user/repos' ? 'author' : path.split('/')[2];

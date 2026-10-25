@@ -10,7 +10,7 @@ import * as vault from './ui/vault.js';
 import { api } from './ui/shared.js';
 import { showWorks, wireWorks } from './ui/works.js';
 import { appOf, importKey, madeApp, startManifest } from './ui/appkey.js';
-import { authorOf, HOUR, installUrl, returnOf, startedHere } from './lib/appkey.js';
+import { authorOf, HOUR, installUrl, returnOf, sameOwner, startedHere } from './lib/appkey.js';
 import { forgetDevice, keepWork } from './ui/repo.js';
 
 /** @typedef {import('./ui/desk.js').Repo} Repo */
@@ -38,6 +38,13 @@ let appInUse = null;
 
 // --- the token
 
+// The browser asked to keep this device's store (the key, the drafts) for good, the first time a key is kept: without
+// it, a browser short of room, or Safari after days unopened, may delete it. What it answers changes nothing here
+async function keepStore() {
+  try {
+    await navigator.storage.persist();
+  } catch {}
+}
 async function keepToken(/** @type {SubmitEvent} */ e) {
   e.preventDefault();
   const token = $('token').value.trim();
@@ -47,6 +54,7 @@ async function keepToken(/** @type {SubmitEvent} */ e) {
   try {
     await checkOwner(token);
     kind = await vault.keep(token);
+    void keepStore();
     await keepExpiry($('token-expires').value);
     $('token').value = '';
     if (kind === 'local') toast('PRF に対応していないため、パスキーなしで保管しました');
@@ -72,31 +80,37 @@ async function openToken() {
     $('open-token').disabled = false;
   }
 }
-// The GitHub user the token is of, kept with the drafts. A token of another user put in where drafts of the one before
-// are left (a device shared): asked, without showing them, whether to delete them; if not, the token is not kept
-// (NFR-SEC-16)
+// The GitHub account the token is of (its user), kept with the drafts. A token of another account put in where drafts
+// of the one before are left (a device shared): asked, without showing them, whether to delete them; if not, the token
+// is not kept (NFR-SEC-16)
 /** @param {string} token */
 async function checkOwner(token) {
   gh.useToken(token);
-  /** @type {string} */
-  let login = '';
+  /** @type {import('./lib/appkey.js').Who | null} */
+  let who = null;
   try {
-    login = (await gh.getJson('/user')).login ?? '';
+    const u = await gh.getJson('/user');
+    // (GitHub not saying the account's number: not known)
+    if (typeof u.id === 'number') who = { id: u.id, login: u.login };
   } catch {}
   try {
-    await checkLogin(login, 'このトークン');
+    await checkLogin(who, 'このトークン');
   } catch (err) {
     gh.useToken(using);
     throw err;
   }
 }
-// the drafts left on this device by another user (a token's GitHub user, or another App), deleted only when the
-// author says so; otherwise what is put in is not kept (throws)
-/** @param {string} login @param {string} what what is put in (このトークン, この秘密鍵) */
-async function checkLogin(login, what) {
+// whose a GitHub App is (lib/appkey.js Who: the account that made it), null when GitHub does not say
+/** @param {import('./ui/github.js').App} app */
+const whoseApp = app => app.who().catch(() => null);
+// The drafts left on this device by another account (a token's user, or an App's owner: compared by the account's
+// number, lib/appkey.js sameOwner), deleted only when the author says so; otherwise what is put in is not kept
+// (throws). The account kept with the drafts, by its number
+/** @param {import('./lib/appkey.js').Who | null} who (null: not known) @param {string} what what is put in (このトークン, この秘密鍵) */
+async function checkLogin(who, what) {
   const owner = await store.get('prefs', 'owner');
   const left = (await store.all('drafts')).length;
-  if (left && owner && login && login !== owner) {
+  if (left && who && !sameOwner(owner, who)) {
     if (
       !confirm(
         `この端末には、前のユーザーが GitHub に送っていない書きかけが ${left} 件残っています（中身は出しません）。消してから進みますか？（「キャンセル」なら、${what}を保管しません）`,
@@ -105,7 +119,7 @@ async function checkLogin(login, what) {
       throw new Error(`前のユーザーの書きかけを残すため、${what}を保管しませんでした。前のユーザーがトークンを入れ直すと送れます`);
     await forgetDevice(false);
   }
-  if (login) await store.put('prefs', 'owner', login);
+  if (who) await store.put('prefs', 'owner', who.id);
 }
 // The token forgotten (NFR-SEC-16): with it, what the device keeps of the works (the works last read, the blobs, the
 // settings, the versions kept); the drafts not sent too, when the author says so
@@ -270,8 +284,9 @@ async function keepApp(/** @type {SubmitEvent} */ e) {
     }
     if (!repos.length)
       throw new Error('この GitHub App は、どのリポジトリにも入っていません。GitHub の App の設定の Install App で、作品のリポジトリに入れてください');
-    await checkLogin(`app:${appId}`, 'この秘密鍵');
+    await checkLogin(await whoseApp(app), 'この秘密鍵');
     const v = await vault.keepApp({ appId, key, author, credentialId: await vault.appPasskey() });
+    void keepStore();
     await vault.forget();
     /** @type {HTMLFormElement} */ (/** @type {unknown} */ ($('app-form'))).reset();
     if (!v.credentialId) toast('パスキーに対応していないため、パスキーなしで保管しました');
@@ -360,8 +375,9 @@ async function finishApp(code, p) {
   $('app-paste-form').hidden = true;
   try {
     const { appId, slug, key } = await madeApp(code);
-    await checkLogin(`app:${appId}`, 'この GitHub App');
+    await checkLogin(await whoseApp(appOf(appId, key, null)), 'この GitHub App');
     const v = await vault.keepApp({ appId, slug, key, author: null, credentialId: p.credentialId });
+    void keepStore();
     await vault.forget();
     // (back from installing it, opened once without the passkey made a moment ago)
     await store.put('prefs', 'app-installing', Date.now());

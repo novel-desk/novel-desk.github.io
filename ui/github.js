@@ -11,7 +11,7 @@ export const onRefused = f => refusals.addEventListener('refused', f);
 /**
  * A GitHub App in use in place of the token (ui/appkey.js): the installation's token for a request (`fresh`: asked
  * for again, the one before refused), the repositories it is installed on, and who the commits are written by
- * @typedef {{ tokenFor: (url: string, fresh: boolean) => Promise<string>, repos: () => Promise<any[]>, account: (url: string) => Promise<{ login: string, id: number } | undefined>, author: { name: string, email: string } | null }} App
+ * @typedef {{ tokenFor: (url: string, fresh: boolean) => Promise<string>, repos: () => Promise<any[]>, account: (url: string) => Promise<{ login: string, id: number } | undefined>, who: () => Promise<import('../lib/appkey.js').Who>, author: { name: string, email: string } | null }} App
  */
 /** @type {App | null} */
 let app = null;

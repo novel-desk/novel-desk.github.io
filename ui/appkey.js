@@ -3,7 +3,7 @@
 // it in IndexedDB). It signs a JWT for 9 minutes; with it, GitHub gives each installation of the App a token for an
 // hour, used for the requests about that installation's repositories, and asked for again before it ends and when
 // GitHub refuses it (ui/github.js). The commits are written as the author, not as the App
-import { base64url, jwtBody, manifestOf, ownerOf, pkcs8Of, renewNow, suffixOf } from '../lib/appkey.js';
+import { appName, base64url, deviceOf, jwtBody, manifestOf, ownerOf, pkcs8Of, renewNow, suffixOf } from '../lib/appkey.js';
 import * as store from './db.js';
 import * as gh from './github.js';
 
@@ -63,6 +63,12 @@ export function appOf(appId, key, author) {
     },
     // the account it is installed on for a repository (its owner)
     account: async url => (await installationFor(url))?.account,
+    // whose it is: the account that made it (the only one it can be installed on: public: false), and its ID and
+    // Client ID (GitHub's /app, asked with the JWT: known before it is installed anywhere)
+    who: async () => {
+      const a = (await gh.requestAs(await jwt(), 'GET', '/app')).json;
+      return { id: a.owner.id, login: a.owner.login, appIds: [String(a.id), String(a.client_id)] };
+    },
     // the repositories it is installed on, every page of each installation's (the App writes to them: Contents)
     repos: async () => {
       /** @type {any[]} */
@@ -99,7 +105,7 @@ export async function startManifest(credentialId) {
   const manifest = document.createElement('input');
   manifest.type = 'hidden';
   manifest.name = 'manifest';
-  manifest.value = JSON.stringify(manifestOf(base, suffixOf(crypto.getRandomValues(new Uint8Array(6)))));
+  manifest.value = JSON.stringify(manifestOf(base, appName(deviceOf(navigator), new Date(), suffixOf(crypto.getRandomValues(new Uint8Array(6))))));
   form.append(manifest);
   document.body.append(form);
   form.submit();

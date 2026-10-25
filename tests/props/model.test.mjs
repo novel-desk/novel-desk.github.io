@@ -4,7 +4,8 @@
 // (changes, drafts, view, episodes), ui/send.js and ui/work.js with the fake GitHub (tests/props/lib/device.mjs).
 // After every step: nothing typed or written elsewhere is lost; what was typed in an episode is never in another
 // episode's file, and an episode is never put back once it went elsewhere (each episode holds a mark of its own:
-// ［E1］); after every send the lines of novel.toml written by hand are as they were and no file is taken away or
+// ［E1］); a text is set aside only when its episode was put in _trash/ elsewhere, never because it moved (it goes
+// where its episode is now); after every send the lines of novel.toml written by hand are as they were and no file is taken away or
 // changed that the send did not mean to
 import { test, expect, vi } from 'vitest';
 import fc from 'fast-check';
@@ -51,6 +52,11 @@ function nothingLost(m, r) {
     if (own.length && !path.includes(plans.TRASH)) at.set(own[0], [...(at.get(own[0]) ?? []), path]);
   }
   for (const [mark, paths] of at) expect(paths.length + (m.trashed.has(mark) ? 1 : 0), `${mark}: ${paths}`).toBe(1);
+  // a text set aside because its file is gone there or is another file now: only an episode put in _trash/ elsewhere
+  // (FR-TOC-06), or a file made on the device where another one is made (an episode added, the addition given up);
+  // one moved, renumbered or swapped elsewhere takes it where it is now (FR-TOC-04)
+  for (const d of r.device.refused.filter(x => x.base))
+    for (const mark of marks(/** @type {string} */ (d.text))) expect(m.trashed.has(mark), `${mark} set aside: ${d.path}`).toBe(true);
 }
 /** @param {Real} r @param {number} i the i-th episode the device shows (none: '') */
 const episode = (r, i) => {
@@ -184,7 +190,8 @@ class Send {
     const parent = /** @type {string} */ (r.repo.head().parents[0]);
     const was = r.repo.files(parent),
       now = r.repo.files(r.repo.refs.main);
-    const meant = new Set([...sent.sent.map(s => s.draft.path), 'novel.toml']);
+    // (a text goes where its file is now: FR-TOC-04)
+    const meant = new Set([...sent.sent.map(s => s.to), 'novel.toml']);
     for (const [path, e] of Object.entries(was)) if (!meant.has(path)) expect(now[path]?.sha, path).toBe(e.sha);
     for (const path of Object.keys(was)) if (!now[path]) expect(taken.get(path)?.gone, path).toBe(true);
     nothingLost(m, r);

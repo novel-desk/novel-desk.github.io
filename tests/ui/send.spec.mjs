@@ -1,6 +1,6 @@
 // Sending: every episode written in one commit (blobs, a tree, a commit, the branch moved forward), and what happens
 // when the branch moved on elsewhere
-import { test, expect, openRepo, openWork, stored, WORK_FILES } from './lib/test.mjs';
+import { test, expect, noPasskey, openRepo, openWork, stored, WORK_FILES } from './lib/test.mjs';
 import { japanDay } from '../../lib/commit.js';
 import { OTHER_DEVICE_MARK } from '../../lib/merge.js';
 
@@ -407,4 +407,40 @@ test('the branch cannot be moved (GitHub failing, or moved on elsewhere each tim
   await expect(page.locator('#sync-state')).toHaveText(/^送れませんでした: .*。書いたものはこの端末に残っています$/);
   expect(gh.calls.filter(c => c.startsWith('PATCH')).length).toBe(4);
   expect(work.text('chapters/01_first.md')).toBe(WORK_FILES['chapters/01_first.md']);
+});
+
+// FR-SAVE-01: two tabs of the app on one work. While this tab sends an episode, the other writes it again: when the
+// send ends, the draft this tab sent is deleted only while it is still the one this tab wrote (read, compared and
+// deleted in one transaction): the other tab's stays on the device, and goes with the next send
+test('two tabs: a draft written in the other tab while this one sends stays on the device', async ({ page, context, gh, work }) => {
+  await openWork(page);
+  const other = await context.newPage();
+  await noPasskey(other);
+  await other.goto('./');
+  await expect(other.locator('#episode-title')).toHaveValue('はじまり');
+  // (the branch moved by this tab's send held until the other tab has written)
+  /** @type {() => void} */
+  let release = () => {};
+  const held = new Promise(resolve => {
+    release = () => resolve(null);
+  });
+  let holding = false;
+  await context.route('https://api.github.com/**', async route => {
+    if (route.request().method() === 'PATCH' && route.request().url().includes('/git/refs/heads/')) {
+      holding = true;
+      await held;
+    }
+    return route.fallback();
+  });
+  await page.locator('#body').fill('# 第1話 はじまり\n\nこのタブで送る\n');
+  await page.getByRole('button', { name: '送る（1）' }).click();
+  await expect.poll(() => holding).toBe(true);
+  await other.locator('#body').fill('# 第1話 はじまり\n\nほかのタブで書いた\n');
+  await expect.poll(async () => (await stored(other, 'drafts')).map(d => d.text)).toEqual(['# 第1話 はじまり\n\nほかのタブで書いた\n']);
+  release();
+  await expect(page.locator('#sync-state')).toHaveText(/^送りました（/);
+  expect(work.text('chapters/01_first.md')).toBe('# 第1話 はじまり\n\nこのタブで送る\n');
+  // (this tab's writes done: what the device keeps now)
+  await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 300)));
+  expect((await stored(page, 'drafts')).map(d => d.text)).toEqual(['# 第1話 はじまり\n\nほかのタブで書いた\n']);
 });

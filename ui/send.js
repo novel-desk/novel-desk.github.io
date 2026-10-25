@@ -1,29 +1,31 @@
 // Sends every change not sent yet as one commit (Git Data API: blobs, a tree on the branch's, a commit, the branch
 // moved forward, never forced). When the branch moved on since it was read, the new tree is read, and the changes go
-// on top of it: a text changed there too keeps both versions side by side (lib/merge.js); a text whose file is gone
-// there, or is another file now, is not sent (`refused`: the desk keeps it aside for the author); an operation (an
+// on top of it: a text changed there too keeps both versions side by side (lib/merge.js); a text whose file moved
+// there goes where it is now; a text whose file is put in _trash/ there, or is another file now, is not sent
+// (`refused`: the desk keeps it aside for the author); an operation (an
 // episode added, renamed, put in the trash, the order changed) whose files changed there is not sent, and the screen
 // says so
 import { changeParts, changePart, commitSubject, japanDay, kindsOf } from '../lib/commit.js';
 import { conflictsOf } from '../lib/changes.js';
 import { filesOf, japaneseText, textOf } from '../lib/github.js';
 import { CONFIG, relOf, titleWith } from '../lib/layout.js';
-import { keptBoth, sendPlan } from '../lib/merge.js';
+import { keptBoth, sendPlan, underHeading } from '../lib/merge.js';
 import { editToml } from '../lib/tomledit.js';
 import { viewOf } from '../lib/view.js';
 import * as gh from './github.js';
 import { trace, traceStop } from './trace.js';
-import { bytes, renamedPaths } from './work.js';
+import { bytes, lookOf } from './work.js';
 import * as store from './db.js';
 
 /** @typedef {import('../lib/drafts.js').Draft} Draft */
 /** @typedef {import('./work.js').Work} Work */
 /**
  * What a send did: the commit and tree the branch is at now, its files, and for each change the text taken from it
- * (none for one that held no text), the blob it went into ('' for a file deleted) and whether the other version was
- * put beside it; the texts not sent because their file is gone there or is another file now (lib/merge.js onTopOf).
+ * (none for one that held no text), where it went (its file moved elsewhere: there, lib/merge.js placeOf), the blob it
+ * went into ('' for a file deleted) and whether the other version was put beside it; the texts not sent because their
+ * file is put in _trash/ there or is another file now (lib/merge.js placeOf).
  * When nothing is left to send, no commit is made: the branch as it is now
- * @typedef {{ commit: string, tree: string, updated: number, blobs: Work['blobs'], folders: string[], sent: { draft: Draft, text: string | undefined, blob: string, both: boolean }[], refused: Draft[], message: string }} Sent
+ * @typedef {{ commit: string, tree: string, updated: number, blobs: Work['blobs'], folders: string[], sent: { draft: Draft, to: string, text: string | undefined, blob: string, both: boolean }[], refused: Draft[], message: string }} Sent
  */
 
 // An operation not sent: the branch changed under these files elsewhere
@@ -75,22 +77,30 @@ export async function sendAll(work, drafts, edits) {
       entries = [];
     // novel.toml there now
     const configNow = blobs[CONFIG] ? await textAt(work.repo, blobs[CONFIG].sha) : '';
+    const look = await lookOf(work.repo, drafts, work, { blobs, config: configNow }, false);
     const plan = sendPlan(
       drafts.filter(d => !d.op),
       blobs,
       work.blobs,
-      await renamedPaths(work.repo, drafts, work, { blobs, config: configNow }, false),
+      look,
     );
     const refused = plan.filter(p => p.how === 'refused').map(p => p.draft);
-    for (const { draft, how, mode, theirs } of plan.filter(p => p.how !== 'refused')) {
+    for (const { draft, how, to, mode, theirs } of plan.filter(p => p.how !== 'refused')) {
       const was = theirs ? await textAt(work.repo, theirs) : '';
-      if (was === null) throw new Error(`${draft.path} は GitHub で UTF-8 でない形に変わっているので、送れません`);
-      const { text, both } = how === 'both' ? keptBoth(/** @type {string} */ (draft.text), was) : { text: /** @type {string} */ (draft.text), both: false };
+      if (was === null) throw new Error(`${to} は GitHub で UTF-8 でない形に変わっているので、送れません`);
+      const mine = /** @type {string} */ (draft.text);
+      // (changed there too: both side by side; only renamed there: what was written, under the heading given there)
+      const { text, both } =
+        how === 'both'
+          ? keptBoth(mine, was)
+          : how === 'heading'
+            ? { text: underHeading(/** @type {string} */ (look.texts[draft.base]), mine, was), both: false }
+            : { text: mine, both: false };
       const blob = await gh.newBlob(work.repo, text);
       await store.put('blobs', blob, new TextEncoder().encode(text));
-      sent.push({ draft, text, blob, both });
-      entries.push({ path: draft.path, mode, type: /** @type {const} */ ('blob'), sha: /** @type {string | null} */ (blob) });
-      [there[draft.path], after[draft.path]] = [was, text];
+      sent.push({ draft, to, text, blob, both });
+      entries.push({ path: to, mode, type: /** @type {const} */ ('blob'), sha: /** @type {string | null} */ (blob) });
+      [there[to], after[to]] = [was, text];
     }
     for (const d of ops) {
       const old = blobs[d.from?.path ?? d.path];
@@ -105,7 +115,7 @@ export async function sendAll(work, drafts, edits) {
         blob = /** @type {string} */ (d.sha);
         after[d.path] = (await textAt(work.repo, blob).catch(() => null)) ?? '';
       }
-      sent.push({ draft: d, text: d.text, blob, both: false });
+      sent.push({ draft: d, to: d.path, text: d.text, blob, both: false });
       entries.push({ path: d.path, mode: d.mode ?? blobs[d.path]?.mode ?? '100644', type: /** @type {const} */ ('blob'), sha: d.gone ? null : blob });
     }
     // novel.toml: its keys set on the one there now (what else changed in it there stays)
@@ -133,10 +143,10 @@ export async function sendAll(work, drafts, edits) {
       ...sent
         .filter(s => !s.draft.op)
         .map(s => {
-          const rel = relOf(was.layout, s.draft.path) ?? s.draft.path;
+          const rel = relOf(was.layout, s.to) ?? s.to;
           return changePart({
             title: titleWith(now.layout, rel, /** @type {string} */ (s.text), now.headings),
-            before: there[s.draft.path],
+            before: there[s.to],
             after: /** @type {string} */ (s.text),
           });
         }),

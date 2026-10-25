@@ -13,7 +13,7 @@ import { editToml } from '../../../lib/tomledit.js';
 import { viewOf } from '../../../lib/view.js';
 import * as gh from '../../../ui/github.js';
 import { sendAll } from '../../../ui/send.js';
-import { contents, load, renamedPaths } from '../../../ui/work.js';
+import { contents, load, lookOf } from '../../../ui/work.js';
 
 export { FakeGitHub, FakeRepo };
 
@@ -86,8 +86,12 @@ export class Device {
     this.changes = new Map();
     /** @type {any[]} novel.toml's keys set and not sent */
     this.edits = [];
-    /** @type {import('../../../lib/drafts.js').Draft[]} the texts set aside (their file gone, or another file now) */
+    /** @type {import('../../../lib/drafts.js').Draft[]} the texts set aside (their file put in _trash/, or another file now; or
+     * written in an operation given up, both places taken) */
     this.parked = [];
+    /** @type {import('../../../lib/drafts.js').Draft[]} of them, the ones set aside because their file is put in _trash/ or is
+     * another file now (never because it moved: FR-TOC-04) */
+    this.refused = [];
     this.ops = 0;
     this.at = 0;
   }
@@ -155,26 +159,33 @@ export class Device {
   async send() {
     const w = this.work;
     const result = await sendAll(w, [...this.changes.values()], this.edits);
+    const typed = new Map(this.changes);
     const next = new Map(this.changes);
-    for (const { draft, blob, both } of result.sent) {
-      const after = afterSend(next.get(draft.path) ?? goneWhileSent(draft, this.remoteText(draft.path)), draft.text, blob, both);
-      if (after) next.set(draft.path, after);
-      else next.delete(draft.path);
-    }
     for (const d of result.refused) {
-      const now = next.get(d.path);
-      if (now) this.parked.push(now);
+      const now = typed.get(d.path);
+      if (now) this.aside(now);
       next.delete(d.path);
+    }
+    for (const { draft, to, blob, both } of result.sent) {
+      const after = afterSend(typed.get(draft.path) ?? goneWhileSent(draft, this.remoteText(draft.path)), draft.text, blob, both);
+      if (next.get(draft.path) === typed.get(draft.path)) next.delete(draft.path);
+      if (after) next.set(to, { ...after, path: to });
     }
     this.work = await contents(
       { repo: w.repo, branch: w.branch, commit: result.commit, tree: result.tree, updated: result.updated, blobs: result.blobs, folders: result.folders },
       false,
     );
-    const { changes: left, parked } = settle(next, w.blobs, result.blobs, await renamedPaths(w.repo, [...next.values()], w, this.work, false));
-    this.parked.push(...parked);
+    const { changes: left, parked } = settle(next, w.blobs, result.blobs, await lookOf(w.repo, [...next.values()], w, this.work, false));
+    for (const d of parked) this.aside(d);
     this.changes = left;
     this.edits = [];
     return result;
+  }
+  // a text set aside because its file is put in _trash/ there or is another file now (ui/desk.js park, MOVED)
+  /** @param {import('../../../lib/drafts.js').Draft} d */
+  aside(d) {
+    this.parked.push(d);
+    this.refused.push(d);
   }
   // the work read again (ui/desk.js readIn and rebaseChanges): the operations whose files changed there given up
   async readIn() {
@@ -182,10 +193,10 @@ export class Device {
     this.work = await load(this.repo.fullName, this.repo.defaultBranch, '');
     const { changes, ops, parked: homeless } = rebase(this.changes, this.work.blobs);
     this.parked.push(...homeless);
-    const renamed = await renamedPaths(this.repo.fullName, [...changes.values()], before, this.work, false);
-    const { changes: left, parked } = settle(changes, before.blobs, this.work.blobs, renamed);
+    const look = await lookOf(this.repo.fullName, [...changes.values()], before, this.work, false);
+    const { changes: left, parked } = settle(changes, before.blobs, this.work.blobs, look);
     this.changes = left;
-    this.parked.push(...parked);
+    for (const d of parked) this.aside(d);
     this.edits = this.edits.filter(e => !ops.has(e.op));
   }
 }

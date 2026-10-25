@@ -4,7 +4,7 @@
 import { filesOf, bytesOf, japaneseText, textOf } from '../lib/github.js';
 import { CONFIG, firstLayout, parseLayout, tableOfContents, episodesOf } from '../lib/layout.js';
 import { foldersOf } from '../lib/changes.js';
-import { calledOtherwise } from '../lib/merge.js';
+import { extOf, layoutOf } from '../lib/merge.js';
 import * as gh from './github.js';
 import * as store from './db.js';
 
@@ -166,22 +166,30 @@ export async function readShas(work, shas) {
     },
   );
 }
-// The texts written alone whose file changed between `was` and `now` (the files, and novel.toml's text) and is called
-// otherwise now than when they were written (lib/merge.js calledOtherwise): their paths. Their texts read by their
-// blobs (kept on the device)
+// What tells the files apart (lib/merge.js Look) for the texts written alone, between `was` and `now` (the files, and
+// novel.toml's text): the layouts then and now, and, when a file written is not the one written from any more, the
+// texts of the blobs written from and read, and of the files of the same kind come or changed since (kept on the
+// device: a file moved is a blob read before)
 /**
  * @param {string} repo @param {import('../lib/drafts.js').Draft[]} drafts
  * @param {{ blobs: Record<string, { sha: string }>, config: string | null }} was @param {{ blobs: Record<string, { sha: string }>, config: string | null }} now
- * @param {boolean} offline @returns {Promise<Set<string>>}
+ * @param {boolean} offline @returns {Promise<import('../lib/merge.js').Look>}
  */
-export async function renamedPaths(repo, drafts, was, now, offline) {
+export async function lookOf(repo, drafts, was, now, offline) {
+  /** @type {(string | undefined)[]} */
+  const shas = [];
   /** @type {Set<string>} */
-  const out = new Set();
+  const kinds = new Set();
   for (const d of drafts) {
-    const there = now.blobs[d.path]?.sha;
-    if (d.op || !d.base || !there || there === d.base) continue;
-    const before = { config: was.config, text: await textAt(repo, d.base, offline) };
-    if (calledOtherwise(d.path, before, { config: now.config, text: await textAt(repo, there, offline) })) out.add(d.path);
+    if (d.op || !d.base || now.blobs[d.path]?.sha === d.base) continue;
+    shas.push(d.base, was.blobs[d.path]?.sha);
+    kinds.add(extOf(d.path));
   }
-  return out;
+  for (const [q, { sha }] of Object.entries(now.blobs)) if (kinds.has(extOf(q)) && sha !== was.blobs[q]?.sha) shas.push(sha);
+  /** @type {Record<string, string | null>} */
+  const texts = {};
+  await each([...new Set(shas.filter(s => s !== undefined))], 6, async sha => {
+    texts[sha] = await textAt(repo, sha, offline);
+  });
+  return { texts, was: layoutOf(was.config), now: layoutOf(now.config) };
 }

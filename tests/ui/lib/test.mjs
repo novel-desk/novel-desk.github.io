@@ -82,6 +82,44 @@ export async function takeAll(context, taken) {
 export async function noPasskey(page) {
   await page.addInitScript(() => Object.defineProperty(window, 'PublicKeyCredential', { value: undefined, configurable: true }));
 }
+// The browser's navigator.storage.persist counted (how many times the pages of the tab asked to keep the store for
+// good, through the pages it went to: sessionStorage; the browser says yes), read with persistAsked
+/** @param {import('@playwright/test').Page} page */
+export async function watchPersist(page) {
+  await page.addInitScript(() => {
+    // (WebKit does not take the method set on navigator.storage itself)
+    Object.defineProperty(StorageManager.prototype, 'persist', {
+      configurable: true,
+      value: async () => {
+        sessionStorage.setItem('persist-asked', String(Number(sessionStorage.getItem('persist-asked')) + 1));
+        return true;
+      },
+    });
+  });
+}
+/** @param {import('@playwright/test').Page} page @returns {Promise<number>} */
+export const persistAsked = page => page.evaluate(() => Number(sessionStorage.getItem('persist-asked')));
+// What the passkeys made were called (their user's name, as the passwords' list shows it), through the pages of the
+// tab (sessionStorage), read with passkeyNames
+/** @param {import('@playwright/test').Page} page */
+export async function watchPasskeyNames(page) {
+  await page.addInitScript(() => {
+    const c = navigator.credentials;
+    const create = c.create.bind(c);
+    c.create = o => {
+      const names = JSON.parse(sessionStorage.getItem('passkey-names') ?? '[]');
+      sessionStorage.setItem('passkey-names', JSON.stringify([...names, o?.publicKey?.user.name]));
+      return create(o);
+    };
+  });
+}
+/** @param {import('@playwright/test').Page} page @returns {Promise<string[]>} */
+export const passkeyNames = page => page.evaluate(() => JSON.parse(sessionStorage.getItem('passkey-names') ?? '[]'));
+// today on this machine, as the passkeys' names say it (2026-10-25)
+export const today = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
 // The token put in (without a passkey), and the work chosen: the desk open on its first episode
 /** @param {import('@playwright/test').Page} page @param {string | null} [first] the title of the first episode (null: none) */
 export async function openWork(page, first = 'はじまり') {

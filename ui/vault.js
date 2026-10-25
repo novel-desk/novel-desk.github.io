@@ -1,7 +1,7 @@
 // The token, kept on this device encrypted: with a key from a passkey's PRF output (iPhone: Face ID each time it is
 // opened), or where PRF is not there, with a WebCrypto key that cannot be taken out of IndexedDB. The token itself is
 // only in this page's memory while it is open
-import { createOptions, getOptions, KEY_INFO, prfOf, webauthnFailure } from '../lib/passkey.js';
+import { createOptions, getOptions, KEY_INFO, passkeyName, prfOf, webauthnFailure } from '../lib/passkey.js';
 import * as store from './db.js';
 
 /**
@@ -58,7 +58,9 @@ async function saysPrf() {
 async function makePasskey(salt) {
   const rpId = location.hostname;
   const cred = /** @type {PublicKeyCredential | null} */ (
-    await navigator.credentials.create({ publicKey: createOptions({ rpId, userId: random(16), challenge: random(32), salt }) })
+    await navigator.credentials.create({
+      publicKey: createOptions({ rpId, userId: random(16), challenge: random(32), salt, name: passkeyName('token', new Date()) }),
+    })
   );
   if (!cred) return null;
   const credentialId = new Uint8Array(cred.rawId);
@@ -144,7 +146,13 @@ export async function appPasskey() {
   try {
     const cred = /** @type {PublicKeyCredential} */ (
       await navigator.credentials.create({
-        publicKey: createOptions({ rpId: location.hostname, userId: random(16), challenge: random(32), salt: random(32) }),
+        publicKey: createOptions({
+          rpId: location.hostname,
+          userId: random(16),
+          challenge: random(32),
+          salt: random(32),
+          name: passkeyName('app', new Date()),
+        }),
       })
     );
     return new Uint8Array(cred.rawId);

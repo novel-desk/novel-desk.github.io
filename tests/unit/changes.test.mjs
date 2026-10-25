@@ -1,5 +1,6 @@
 import { describe, test, expect } from 'vitest';
 import { conflictsOf, foldersOf, moveFiles, rebase, relabel, settle, unsentList, viewFiles, withoutOp, writeFile } from '../../lib/changes.js';
+import { firstLayout } from '../../lib/layout.js';
 
 const blobs = { 'a.md': { sha: 'sa', mode: '100644' }, 'b.md': { sha: 'sb', mode: '100755' }, 'c/d.md': { sha: 'sd', mode: '100644' } };
 const o = { repo: 'o/r', op: 'op2', at: 9 };
@@ -224,20 +225,63 @@ describe('changes', () => {
 });
 
 // FR-SAVE-09: the changes not sent, listed, one given up by hand
-// FR-TOC-04, FR-TOC-06, FR-NOTE-05, FR-NOTE-06, FR-SAVE-09: a text whose file is gone on the branch read again, or is
-// another file now, is set aside; the others, and the changes of operations, stay as they are
-test('settle: the texts written alone whose file is gone or is another file now set aside; the rest kept as they are', () => {
-  const after = { 'a.md': { sha: 'sa2', mode: '100644' }, 'c/d.md': { sha: 'sb', mode: '100644' }, '_trash/b.md': { sha: 'sb', mode: '100755' } };
+// FR-TOC-04, FR-TOC-06, FR-NOTE-05, FR-NOTE-06, FR-SAVE-09: on the branch read again, a text whose file moved
+// elsewhere goes with it (written from the blob it was); one whose file is put in _trash/, or is another file now, is
+// set aside; the others, and the changes of operations, stay as they are
+test('settle: the texts go where their files moved; the ones whose file is put in _trash/ or is another file now set aside', () => {
+  const look = { texts: {}, was: firstLayout(), now: firstLayout() };
+  const after = {
+    'a.md': { sha: 'sa2', mode: '100644' },
+    'c/d.md': { sha: 'sx', mode: '100644' },
+    '_trash/b.md': { sha: 'sb', mode: '100755' },
+    'e.md': { sha: 'sd', mode: '100644' },
+  };
   const edited = { repo: 'o/r', path: 'a.md', base: 'sa', text: 'ここで', at: 1 };
-  const moved = { repo: 'o/r', path: 'b.md', base: 'sb', text: '動いた話に', at: 2 };
-  const replaced = { repo: 'o/r', path: 'c/d.md', base: 'sd', text: '別の話になった', at: 3 };
+  const trashed = { repo: 'o/r', path: 'b.md', base: 'sb', text: '消された話に', at: 2 };
+  const moved = { repo: 'o/r', path: 'c/d.md', base: 'sd', text: '動いた話に', at: 3 };
   const op = { repo: 'o/r', path: 'b.md', base: 'sb', gone: true, op: 'op1', at: 4 };
-  const { changes: kept, parked } = settle(changes([edited, moved, replaced]), blobs, after);
-  expect([...kept.values()]).toEqual([edited]);
-  expect(parked).toEqual([moved, replaced]);
-  expect(settle(changes([op]), blobs, after)).toEqual({ changes: changes([op]), parked: [] });
-  // (called otherwise now: another file there)
-  expect(settle(changes([edited]), blobs, after, new Set(['a.md']))).toEqual({ changes: new Map(), parked: [edited] });
+  const { changes: kept, parked, moved: went } = settle(changes([edited, trashed, moved]), blobs, after, look);
+  expect([...kept.values()]).toEqual([edited, { ...moved, path: 'e.md' }]);
+  expect(parked).toEqual([trashed]);
+  expect(went).toEqual([['c/d.md', 'e.md']]);
+  expect(settle(changes([op]), blobs, after, look)).toEqual({ changes: changes([op]), parked: [], moved: [] });
+  // two files swapped: each text goes where its file is now
+  const swapped = { 'a.md': { sha: 'sb', mode: '100644' }, 'b.md': { sha: 'sa', mode: '100644' }, 'c/d.md': { sha: 'sd', mode: '100644' } };
+  const one = { repo: 'o/r', path: 'a.md', base: 'sa', text: '一', at: 1 };
+  const two = { repo: 'o/r', path: 'b.md', base: 'sb', text: '二', at: 2 };
+  const s = settle(changes([one, two]), blobs, swapped, look);
+  expect([...s.changes]).toEqual([
+    ['b.md', { ...one, path: 'b.md' }],
+    ['a.md', { ...two, path: 'a.md' }],
+  ]);
+  expect(s.moved).toEqual([
+    ['a.md', 'b.md'],
+    ['b.md', 'a.md'],
+  ]);
+  // moving where another change stays (a text there, or an operation's): set aside; where the text there is set aside
+  // itself (its file put in _trash/): it goes
+  const onto = { 'b.md': { sha: 'sa', mode: '100644' }, 'c/d.md': { sha: 'sd', mode: '100644' } };
+  const stays = { repo: 'o/r', path: 'b.md', base: 'sa', text: '書いた', at: 5 };
+  expect(settle(changes([one, stays]), blobs, onto, look)).toEqual({ changes: changes([stays]), parked: [one], moved: [] });
+  const opThere = { repo: 'o/r', path: 'b.md', base: '', text: '足した', op: 'op1', at: 5 };
+  expect(settle(changes([one, opThere]), blobs, onto, look)).toEqual({ changes: changes([opThere]), parked: [one], moved: [] });
+  const ontoTrash = { 'b.md': { sha: 'sa', mode: '100644' }, '_trash/b.md': { sha: 'sb', mode: '100644' }, 'c/d.md': { sha: 'sd', mode: '100644' } };
+  expect(settle(changes([one, two]), blobs, ontoTrash, look)).toEqual({
+    changes: changes([{ ...one, path: 'b.md' }]),
+    parked: [two],
+    moved: [['a.md', 'b.md']],
+  });
+  // (two texts moving to one file: both set aside)
+  const both = settle(
+    changes([
+      { ...one, path: 'x.md' },
+      { ...one, path: 'y.md' },
+    ]),
+    { 'x.md': { sha: 'sa', mode: '100644' }, 'y.md': { sha: 'sa', mode: '100644' } },
+    { 'z.md': { sha: 'sa', mode: '100644' } },
+    look,
+  );
+  expect([both.changes.size, both.parked.length]).toEqual([0, 2]);
 });
 
 describe('the list of changes not sent', () => {

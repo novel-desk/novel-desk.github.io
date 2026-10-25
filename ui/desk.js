@@ -2,7 +2,7 @@
 // renamed, put in the trash and reordered, and sending and reading again. The work, the changes not sent and the
 // episode open are this module's: the others call open() and the functions it gives them
 import { moveFiles, rebase, relabel, settle, unsentList, withoutOp, writeFile } from '../lib/changes.js';
-import { afterSend, draftKey, draftOf, goneWhileSent, typedOver } from '../lib/drafts.js';
+import { afterSend, draftKey, draftOf, goneWhileSent, sameVersion, typedOver } from '../lib/drafts.js';
 import * as plans from '../lib/episodes.js';
 import { charsOf, esc, n, rowTimes, whenLong } from '../lib/format.js';
 import { imageType } from '../lib/github.js';
@@ -17,14 +17,14 @@ import { viewOf } from '../lib/view.js';
 import { visibilityTag } from '../lib/works.js';
 import { $, show, toast } from './dom.js';
 import * as store from './db.js';
-import { bytes, contents, converted, load, readShas, renamedPaths } from './work.js';
+import { bytes, contents, converted, load, lookOf, readShas } from './work.js';
 import { Overlapped, sendAll } from './send.js';
 import { GitHubError, headOf, lastChange } from './github.js';
 import { evenBreaks, inputBar, insertAt, setKeepingCaret } from './textbox.js';
 import { showHistory, wireHistory } from './history.js';
 import { pickImage } from './images.js';
 import { api } from './shared.js';
-import { readInNotes, wireNotes } from './notes.js';
+import { followNote, readInNotes, wireNotes } from './notes.js';
 import { openPlot, renderPlotPanel, wirePlot } from './plot.js';
 import { openCharacters, wireCharacters } from './characters.js';
 import { noteToday, wireRecord } from './record.js';
@@ -107,7 +107,9 @@ function keep(given, nextEdits = edits) {
   writing = writing
     .then(async () => {
       for (const [path, d] of next) if (before.get(path) !== d) await store.put('drafts', draftKey(w.repo, path), d);
-      for (const path of before.keys()) if (!next.has(path)) await store.del('drafts', draftKey(w.repo, path));
+      // (a draft gone, sent or given up: deleted only while the device keeps the version this page wrote; another
+      // tab's written since stays, lib/drafts.js sameVersion)
+      for (const [path, d] of before) if (!next.has(path)) await store.delIf('drafts', draftKey(w.repo, path), v => sameVersion(v, d));
       if (editsChanged) await store.put('prefs', `edits:${w.repo}`, kept);
     })
     .catch(saveFailed);
@@ -290,8 +292,10 @@ function watchRows() {
   for (const row of /** @type {NodeListOf<HTMLElement>} */ ($('tree').querySelectorAll('.node.episode')))
     if (!updatedOf(/** @type {string} */ (row.dataset.path))) sight?.observe(row);
 }
-/** @param {string} path @returns {Promise<boolean>} */
-async function openEpisode(path) {
+// (`shut`: the table of contents, a drawer on a phone, closed: the author chose the episode. A work read again, or
+// read in, opens it without closing the drawer, which the author may have opened meanwhile: tests/ui/touch.spec.mjs)
+/** @param {string} path @param {boolean} [shut] @returns {Promise<boolean>} */
+async function openEpisode(path, shut = true) {
   const w = /** @type {NonNullable<typeof work>} */ (work);
   current = path;
   // (an episode of the table of contents: the callers open one of its rows)
@@ -311,7 +315,7 @@ async function openEpisode(path) {
     note.hidden = false;
     note.textContent = w.offline ? 'この話はまだこの端末に読み込まれていません（つながってから開いてください）' : '文字コードが UTF-8 ではないため開けません';
   }
-  $('desk').classList.remove('toc-open');
+  if (shut) $('desk').classList.remove('toc-open');
   renderToc();
   showUpdated();
   void renderPlotPanel();
@@ -635,12 +639,14 @@ async function rebaseChanges(before) {
   const w = /** @type {NonNullable<typeof work>} */ (work);
   if (w.offline) return 0;
   const { changes, ops, parked: homeless } = rebase(drafts, w.blobs);
-  const { changes: left, parked: moved } = settle(changes, before.blobs, w.blobs, await renamedPaths(w.repo, [...changes.values()], before, w, false));
-  if (!ops.size && !moved.length) return 0;
+  const settled = settle(changes, before.blobs, w.blobs, await lookOf(w.repo, [...changes.values()], before, w, false));
+  const { changes: left, parked: moved } = settled;
+  if (!ops.size && !moved.length && !settled.moved.length) return 0;
   keep(
     left,
     edits.filter(e => !ops.has(e.op)),
   );
+  follow(settled.moved);
   if (ops.size) {
     syncState(
       'ほかの所でファイルが変わっていたので、この端末の話の追加・名前の変更・削除・並べ替えを取り消しました。書いた文章は残っています。やり直してください',
@@ -660,7 +666,7 @@ let parked = [];
 /** @param {Draft} d its key: of its repository and path, and its own id (two can be set aside from one path) */
 const parkedKey = d => `parked:${draftKey(d.repo, d.path)}\n${d.aside}`;
 // why a text is set aside (said on the screen and in the list)
-const MOVED = 'ほかの所で削除されたか、動かされたか、別のファイルに替わっていた';
+const MOVED = 'ほかの所で削除されたか、別のファイルに替わっていた';
 const TAKEN = '取り消した操作の中で書いた文章で、元の場所にも今の場所にも別の書きかけがあった';
 // what a text set aside is called: its heading, else its file
 /** @param {Draft} d */
@@ -798,7 +804,7 @@ async function reload() {
   const w = /** @type {NonNullable<typeof work>} */ (work);
   const last = await store.get('prefs', `episode:${w.repo}`);
   const open = paths.includes(current) ? current : paths.includes(last) ? last : (paths[0] ?? '');
-  if (open) await openEpisode(open);
+  if (open) await openEpisode(open, false);
   else openNone();
   if (place && place.path === current) await showPreviewAt(place.at);
   if (gone) toast(`${gone} は GitHub にもう無いので、${w.branch} を開きました`);
@@ -924,12 +930,23 @@ async function readIn() {
   await refreshScreens();
   await trace('ReadIn');
 }
+// The texts gone with their files moved elsewhere (FR-TOC-04, FR-NOTE-05: `moves`, from and to): the episode open, and
+// the note open, go where theirs went
+/** @param {[string, string][]} moves */
+function follow(moves) {
+  const to = new Map(moves).get(current);
+  if (to) {
+    current = to;
+    thenWrite(() => store.put('prefs', `episode:${/** @type {NonNullable<typeof work>} */ (work).repo}`, to));
+  }
+  followNote(moves);
+}
 // the episode open, after the work changed under it (read in, or sent): gone, the first one opened; else, with no
 // draft of it, what the branch has now shown, the caret and the place read where they were (FR-SAVE-08)
 async function showOpen() {
   if (current && !findEpisode(current)) {
     const first = episodes()[0];
-    if (first) await openEpisode(first.path);
+    if (first) await openEpisode(first.path, false);
     else openNone();
   } else if (current && !drafts.has(current)) {
     const text = textOf(current);
@@ -985,26 +1002,32 @@ async function sendDrafts() {
     await trace('SendStart');
     const result = await sendAll(w, [...drafts.values()], edits);
     failed = new Set();
+    // (the drafts as the device has them now, typed during the send too)
+    const typed = new Map(drafts);
     const next = new Map(drafts);
-    for (const { draft, blob, both } of result.sent) {
-      // (gone from the device while it was sent: what the author has is the text read, not the one sent)
-      const after = afterSend(next.get(draft.path) ?? goneWhileSent(draft, remoteText(draft.path)), draft.text, blob, both);
-      if (after) next.set(draft.path, after);
-      else next.delete(draft.path);
-    }
-    // the texts refused (their file gone there, or another file now), as the device has them now: set aside
+    // the texts refused (their file put in _trash/ there, or another file now), as the device has them now: set aside
     // (one typed back to the text read during the send, or given up: none left to set aside)
-    const refused = result.refused.map(d => next.get(d.path)).filter(d => d !== undefined);
+    const refused = result.refused.map(d => typed.get(d.path)).filter(d => d !== undefined);
     for (const d of result.refused) next.delete(d.path);
+    for (const { draft, to, blob, both } of result.sent) {
+      // (gone from the device while it was sent: what the author has is the text read, not the one sent)
+      const after = afterSend(typed.get(draft.path) ?? goneWhileSent(draft, remoteText(draft.path)), draft.text, blob, both);
+      // (its file moved elsewhere: what was typed since goes there with it; another text moved to its path stays)
+      if (next.get(draft.path) === typed.get(draft.path)) next.delete(draft.path);
+      if (after) next.set(to, { ...after, path: to });
+    }
+    const went = result.sent.filter(s => s.to !== s.draft.path).map(s => /** @type {[string, string]} */ ([s.draft.path, s.to]));
     // (what is left was typed during the send: on what the branch is now, of the branch sent to)
     const sent = await contents(
       { repo: w.repo, branch: w.branch, commit: result.commit, tree: result.tree, updated: result.updated, blobs: result.blobs, folders: result.folders },
       false,
     );
-    const { changes: left, parked: moved } = settle(next, w.blobs, result.blobs, await renamedPaths(w.repo, [...next.values()], w, sent, false));
+    const settled = settle(next, w.blobs, result.blobs, await lookOf(w.repo, [...next.values()], w, sent, false));
+    const { changes: left, parked: moved } = settled;
     for (const [path, d] of left) left.set(path, { ...d, branch: w.branch });
     work = sent;
     keep(left, []);
+    follow([...went, ...settled.moved]);
     await readMoved();
     refreshView();
     const sides = new Set(result.sent.filter(s => s.both).map(s => s.draft.path));

@@ -1,6 +1,21 @@
 // The token: kept encrypted with a passkey (PRF), or without PRF with a key that cannot be taken out; the CSP; the
 // repositories it can read
-import { test, expect, FakeRepo, noPasskey, openRepo, openWork, stored, TOKEN, WORK_FILES } from './lib/test.mjs';
+import {
+  test,
+  expect,
+  FakeRepo,
+  noPasskey,
+  openRepo,
+  openWork,
+  passkeyNames,
+  persistAsked,
+  stored,
+  today,
+  TOKEN,
+  watchPasskeyNames,
+  watchPersist,
+  WORK_FILES,
+} from './lib/test.mjs';
 
 /** @param {import('@playwright/test').Page} page @param {boolean} hasPrf */
 async function authenticator(page, hasPrf) {
@@ -64,8 +79,11 @@ test.describe('a passkey', () => {
 
   test('with PRF: the token encrypted by a key from the passkey, opened with it each time; forgotten on asking', async ({ page, gh }) => {
     await authenticator(page, true);
+    await watchPasskeyNames(page);
     await putToken(page);
     await expect(page.getByRole('button', { name: 'リポジトリを開く' })).toBeVisible();
+    // (the passkey called, in the passwords' list, by what it opens and the day it was made)
+    expect(await passkeyNames(page)).toEqual([`Novel Desk トークン ${today()}`]);
     await expect(page.locator('#vault-kind')).toHaveText(/パスキー（PRF）から作った鍵で暗号化/);
     const [vault] = /** @type {any[]} */ (await stored(page, 'vault'));
     expect(Object.keys(vault).sort()).toEqual(['credentialId', 'data', 'iv', 'kind', 'salt']);
@@ -220,7 +238,8 @@ test('the token put in: spaces only, nothing; its user not said, kept without on
   await page.getByLabel('トークン', { exact: true }).fill(TOKEN);
   await page.getByRole('button', { name: 'パスキーで保管する' }).click();
   await expect(page.getByRole('button', { name: 'リポジトリを開く' })).toBeVisible();
-  expect(await stored(page, 'prefs')).not.toContain('author');
+  // (whose the drafts are not kept: GitHub did not say the account's number)
+  expect(await stored(page, 'prefs')).not.toContain(1001);
   // forgotten, and a token GitHub does not take put in: the check of its user is refused, and nothing more happens
   const answers = [false, true];
   page.on('dialog', d => void (answers.shift() ? d.accept() : d.dismiss()));
@@ -237,9 +256,13 @@ test('the token put in: spaces only, nothing; its user not said, kept without on
   await expect(page.locator('#token-notice')).toBeHidden();
 });
 
+// (with it, the browser asked once to keep this device's store for good: the drafts and the key are not deleted when it
+// is short of room)
 test('no passkey in this browser: kept with a key that cannot be taken out; opened without asking', async ({ page, gh }) => {
   await noPasskey(page);
+  await watchPersist(page);
   await putToken(page);
+  await expect.poll(() => persistAsked(page)).toBe(1);
   await expect(page.locator('#vault-kind')).toHaveText(/PRF に対応していないため/);
   const [vault] = /** @type {any[]} */ (await stored(page, 'vault'));
   expect(vault.kind).toBe('local');
@@ -474,7 +497,7 @@ test('refused on the list of works: said when GitHub is asked; the new token put
 });
 
 // NFR-SEC-16: the token forgotten: with it, what the device keeps of the works; the drafts too when the author says so
-test('the token forgotten: the works’ copies and settings deleted; the drafts kept or deleted as asked', async ({ page, gh }) => {
+test('the token forgotten: the works’ copies and settings deleted; the drafts kept or deleted as asked', async ({ page, gh, work }) => {
   await openWork(page);
   await page.locator('#body').fill('# 第1話 はじまり\n\n残す書きかけ\n');
   await expect.poll(async () => (await stored(page, 'drafts')).length).toBe(1);
@@ -486,7 +509,8 @@ test('the token forgotten: the works’ copies and settings deleted; the drafts 
   expect(await stored(page, 'vault')).toEqual([]);
   expect(await stored(page, 'snapshots')).toEqual([]);
   expect(await stored(page, 'blobs')).toEqual([]);
-  expect(await stored(page, 'prefs')).toEqual(['author']);
+  // (kept with the drafts: their repository's ID, and whose they are, by the GitHub account's number)
+  expect(await stored(page, 'prefs')).toEqual([work.id, 1001]);
   expect((await stored(page, 'drafts')).map(d => d.text)).toEqual(['# 第1話 はじまり\n\n残す書きかけ\n']);
 });
 
@@ -509,7 +533,7 @@ test('logged out with the drafts kept, opened again: their branch and mode; neve
   page.on('dialog', d => void (answers.shift() ? d.accept() : d.dismiss()));
   await page.getByRole('button', { name: 'ログアウト' }).click();
   await expect(page.locator('#setup')).toBeVisible();
-  expect(await stored(page, 'prefs')).toEqual(['author']);
+  expect(await stored(page, 'prefs')).toEqual([work.id, 1001]);
   await page.getByLabel('トークン', { exact: true }).fill(TOKEN);
   await page.getByRole('button', { name: 'パスキーで保管する' }).click();
   await openRepo(page, 'author/novel');

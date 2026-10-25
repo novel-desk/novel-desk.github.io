@@ -142,7 +142,7 @@ test.describe('on an iPhone', () => {
     });
     // 資料: the list (a folder, the pictures), a note open with the input bar, its preview
     await toc(page, true);
-    await page.getByRole('button', { name: '資料', exact: true }).dispatchEvent('click');
+    await page.getByRole('button', { name: '資料', exact: true }).click();
     await expect(page.locator('#notes-list [data-note]').first()).toBeVisible();
     await expect(page.locator('#images-list figure')).toHaveCount(1);
     expect(await small(page)).toEqual([]);
@@ -176,5 +176,18 @@ test.describe('on an iPhone', () => {
     await page.getByRole('button', { name: 'ほかの作品' }).click();
     await expect(page.locator('#repo-list [data-repo="author/novel"]')).toContainText('話');
     expect(await small(page)).toEqual([]);
+  });
+
+  // NFR-USE-02: the table of contents opened while the work is read again stays open, and what is in it is pressed
+  // with a finger (it closed when the reading ended: 資料 was out of reach, tests/ui/touch.spec.mjs pressed it by an
+  // event instead)
+  test('NFR-USE-02: the table of contents stays open when the work is read again, and 資料 in it is pressed', async ({ page, gh }) => {
+    await openWork(page);
+    await toc(page, true);
+    await page.getByRole('button', { name: '再読み込み' }).click();
+    await expect(page.locator('#sync-state')).toHaveText(/^GitHub から読みました/);
+    await expect(page.locator('#desk')).toHaveClass(/toc-open/);
+    await page.getByRole('button', { name: '資料', exact: true }).click();
+    await expect(page.locator('#notes')).toBeVisible();
   });
 });

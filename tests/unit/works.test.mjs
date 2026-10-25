@@ -146,9 +146,13 @@ describe('works', () => {
     expect(offered(all, [])).toEqual(all.slice(0, 2));
   });
   // NFR-SEC-16
+  // NFR-SEC-16, FR-GH-12: the drafts kept at ログアウト keep what they need to be sent: their keys of novel.toml, whose
+  // they are, and their repository's ID (another repository under the old name is not sent to)
   test('keptAfterForget: nothing, but what the drafts kept need', () => {
     expect(keptAfterForget('edits:o/a', true)).toBe(true);
     expect(keptAfterForget('owner', true)).toBe(true);
+    expect(keptAfterForget('id:o/a', true)).toBe(true);
+    expect(keptAfterForget('id:o/a', false)).toBe(false);
     expect(keptAfterForget('summary:o/a', true)).toBe(false);
     expect(keptAfterForget('edits:o/a', false)).toBe(false);
     expect(keptAfterForget('owner', false)).toBe(false);

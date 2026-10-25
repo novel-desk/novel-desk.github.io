@@ -2,7 +2,20 @@
 // The key is made here for the test (never a real one); the fake GitHub checks the App's JWTs with its public key,
 // gives its installation tokens for a while, and takes them until they end or are revoked
 import { generateKeyPairSync } from 'node:crypto';
-import { test, expect, noPasskey, openWork, stored, FakeRepo } from './lib/test.mjs';
+import {
+  test,
+  expect,
+  noPasskey,
+  openRepo,
+  openWork,
+  passkeyNames,
+  persistAsked,
+  stored,
+  today,
+  FakeRepo,
+  watchPasskeyNames,
+  watchPersist,
+} from './lib/test.mjs';
 
 const APP_ID = '123456';
 const AUTHOR = { name: '試験の作者', email: 'author@example.invalid' };
@@ -59,8 +72,11 @@ test('started with the App’s private key: kept so that it cannot be taken out;
   const pem = makeApp(gh);
   gh.installationPerPage = 1;
   await noPasskey(page);
+  await watchPersist(page);
   await putKey(page, pem);
   await expect(page.locator('#toast')).toHaveText('パスキーに対応していないため、パスキーなしで保管しました');
+  // (the browser asked once to keep this device's store for good)
+  expect(await persistAsked(page)).toBe(1);
   await expect(page.locator('#vault-kind')).toHaveText(/GitHub App の秘密鍵は、この端末の取り出せない鍵.*パスキーは使いません/);
   expect(await keptKey(page)).toEqual({ extractable: false, usages: ['sign'], out: 'InvalidAccessError', author: AUTHOR, appId: APP_ID });
   // the file's content kept nowhere
@@ -149,22 +165,95 @@ test('not a key, a wrong App ID, installed nowhere, a repository it is not on: s
   await expect(page.locator('#sync-state')).toHaveText(/^このリポジトリには GitHub App が入っていません/);
 });
 
-// NFR-SEC-16: the drafts another user left on this device (a token's): kept unless the author says to delete them
-test('drafts left by a token’s user: not deleted unless asked; the key not kept then', async ({ page, gh }) => {
+// NFR-SEC-16: the drafts a token's user left on this device: an App of the same account (by the account's number) is
+// the same person, nothing asked, the drafts kept; an App of another account: asked, and the key not kept unless the
+// drafts are deleted
+test('drafts left by a token’s user: the same account’s App, its own; another account’s, not deleted unless asked, the key not kept then', async ({
+  page,
+  gh,
+}) => {
   await openWork(page);
   await page.locator('#body').fill('# 第1話 はじまり\n\n前のユーザー\n');
   await expect.poll(async () => (await stored(page, 'drafts')).length).toBe(1);
   // (logged out, the drafts kept; then asked whether to delete them: no)
+  /** @type {string[]} */
+  const asked = [];
   const answers = [true, false, false];
-  page.on('dialog', d => void (answers.shift() ? d.accept() : d.dismiss()));
+  page.on('dialog', d => {
+    asked.push(d.message());
+    void (answers.shift() ? d.accept() : d.dismiss());
+  });
   await page.getByRole('button', { name: 'ほかの作品' }).click();
   await page.getByRole('button', { name: 'ログアウト' }).click();
   await expect(page.locator('#setup')).toBeVisible();
   const pem = makeApp(gh);
+  /** @type {NonNullable<typeof gh.app>} */ (gh.app).owner = 'someone';
   await putKey(page, pem);
   await expect(page.locator('#app-error')).toHaveText(/^前のユーザーの書きかけを残すため、この秘密鍵を保管しませんでした/);
+  expect(asked).toHaveLength(3);
   expect(await keptKey(page)).toBeNull();
   expect(await stored(page, 'drafts')).toHaveLength(1);
+  // the token's user's own App (its number typed, where the token's user is kept by number)
+  /** @type {NonNullable<typeof gh.app>} */ (gh.app).owner = 'author';
+  await putKey(page, pem);
+  await expect(page.locator('#repos')).toBeVisible();
+  expect(asked).toHaveLength(3);
+  expect(await keptKey(page)).not.toBeNull();
+  await openRepo(page, 'author/novel');
+  await expect(page.locator('#body')).toHaveValue('# 第1話 はじまり\n\n前のユーザー\n');
+});
+
+// NFR-SEC-16: GitHub not saying whose the App is (its /app not answered): kept as before, whose the drafts are not
+// noted
+test('whose the App is not said by GitHub: the key kept, whose the drafts are not noted', async ({ page, gh }) => {
+  const pem = makeApp(gh);
+  await noPasskey(page);
+  await page.route('https://api.github.com/app', route =>
+    route.request().method() === 'GET'
+      ? route.fulfill({ status: 500, headers: { 'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json' }, body: '{"message":"test"}' })
+      : route.fallback(),
+  );
+  await putKey(page, pem);
+  await expect(page.locator('#repos')).toBeVisible();
+  expect(await keptKey(page)).not.toBeNull();
+  expect(await stored(page, 'prefs')).not.toContain(1001);
+});
+
+// NFR-SEC-16: drafts kept before the account's number was (by 「app:」 and the Client ID of the App made by the
+// manifest flow): the same App's key put in with its number (its App ID) is the same person, nothing asked
+test('drafts kept by the App’s Client ID before: its key put in with its App ID, the same person', async ({ page, gh }) => {
+  const pem = makeApp(gh);
+  /** @type {NonNullable<typeof gh.app>} */ (gh.app).appId = Number(APP_ID);
+  /** @type {NonNullable<typeof gh.app>} */ (gh.app).id = 'Iv23keyclient';
+  await noPasskey(page);
+  await page.goto('./');
+  await page.evaluate(
+    () =>
+      new Promise((resolve, reject) => {
+        const req = indexedDB.open('novel-writer-js');
+        req.onsuccess = () => {
+          const tx = req.result.transaction(['prefs', 'drafts'], 'readwrite');
+          tx.objectStore('prefs').put('app:Iv23keyclient', 'owner');
+          tx.objectStore('drafts').put(
+            { repo: 'author/novel', path: 'chapters/01_first.md', base: '', text: '書きかけ', at: 1 },
+            'author/novel\nchapters/01_first.md',
+          );
+          tx.oncomplete = () => resolve(null);
+          tx.onerror = () => reject(tx.error);
+        };
+        req.onerror = () => reject(req.error);
+      }),
+  );
+  /** @type {string[]} */
+  const asked = [];
+  page.on('dialog', d => {
+    asked.push(d.message());
+    void d.dismiss();
+  });
+  await putKey(page, pem, { id: APP_ID });
+  await expect(page.locator('#repos')).toBeVisible();
+  expect(asked).toEqual([]);
+  expect(await keptKey(page)).not.toBeNull();
 });
 
 test.describe('with a passkey', () => {
@@ -189,10 +278,13 @@ test.describe('with a passkey', () => {
   test('the App’s key opened with its passkey each time; refused: said', async ({ page, gh }) => {
     const pem = makeApp(gh);
     const { cdp, authenticatorId } = await authenticator(page, true);
+    await watchPasskeyNames(page);
     await putKey(page, pem);
     await expect(page.locator('#vault-kind')).toHaveText(
       'GitHub App の秘密鍵は、この端末の取り出せない鍵（WebCrypto）として置いています。開くたびにパスキーを使います。',
     );
+    // (the passkey called, in the passwords' list, by what it opens and the day it was made)
+    expect(await passkeyNames(page)).toEqual([`Novel Desk GitHub App ${today()}`]);
     await page.reload();
     await expect(page.locator('#unlock-note')).toHaveText(/開くたびにパスキーを使います/);
     await cdp.send('WebAuthn.setUserVerified', { authenticatorId, isUserVerified: false });

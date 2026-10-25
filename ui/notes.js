@@ -102,6 +102,12 @@ export async function openNote(path, from = LIST) {
   $('note-as-plot').hidden = Boolean(plot);
   return true;
 }
+// The note open gone with its text where its file moved elsewhere (FR-NOTE-05: `moves`, from and to): open there
+/** @param {[string, string][]} moves */
+export function followNote(moves) {
+  const to = new Map(moves).get(notePath ?? '');
+  if (to) notePath = to;
+}
 // The work read in, or sent, while the notes are shown (FR-SAVE-08): the list drawn again; the note open, with no draft
 // of it, shows what the branch has now, the caret where it was (a box written by itself: the whole note); its draft
 // left as it is. A note gone (deleted or moved elsewhere) closed, and said

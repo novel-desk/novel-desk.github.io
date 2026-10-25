@@ -1,17 +1,29 @@
 import { describe, test, expect } from 'vitest';
-import { KEY_INFO, createOptions, getOptions, prfOf, webauthnFailure } from '../../lib/passkey.js';
+import { KEY_INFO, createOptions, getOptions, passkeyName, prfOf, webauthnFailure } from '../../lib/passkey.js';
 
 const bytes = n => new Uint8Array(n).fill(7);
 
 describe('passkey', () => {
-  test('createOptions: a passkey on this host, verified, asking for PRF with the salt', () => {
-    const o = createOptions({ rpId: 'kurogane255.github.io', userId: bytes(16), challenge: bytes(32), salt: bytes(32) });
+  test('createOptions: a passkey on this host, called as given, verified, asking for PRF with the salt', () => {
+    const o = createOptions({
+      rpId: 'kurogane255.github.io',
+      userId: bytes(16),
+      challenge: bytes(32),
+      salt: bytes(32),
+      name: 'Novel Desk トークン 2026-10-25',
+    });
     expect(o.rp).toEqual({ id: 'kurogane255.github.io', name: 'Novel Desk' });
+    expect([o.user.name, o.user.displayName]).toEqual(['Novel Desk トークン 2026-10-25', 'Novel Desk トークン 2026-10-25']);
     expect(o.user.id).toEqual(bytes(16));
     expect(o.challenge).toEqual(bytes(32));
     expect(o.authenticatorSelection).toEqual({ residentKey: 'preferred', userVerification: 'required' });
     expect(o.pubKeyCredParams.map(p => p.alg)).toEqual([-7, -257]);
     expect(o.extensions).toEqual({ prf: { eval: { first: bytes(32) } } });
+  });
+  // NFR-SEC-15: the passkey's name in the passwords' list says what it opens and the day it was made
+  test('passkeyName: the token or the GitHub App, and the day made', () => {
+    expect(passkeyName('token', new Date(2026, 9, 25, 23, 59))).toBe('Novel Desk トークン 2026-10-25');
+    expect(passkeyName('app', new Date(2026, 0, 5))).toBe('Novel Desk GitHub App 2026-01-05');
   });
   test('getOptions: only the passkey made for the token, verified, the same salt', () => {
     const o = getOptions({ rpId: 'localhost', credentialId: bytes(20), challenge: bytes(32), salt: bytes(32) });

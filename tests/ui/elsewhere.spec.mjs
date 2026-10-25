@@ -1,6 +1,7 @@
-// Episodes and notes deleted, moved or renumbered elsewhere (another device, GitHub) while they are written here: what
-// was written is never put back where the file was taken from, nor into the file that took its path. It is refused,
-// stays on the device, is said, and the author chooses what to do with it (as the server version refuses such a save)
+// Episodes and notes deleted, moved, renamed or renumbered elsewhere (another device, GitHub) while they are written
+// here: what was written goes into the same episode or note where it is now (FR-TOC-04, FR-NOTE-05); one deleted (put
+// in _trash/) is never put back where it was, nor into a new file made there: it is refused, stays on the device, is
+// said, and the author chooses what to do with it (as the server version refuses such a save: FR-TOC-06, FR-NOTE-06)
 import { test, expect, openWork, stored, WORK_FILES } from './lib/test.mjs';
 import { OTHER_DEVICE_MARK } from '../../lib/merge.js';
 
@@ -27,9 +28,7 @@ test('an episode put in _trash/ elsewhere while written here: not sent, not put 
   work.push({ 'chapters/02_second.md': null, '_trash/20261001-000000/chapters/02_second.md': WORK_FILES['chapters/02_second.md'] });
   const head = work.refs.main;
   await page.getByRole('button', { name: '送る（1）' }).click();
-  await expect(page.locator('#sync-state')).toHaveText(
-    /^「第2話 駅で」は、ほかの所で削除されたか、動かされたか、別のファイルに替わっていたので、書いた文章を送らずに/,
-  );
+  await expect(page.locator('#sync-state')).toHaveText(/^「第2話 駅で」は、ほかの所で削除されたか、別のファイルに替わっていたので、書いた文章を送らずに/);
   expect(work.refs.main).toBe(head);
   expect(work.text('chapters/02_second.md')).toBeUndefined();
   // the episode open gone: the one before it opened, the trash as it is
@@ -74,9 +73,10 @@ const numbered = titles => ({
 });
 
 // FR-TOC-04, FR-TOC-06: episodes named by numbers, renumbered elsewhere (01.md and 02.md change places): what was
-// written in one is never put into the other that took its path; put in _trash/ and a new one added at its number:
-// never put into the new one. Both when sent, and when the work is read in first
-test('numbered episodes renumbered, or put in _trash/ and another added at the number, elsewhere: never written into the other one', async ({
+// written in one goes into it where it is now, never into the other that took its path, and the episode open follows
+// it; put in _trash/ and a new one added at its number: never put into the new one. Both when sent, and when the work
+// is read in first
+test('numbered episodes renumbered elsewhere: written into the same one where it is now; put in _trash/ and another added at the number: never into the other one', async ({
   page,
   gh,
   work,
@@ -89,47 +89,92 @@ test('numbered episodes renumbered, or put in _trash/ and another added at the n
   // reordered elsewhere: 一 is 02.md now, 二 01.md
   work.push({ ...numbered({ '01.md': '二の話', '02.md': '一の話' }), 'chapters/01.md': '二の本文\n', 'chapters/02.md': '一の本文\n' });
   await page.getByRole('button', { name: '送る（1）' }).click();
-  await expect(page.locator('#sync-state')).toHaveText(/^「chapters\/01\.md」は、ほかの所で削除されたか、動かされたか、別のファイルに替わっていたので/);
-  expect([work.text('chapters/01.md'), work.text('chapters/02.md')]).toEqual(['二の本文\n', '一の本文\n']);
-  // the open episode's path shows what is there now: 二
-  await expect(page.locator('#episode-title')).toHaveValue('二の話');
-  await expect(page.locator('#body')).toHaveValue('二の本文\n');
-  // 一 written again (02.md), then put in _trash/ elsewhere and a new episode added at 02.md: read in, set aside
-  await page.locator('#tree .node', { hasText: '一の話' }).click();
+  await expect(page.locator('#sync-state')).toHaveText(/^送りました（/);
+  expect([work.text('chapters/01.md'), work.text('chapters/02.md')]).toEqual(['二の本文\n', '一の本文\n一の続き\n']);
+  // the episode open went with it: 一, at 02.md now
+  await expect(page.locator('#episode-title')).toHaveValue('一の話');
+  await expect(page.locator('#body')).toHaveValue('一の本文\n一の続き\n');
+  expect(await aside(page)).toEqual([]);
+  // reordered back elsewhere while 一 is written again: read in, the text goes with it (to 01.md), and is sent there
+  await page.locator('#body').fill('一の本文\n一の続き\n三行目\n');
+  work.push({ ...numbered({ '01.md': '一の話', '02.md': '二の話' }), 'chapters/01.md': '一の本文\n一の続き\n', 'chapters/02.md': '二の本文\n' });
+  await inFront(page);
+  await expect(page.locator('#toast')).toHaveText('ほかの所での変更を読み込みました');
+  await expect(page.locator('#episode-title')).toHaveValue('一の話');
+  await expect(page.locator('#body')).toHaveValue('一の本文\n一の続き\n三行目\n');
+  await expect.poll(async () => (await stored(page, 'drafts')).map(d => d.path)).toEqual(['chapters/01.md']);
+  await page.getByRole('button', { name: '送る（1）' }).click();
+  await expect(page.locator('#sync-state')).toHaveText(/^送りました（/);
+  expect([work.text('chapters/01.md'), work.text('chapters/02.md')]).toEqual(['一の本文\n一の続き\n三行目\n', '二の本文\n']);
+  // 一 written again (01.md), then put in _trash/ elsewhere and a new episode added at 01.md: read in, set aside
   await page.locator('#body').fill('一の本文\nもう一度\n');
   work.push({
-    ...numbered({ '01.md': '二の話', '02.md': '新しい話' }),
-    'chapters/02.md': '新しい話の本文\n',
-    '_trash/20261002-000000/chapters/02.md': '一の本文\n',
+    ...numbered({ '01.md': '新しい話', '02.md': '二の話' }),
+    'chapters/01.md': '新しい話の本文\n',
+    '_trash/20261002-000000/chapters/01.md': '一の本文\n一の続き\n三行目\n',
   });
   await inFront(page);
-  await expect(page.locator('#sync-state')).toHaveText(/^「chapters\/02\.md」は、ほかの所で削除されたか/);
+  await expect(page.locator('#sync-state')).toHaveText(/^「chapters\/01\.md」は、ほかの所で削除されたか/);
   await expect(page.locator('#episode-title')).toHaveValue('新しい話');
   await expect(page.locator('#body')).toHaveValue('新しい話の本文\n');
   await expect(page.locator('#send')).toBeDisabled();
-  await expect
-    .poll(() => aside(page))
-    .toEqual([
-      ['chapters/01.md', '一の本文\n一の続き\n'],
-      ['chapters/02.md', '一の本文\nもう一度\n'],
-    ]);
-  expect(work.text('chapters/02.md')).toBe('新しい話の本文\n');
-  // given up by the author (kept in the history), one by one
-  page.on('dialog', d => void d.accept());
+  await expect.poll(() => aside(page)).toEqual([['chapters/01.md', '一の本文\nもう一度\n']]);
+  expect(work.text('chapters/01.md')).toBe('新しい話の本文\n');
+  // sent by the author: beside the new episode's text (said, and chosen)
   await page.getByRole('button', { name: '未送信の一覧' }).click();
-  await page.locator('#unsent [data-unpark-drop="0"]').click();
-  await expect(page.locator('#unsent .parked-text')).toHaveValue('一の本文\nもう一度\n');
-  await page.locator('#unsent [data-unpark-drop="0"]').click();
+  await page.locator('#unsent [data-unpark-send="0"]').click();
+  await expect(page.locator('#sync-state')).toHaveText(/^送りました/);
   await expect(page.locator('#unsent')).toBeHidden();
-  await expect(page.locator('#open-unsent')).toBeHidden();
   await expect.poll(() => aside(page)).toEqual([]);
-  expect((await stored(page, 'prefs')).flat().some(v => v?.text === '一の本文\n一の続き\n')).toBe(true);
+  expect(work.text('chapters/01.md')).toBe(`一の本文\nもう一度\n\n${OTHER_DEVICE_MARK}\n\n新しい話の本文\n`);
 });
 
-// FR-NOTE-05, FR-NOTE-06, FR-SAVE-09: a note renamed elsewhere and a new note made with its old name: what was written
-// is not put into the new note, unless the author sends it beside the new one's text; a note put in _trash/
-// elsewhere: not put back
-test('a note renamed elsewhere, a new one under its name: not written into it unless the author says so; a note put in _trash/: not put back', async ({
+// FR-TOC-04: two episodes written here, swapped elsewhere (renumbered): each text goes into its own episode, where it
+// is now; what is typed in one while they are sent goes with it, and stays to be sent
+test('two episodes written here and swapped elsewhere: each text into its own one; typed meanwhile, kept with it', async ({ page, context, gh, work }) => {
+  /** @type {Record<string, string | null>} */
+  const files = Object.fromEntries(Object.keys(WORK_FILES).map(p => [p, null]));
+  work.push({ ...files, ...numbered({ '01.md': '一の話', '02.md': '二の話' }), 'chapters/01.md': '一の本文\n', 'chapters/02.md': '二の本文\n' });
+  await openWork(page, '一の話');
+  await page.locator('#body').fill('一の本文\n一の続き\n');
+  await page.locator('#tree .node', { hasText: '二の話' }).click();
+  await page.locator('#body').fill('二の本文\n二の続き\n');
+  await page.locator('#tree .node', { hasText: '一の話' }).click();
+  work.push({ ...numbered({ '01.md': '二の話', '02.md': '一の話' }), 'chapters/01.md': '二の本文\n', 'chapters/02.md': '一の本文\n' });
+  // (the branch moved by the send held while 一 is typed in)
+  /** @type {() => void} */
+  let release = () => {};
+  const held = new Promise(resolve => {
+    release = () => resolve(null);
+  });
+  let holding = false;
+  await context.route('https://api.github.com/**', async route => {
+    if (route.request().method() === 'PATCH') {
+      holding = true;
+      await held;
+    }
+    return route.fallback();
+  });
+  await page.getByRole('button', { name: '送る（2）' }).click();
+  await expect.poll(() => holding).toBe(true);
+  await page.locator('#body').fill('一の本文\n一の続き\n送る間に\n');
+  release();
+  await expect(page.locator('#sync-state')).toHaveText(/^送りました（/);
+  expect([work.text('chapters/01.md'), work.text('chapters/02.md')]).toEqual(['二の本文\n二の続き\n', '一の本文\n一の続き\n']);
+  // 一 open where it is now, what was typed meanwhile kept to be sent there
+  await expect(page.locator('#episode-title')).toHaveValue('一の話');
+  await expect(page.locator('#body')).toHaveValue('一の本文\n一の続き\n送る間に\n');
+  expect(await aside(page)).toEqual([]);
+  await expect.poll(async () => (await stored(page, 'drafts')).map(d => [d.path, d.text])).toEqual([['chapters/02.md', '一の本文\n一の続き\n送る間に\n']]);
+  await page.getByRole('button', { name: '送る（1）' }).click();
+  await expect(page.locator('#sync-state')).toHaveText(/^送りました（/);
+  expect([work.text('chapters/01.md'), work.text('chapters/02.md')]).toEqual(['二の本文\n二の続き\n', '一の本文\n一の続き\n送る間に\n']);
+});
+
+// FR-NOTE-05, FR-NOTE-06, FR-SAVE-09: a note renamed elsewhere (its file name) and a new note made with its old name:
+// what was written goes into the note renamed, not into the new one; a note put in _trash/ elsewhere: not put back,
+// unless the author sends it
+test('a note renamed elsewhere, a new one under its name: written into the one renamed; a note put in _trash/: not put back unless the author says so', async ({
   page,
   gh,
   work,
@@ -151,22 +196,55 @@ test('a note renamed elsewhere, a new one under its name: not written into it un
     '_trash/20261003-000000/notes/world.md': NOTES['notes/world.md'],
   });
   await page.getByRole('button', { name: '送る（2）' }).click();
-  await expect(page.locator('#sync-state')).toHaveText(/^「アリス」「世界観」は、ほかの所で削除されたか/);
+  await expect(page.locator('#sync-state')).toHaveText(/^「世界観」は、ほかの所で削除されたか/);
+  expect(work.text('notes/キャラ/alicia.md')).toBe('# アリス\n\n剣を持つ。\n');
   expect(work.text('notes/キャラ/alice.md')).toBe('# アリス（新しい資料）\n');
   expect(work.text('notes/world.md')).toBeUndefined();
-  // sent by the author: beside the text there now
-  await page.getByRole('button', { name: '未送信の一覧' }).click();
-  await expect(page.locator('#unsent .parked b')).toHaveText(['notes/キャラ/alice.md', 'notes/world.md']);
-  await page.locator('#unsent [data-unpark-send="0"]').click();
-  await expect(page.locator('#sync-state')).toHaveText(/^送りました/);
-  expect(work.text('notes/キャラ/alice.md')).toBe(`# アリス\n\n剣を持つ。\n\n${OTHER_DEVICE_MARK}\n\n# アリス（新しい資料）\n`);
-  expect(work.text('notes/キャラ/alicia.md')).toBe(NOTES['notes/キャラ/alice.md']);
   // the one put in _trash/, sent by the author: made again where it was (said, and chosen)
+  await page.getByRole('button', { name: '未送信の一覧' }).click();
   await expect(page.locator('#unsent .parked b')).toHaveText(['notes/world.md']);
   await page.locator('#unsent [data-unpark-send="0"]').click();
   await expect(page.locator('#unsent')).toBeHidden();
   await expect(page.locator('#sync-state')).toHaveText(/^送りました/);
   expect(work.text('notes/world.md')).toBe('# 世界観\n\n海もある。\n');
+});
+
+// FR-TOC-04, FR-NOTE-05: renamed elsewhere as the app renames (an episode titled by its heading: the heading; a note:
+// its heading and its file name) while written here: what was written goes into it, under the name given there; the
+// note open follows it; another note made under the old name elsewhere is not written into
+test('an episode and a note renamed elsewhere (the heading, the file name): written into them under the new name; the note open follows', async ({
+  page,
+  gh,
+  work,
+}) => {
+  work.push(NOTES);
+  await openWork(page);
+  await page.locator('#body').fill('# 第1話 はじまり\n\n朝が来た。\nここで書いた。\n');
+  await page.getByRole('button', { name: '資料', exact: true }).click();
+  await page.locator('#notes-list [data-note]', { hasText: '世界観' }).click();
+  await page.getByLabel('資料の本文').fill('# 世界観\n\n空は青い。\n海もある。\n');
+  work.push({
+    'chapters/01_first.md': '# 第1話 夜明け\n\n朝が来た。\n',
+    'notes/world.md': '# 世界観\n\n古い名前で作った別の資料。\n',
+    'notes/setting.md': '# 舞台\n\n空は青い。\n',
+  });
+  await inFront(page);
+  await expect(page.locator('#toast')).toHaveText('ほかの所での変更を読み込みました');
+  // (the note open is the one renamed, written on as it was)
+  await expect(page.getByLabel('資料の本文')).toHaveValue('# 世界観\n\n空は青い。\n海もある。\n');
+  await page.getByLabel('資料の本文').fill('# 世界観\n\n空は青い。\n海もある。\n山もある。\n');
+  await expect
+    .poll(async () => (await stored(page, 'drafts')).map(d => [d.path, d.text]))
+    .toContainEqual(['notes/setting.md', '# 世界観\n\n空は青い。\n海もある。\n山もある。\n']);
+  await page.getByRole('button', { name: '‹ 一覧' }).click();
+  await page.getByRole('button', { name: '‹ 原稿へ' }).click();
+  await page.getByRole('button', { name: '送る（2）' }).click();
+  await expect(page.locator('#sync-state')).toHaveText(/^送りました（/);
+  expect(work.text('chapters/01_first.md')).toBe('# 第1話 夜明け\n\n朝が来た。\nここで書いた。\n');
+  expect(work.text('notes/setting.md')).toBe('# 舞台\n\n空は青い。\n海もある。\n山もある。\n');
+  expect(work.text('notes/world.md')).toBe('# 世界観\n\n古い名前で作った別の資料。\n');
+  await expect(page.locator('#episode-title')).toHaveValue('夜明け');
+  expect(await aside(page)).toEqual([]);
 });
 
 // FR-SAVE-09, FR-WORK-05: a text set aside counts as not sent: the work is not taken off the list until it is dealt
@@ -209,6 +287,11 @@ test('a text set aside: the work not taken off the list for it; summed up withou
   answers.push(false);
   await page.locator('#unsent [data-unpark-drop="0"]').click();
   await expect.poll(() => aside(page)).toEqual([['chapters/02_second.md', '# 第2話 駅で\n\n残る\n']]);
+  // given up by the author: kept in the history
+  answers.push(true);
+  await page.locator('#unsent [data-unpark-drop="0"]').click();
+  await expect.poll(() => aside(page)).toEqual([]);
+  expect((await stored(page, 'prefs')).flat().some(v => v?.text === '# 第2話 駅で\n\n残る\n')).toBe(true);
 });
 
 // FR-TOC-06, FR-SAVE-09: the only episode put in _trash/ elsewhere: none open, the text kept (not put in a text, none is
