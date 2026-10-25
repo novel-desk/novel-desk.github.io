@@ -168,6 +168,7 @@ npm run check:all   # 整形、書き方、型、単体試験（lib は 100%）�
 - 画面は Playwright で試験します（`tests/ui/`）。GitHub の API は偽物（`tests/ui/lib/fake-github.mjs`）で、本物の GitHub には通信しません
 - 画面の JS（`app.js`、`sw.js`、`ui/`、`lib/`）は、画面の試験と単体試験を合わせて、全部の行と分岐を通します（NFR-MAINT-02）。画面の試験では、`tools/serve.mjs` がスクリプトを istanbul で計測できる形にして出し、`tools/coverage_all.mjs` が単体試験の記録と合わせます。通っていない所は `coverage/all/missing.txt` に出ます
 - 書いたものを残して送る処理（`lib/` の changes・drafts・merge・sync）は、Stryker の変異テストで、コードを少し変えた変異を単体試験が全部見つけることを確かめます（`npm run test:mutation:save`、NFR-MAINT-02）。`lib/` 全体の変異テストは `npm run test:mutation` で、結果は `reports/mutation/` に出ます（サーバー版と同じく、全体には止める基準を付けていません）
+- 送る処理と読み込みは、fast-check の性質の試験でも確かめます（`tests/props/`、`npm run test:props`）。本物の `ui/send.js`・`ui/work.js` と `lib/` を、画面の試験と同じ偽物の GitHub につなぎます。1 つは、GitHub の答えが返る順番を fast-check が選び、その間に打った文字とほかの所での書き込みを混ぜます。もう 1 つは、打つ・話の追加・名前の変更・削除・並べ替え・送る・読み直す・ほかの所での書き込みを、でたらめな順番で続けます。どちらも、書いた文字が消えないこと、手で書いた novel.toml の行がそのまま残ること、送る処理が意図しないファイルを消したり変えたりしないことを確かめます。check:all では種を固定して実行します
 - 送る処理の並行の動き（送っている間の入力、ほかの所で進んだブランチへの送信、送っていない操作の取り消し）は、`formal/` の TLA+ のモデルで、文章が消える順番が無いことを確かめます。モデルとコードが合っていることは、画面の試験の記録をモデルの手順でたどるトレース検証で確かめます（NFR-MAINT-03、`formal/README.md`）。TLC には `formal/tla2tools.jar`（コミットしません）と、Java か podman が要ります
 - WebKit は Playwright の Docker イメージで実行します。`NW_NO_WEBKIT=1` で WebKit を外せます
 - パスキーの試験は Chrome の仮想認証器で実行します。WebKit には Playwright から操作できる仮想認証器がないので、Chrome だけで実行します

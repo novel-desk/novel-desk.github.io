@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # 手元で全部の点検と試験を実行する（push の前）。`npm run check:all`
 #   JS の整形（Prettier）、書き方（ESLint）、型（tsc。JSDoc の型）、lib の単体試験（vitest。行・分岐・関数・文とも 100%）、
+#   性質の試験（fast-check。送る処理と読み込みの順番の組み合わせ、操作の列。種は固定）、
 #   画面の試験（Playwright。Chrome と WebKit。GitHub は偽物）、画面の JS のカバレッジ 100%（画面の試験と単体試験を合わせて。NFR-MAINT-02）、
 #   保存の処理の変異テスト 100%（Stryker。lib の changes、drafts、merge、sync。NFR-MAINT-02）、
 #   トレース検証（画面の試験の記録を formal/ のモデルの手順でたどれるか。TLC を java か podman のコンテナで実行する。NFR-MAINT-03）
@@ -14,6 +15,8 @@ echo "== JS の型（tsc）"
 npm run -s check:types
 echo "== lib の単体試験とカバレッジ（vitest。100% でなければ止まる）"
 npm run -s test:unit
+echo "== 性質の試験（fast-check。種は固定）"
+NW_PROPS_SEED=20261025 npm run -s test:props
 echo "== 画面の試験（Playwright。Chrome と WebKit）"
 npm run -s test:ui
 echo "== 画面の JS のカバレッジが 100% か（画面の試験と単体試験を合わせて）"

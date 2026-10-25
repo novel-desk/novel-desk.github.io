@@ -70,6 +70,7 @@ describe('changes', () => {
       path: 'q.png',
       base: '',
       bytes: new Uint8Array([7]),
+      from: { path: 'p.png', base: '' },
       op: 'op2',
       at: 9,
     });
@@ -87,7 +88,7 @@ describe('changes', () => {
     ]);
     const { changes: next, merged } = moveFiles(blobs, before, [['n.sh', 'm.md']], o);
     expect(merged).toEqual(new Set(['op0', 'op1']));
-    expect(next.get('m.md')).toEqual({ repo: 'o/r', path: 'm.md', base: '', text: 'x', mode: '100755', op: 'op2', at: 9 });
+    expect(next.get('m.md')).toEqual({ repo: 'o/r', path: 'm.md', base: '', text: 'x', mode: '100755', from: { path: 'n.sh', base: '' }, op: 'op2', at: 9 });
   });
   // FR-SAVE-01, NFR-MAINT-02
   test('moveFiles: the blob of the branch moved onto its own blob is still a change when the change there was made on another', () => {
@@ -104,6 +105,23 @@ describe('changes', () => {
       op: 'op2',
       at: 9,
     });
+  });
+  // FR-SAVE-01, FR-SAVE-04: a new episode moved onto the place of one of the branch (the order changed), then given up
+  // because a file changed elsewhere: its text goes back where it was made, and does not take the place of the
+  // branch's file (before, it stayed there on that file's blob, and a send wrote over it: tests/props/model.test.mjs)
+  test('rebase: a new file moved onto a file of the branch and given up: its text back where it was made, the branch’s file left', () => {
+    const made = writeFile(blobs, new Map(), 'n.md', { text: '新しい' }, { ...o, op: 'op1' }).changes;
+    const moved = moveFiles(
+      blobs,
+      made,
+      [
+        ['n.md', 'b.md'],
+        ['b.md', 'n.md'],
+      ],
+      { ...o, op: 'op2' },
+    ).changes;
+    const { changes: next } = rebase(moved, { ...blobs, 'b.md': { sha: 'sb2', mode: '100644' } });
+    expect([...next.values()]).toEqual([{ repo: 'o/r', path: 'n.md', base: '', text: '新しい', at: 9 }]);
   });
   // FR-SAVE-01, NFR-MAINT-02
   test('writeFile: over nothing, no operation taken in', () => {

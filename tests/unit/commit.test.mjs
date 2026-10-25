@@ -35,12 +35,15 @@ describe('commit message', () => {
         c('n.md', { base: '', text: '' }),
         c('d.md', { gone: true }),
         c('e.md', { text: 't', from: { path: 'e.md', base: 'x' } }),
+        // (a file an operation made, moved before it was sent: added)
+        c('m.md', { base: '', text: '', from: { path: 'k.md', base: '' } }),
       ]),
     ).toEqual([
       { kind: 'M', path: 'a.md', to: '' },
       { kind: 'R', path: 'b.md', to: 'z.md' },
       { kind: 'D', path: 'd.md', to: '' },
       { kind: 'M', path: 'e.md', to: '' },
+      { kind: 'A', path: 'm.md', to: '' },
       { kind: 'A', path: 'n.md', to: '' },
     ]);
   });
