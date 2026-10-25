@@ -84,11 +84,12 @@ const parseSpec = spec => /** @type {['g' | 'c', number, number]} */ (spec.split
 // a box written by itself, in the note's editor (「‹ 箱」 back here)
 /** @param {string} spec */
 async function editBox(spec) {
-  if ($('plot').hidden) return;
   const [kind, gi, ci] = parseSpec(spec);
   const note = /** @type {NonNullable<typeof plotNote>} */ (plotNote);
   const want = kind === 'g' ? note.plot.groups[gi].head : note.plot.groups[gi].cards[ci].head;
-  if (await openNote(note.path, { label: '‹ 箱', title: 'プロットの箱の画面に戻る', go: () => void openPlot() })) showBox(kind, gi, ci, want);
+  // (the note was read when the boxes were drawn: it opens)
+  await openNote(note.path, { label: '‹ 箱', title: 'プロットの箱の画面に戻る', go: () => void openPlot() });
+  showBox(kind, gi, ci, want);
 }
 // the plot changed (a box moved, added, removed): written back as the note's text, a change not sent
 /** @param {(p: Plot) => boolean | void} fn false: nothing changed */
@@ -239,10 +240,9 @@ async function boardClick(e) {
     await api.openEpisode(d.open);
     return api.back();
   }
-  if (d.write) {
-    const [gi, ci] = d.write.split(':').map(Number);
-    return writeFrom(gi, ci);
-  }
+  // (the last kind of button: 新しい話を作成)
+  const [gi, ci] = /** @type {string} */ (d.write).split(':').map(Number);
+  return writeFrom(gi, ci);
 }
 
 // --- the 中箱 of the open episode, over its text (FR-PLOT-06): shown only for the episode it was opened on
@@ -264,17 +264,18 @@ export async function renderPlotPanel() {
     panel.innerHTML = '<p class="muted small">プロットの資料がありません。目次の「プロット」から作れます。</p>';
     return;
   }
-  const episode = linkable().find(e => e.path === path);
-  const box = episode ? boxFor(p.plot, episode, api.view().layout.links) : undefined;
+  // (the episode open is one of the work's)
+  const episode = /** @type {ReturnType<typeof linkable>[number]} */ (linkable().find(e => e.path === path));
+  const box = boxFor(p.plot, episode, api.view().layout.links);
   const found = findCard(p.plot, box);
   panel.innerHTML = found
     ? `<div class="plot-panel-head"><b>${esc(found.c.head)}</b><span class="grow"></span><button class="ghost small" data-plot-pick>中箱を変更</button><button class="ghost small" data-plot-open>プロット</button></div><div class="preview plot-panel-body">${renderMd(found.c.body.join('\n'), p.path, () => '')}</div>`
     : `<div class="plot-panel-head"><span class="muted small">${box ? `中箱「${esc(box)}」が見つかりません` : 'この話に対応するプロットの中箱はありません'}</span><span class="grow"></span><button class="ghost small" data-plot-pick>中箱を選択</button></div>`;
 }
+// (its button is on the panel, which shows it only with the plot, for the episode open)
 async function pickBox() {
   const path = api.current();
-  const p = await loadPlot();
-  if (!p || !path) return;
+  const p = /** @type {NonNullable<typeof plotNote>} */ (await loadPlot());
   const heads = p.plot.groups.flatMap(g => g.cards.map(c => c.head));
   const episode = linkable().find(e => e.path === path);
   const current = (episode && findCard(p.plot, boxFor(p.plot, episode, api.view().layout.links))?.c.head) || '';
@@ -296,10 +297,9 @@ export function wirePlot() {
   $('plot-board').addEventListener(
     'toggle',
     e => {
-      const d = /** @type {HTMLElement} */ (e.target).closest?.('details.pgroup');
-      if (!(d instanceof HTMLDetailsElement) || !plotNote) return;
-      const head = plotNote.plot.groups[Number(d.dataset.g)]?.head;
-      if (head === undefined) return;
+      // (the board's only details are its 大箱, drawn from the plot)
+      const d = /** @type {HTMLDetailsElement} */ (e.target);
+      const head = /** @type {NonNullable<typeof plotNote>} */ (plotNote).plot.groups[Number(d.dataset.g)].head;
       if (d.open) folded.delete(head);
       else folded.add(head);
       void store.put('prefs', foldKey(), [...folded]);

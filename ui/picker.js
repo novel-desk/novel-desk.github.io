@@ -3,11 +3,11 @@ import { esc } from '../lib/format.js';
 import { $ } from './dom.js';
 
 /**
- * @param {{ title: string, items: string[], current?: string, help?: string, input?: string }} what `input`: a field for
- *   a name not in the list, with this placeholder
+ * @param {{ title: string, items: string[], current?: string, help: string, input?: string }} what `help`: what to choose;
+ *   `input`: a field for a name not in the list, with this placeholder
  * @returns {Promise<string | null>} what was chosen or typed; null: closed
  */
-export function pick({ title, items, current = '', help = '', input = '' }) {
+export function pick({ title, items, current = '', help, input = '' }) {
   return new Promise(resolve => {
     const dlg = /** @type {HTMLDialogElement} */ (/** @type {unknown} */ ($('picker')));
     $('picker-title').textContent = title;

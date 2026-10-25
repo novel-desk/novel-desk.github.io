@@ -10,8 +10,9 @@ let opened = null;
 function db() {
   opened ??= new Promise((resolve, reject) => {
     const req = indexedDB.open(NAME, 1);
+    // (version 1 is the only one: made from nothing, every store at once)
     req.onupgradeneeded = () => {
-      for (const s of STORES) if (!req.result.objectStoreNames.contains(s)) req.result.createObjectStore(s);
+      for (const s of STORES) req.result.createObjectStore(s);
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);

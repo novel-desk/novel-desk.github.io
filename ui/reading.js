@@ -79,8 +79,11 @@ const topIn = el => el.getBoundingClientRect().top - pv().getBoundingClientRect(
 // the place read in the preview: the line of the text at its top, and how far into it
 export function previewPlace() {
   const p = pv();
-  const el = /** @type {HTMLElement[]} */ ([...p.querySelectorAll('[data-l]')]).find(e => topIn(e) + e.offsetHeight > p.scrollTop + 1);
-  return el ? { line: Number(el.dataset.l), into: Math.max(0, p.scrollTop - topIn(el)) / (el.offsetHeight || 1) } : { line: 0, into: 0 };
+  // (every line of the text is an element, and the room under the last is less than the preview's height: one is there)
+  const el = /** @type {HTMLElement} */ (
+    /** @type {HTMLElement[]} */ ([...p.querySelectorAll('[data-l]')]).find(e => topIn(e) + e.offsetHeight > p.scrollTop + 1)
+  );
+  return { line: Number(el.dataset.l), into: Math.max(0, p.scrollTop - topIn(el)) / (el.offsetHeight || 1) };
 }
 // the preview shown, at a place (a line no longer in the text: the top)
 /** @param {{ line: number, into: number }} at */
@@ -99,8 +102,9 @@ export async function togglePreview() {
   }
   const at = previewPlace();
   setReading(false);
+  // (the preview is of the text in the box: the line is there)
   const l = lineInBox(a, at.line);
-  a.scrollTop = l ? l.top + at.into * l.height : 0;
+  a.scrollTop = l.top + at.into * l.height;
 }
 // back to writing (another episode opened)
 export const stopReading = () => setReading(false);

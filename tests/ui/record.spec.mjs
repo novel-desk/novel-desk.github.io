@@ -43,3 +43,26 @@ test("GitHub's commits not read (offline): the days of this device only, said", 
   await expect(page.locator('#record-body .error')).toHaveText(/^GitHub の履歴を読めませんでした（GitHub につながりません/);
   await expect(page.locator('.rec-table').first().locator('tbody tr')).toHaveCount(1);
 });
+
+// FR-WORK-08: a day this device noted (GitHub not reached then) is not counted again from GitHub when it is read later;
+// an episode no encoding reads counts as nothing
+test('a day noted here before GitHub was read: kept as noted; an episode not in UTF-8 counted as nothing', async ({ page, gh, work }) => {
+  await page.clock.install({ time: new Date('2026-10-05T12:00:00+09:00') });
+  work.clock = Date.parse('2026-10-03T03:00:00Z');
+  work.push({ 'chapters/02_second.md': /** @type {any} */ (Buffer.from([0x82, 0xff, 0xff])) });
+  work.clock = Date.parse('2026-10-05T01:00:00Z');
+  work.push({ 'chapters/02_second.md': '# 第2話 駅で\n\n電車を待つ。来ない。\n' });
+  await openWork(page);
+  // (one more character here than GitHub's commit of the day)
+  await page.locator('#body').press('Control+End');
+  await page.keyboard.type('あ');
+  gh.down = true;
+  await page.getByRole('button', { name: '記録', exact: true }).click();
+  await expect(page.locator('#record-body .error')).toHaveText(/^GitHub の履歴を読めませんでした/);
+  await page.getByRole('button', { name: '‹ 原稿へ' }).click();
+  gh.down = false;
+  await page.clock.setSystemTime(new Date('2026-10-07T12:00:00+09:00'));
+  await page.getByRole('button', { name: '記録', exact: true }).click();
+  const days = page.locator('.rec-table').first().locator('tbody tr');
+  await expect(days).toHaveText(['2026-10-05＋17字42字', '2026-10-03−12字25字', '2026-10-01—37字']);
+});

@@ -124,3 +124,135 @@ test('a picture put in the trash: how many places use it said first; moved to _t
   expect(paths(work).filter(p => p.startsWith('_trash/'))).toEqual([expect.stringMatching(/^_trash\/\d{8}T\d{6}_sky\.png$/)]);
   expect(work.text('chapters/01_first.md')).toBe('# 第1話 はじまり\n\n![空](../notes/images/sky.png)\n');
 });
+
+const GIF = Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64');
+/** @param {import('@playwright/test').Page} page @param {{ name: string, mimeType: string, buffer: Buffer }[]} files */
+async function addPicture(page, files) {
+  const chooser = page.waitForEvent('filechooser');
+  await page.getByRole('button', { name: '＋ 画像' }).click();
+  await (await chooser).setFiles(files);
+}
+
+// FR-EDIT-07, NFR-SEC-15: a GIF kept as it is (not made small); one over 5 MB refused; nothing chosen: nothing
+test('a GIF added as it is; one over 5 MB refused; the picker closed with nothing chosen', async ({ page, gh, work }) => {
+  work.push({ 'novel.toml': WITH_NOTES });
+  await openWork(page);
+  await page.getByRole('button', { name: '資料', exact: true }).click();
+  await addPicture(page, []);
+  await addPicture(page, [{ name: 'big.gif', mimeType: 'image/gif', buffer: Buffer.concat([GIF, Buffer.alloc(5 * 1024 * 1024)]) }]);
+  await expect(page.locator('#toast')).toHaveText('画像が大きすぎます（5 MB まで）');
+  await addPicture(page, [{ name: 'dot.gif', mimeType: 'image/gif', buffer: GIF }]);
+  await expect(page.locator('#toast')).toHaveText('画像を追加しました（送るまではこの端末だけの変更です）');
+  await expect(page.locator('#images-list figcaption')).toHaveText([/^\d{8}-\d{6}-dot\.gif$/, 'sky.png']);
+  const kept = (await stored(page, 'drafts')).find(d => d.path.endsWith('-dot.gif'));
+  expect(Buffer.from(Object.values(kept.bytes))).toEqual(GIF);
+});
+
+// FR-EDIT-07: a browser that cannot make the small picture (its canvas gives nothing, or a kind of picture the work does
+// not take): said, nothing added
+test('the small picture not made by the browser: said, nothing added', async ({ page, gh, work }) => {
+  work.push({ 'novel.toml': WITH_NOTES });
+  await openWork(page);
+  await page.getByRole('button', { name: '資料', exact: true }).click();
+  await page.evaluate(() => {
+    HTMLCanvasElement.prototype.toBlob = function (done) {
+      done(null);
+    };
+  });
+  await addPicture(page, [{ name: 'map.png', mimeType: 'image/png', buffer: PNG }]);
+  await expect(page.locator('#toast')).toHaveText('画像を読めませんでした。JPEG、PNG、WebP、GIF の画像を選んでください');
+  await page.evaluate(() => {
+    HTMLCanvasElement.prototype.toBlob = function (done) {
+      done(new Blob(['x'], { type: 'image/bmp' }));
+    };
+  });
+  await addPicture(page, [{ name: 'map.png', mimeType: 'image/png', buffer: PNG }]);
+  await expect(page.locator('#toast')).toHaveText('画像（JPEG、PNG、WebP、GIF）を選んでください');
+  await expect(page.locator('#images-list figcaption')).toHaveText(['sky.png']);
+});
+
+// FR-EDIT-07, FR-NOTE-01: the pictures by folder when there are more than one; one that cannot be read shows no picture;
+// [images] dir alone, or no folder at all (the top images/, said)
+test('the list of pictures: by folder; one that cannot be read; the folder from [images], or none set', async ({ page, gh, work }) => {
+  work.push({ 'novel.toml': WITH_NOTES, 'notes/maps/town.gif': GIF });
+  const sky = work.files(work.refs.main)['notes/images/sky.png'].sha;
+  await page.route(
+    u => u.pathname.endsWith(`/git/blobs/${sky}`),
+    route => route.abort('failed'),
+  );
+  await openWork(page);
+  await page.getByRole('button', { name: '資料', exact: true }).click();
+  await expect(page.locator('#images-list .notes-folder span')).toHaveText(['notes/images', 'notes/maps']);
+  await expect(page.locator('#images-list figcaption')).toHaveText(['sky.png', 'town.gif']);
+  await expect(page.locator('#images-list img').nth(1)).toHaveAttribute('src', /^blob:/);
+  await expect(page.locator('#images-list img').first()).not.toHaveAttribute('src', /./);
+  await expect(page.locator('#images-where')).toHaveText('');
+  // [images] dir alone
+  work.push({ 'novel.toml': `${WORK_FILES['novel.toml']}\n\n[images]\ndir = "notes/maps"\n` });
+  await page.getByRole('button', { name: '‹ 原稿へ' }).click();
+  await page.getByRole('button', { name: '再読み込み' }).click();
+  await expect(page.locator('#sync-state')).toHaveText(/GitHub から読みました/);
+  await page.getByRole('button', { name: '資料', exact: true }).click();
+  await expect(page.locator('#images-list figcaption')).toHaveText(['town.gif']);
+  await expect(page.locator('#images-where')).toHaveText('');
+  // none set: the top images/
+  work.push({ 'novel.toml': WORK_FILES['novel.toml'], 'images/top.png': PNG });
+  await page.getByRole('button', { name: '‹ 原稿へ' }).click();
+  await page.getByRole('button', { name: '再読み込み' }).click();
+  await expect(page.locator('#sync-state')).toHaveText(/GitHub から読みました/);
+  await page.getByRole('button', { name: '資料', exact: true }).click();
+  await expect(page.locator('#images-list figcaption')).toHaveText(['top.png']);
+  await expect(page.locator('#images-where')).toHaveText(
+    '資料のフォルダが novel.toml に書かれていないので、一番上の images/ の画像を出します（[notes] dir か [images] dir で変えられます）',
+  );
+});
+
+// FR-EDIT-08, FR-EDIT-09: the name not changed (closed, empty, the same): nothing; a picture no text shows renamed and
+// put in the trash: nothing more said
+test('a picture renamed: not when closed, empty or the same; one no text shows renamed and put in the trash', async ({ page, gh, work }) => {
+  work.push({ 'novel.toml': WITH_NOTES });
+  await openWork(page);
+  await page.getByRole('button', { name: '資料', exact: true }).click();
+  for (const answer of [null, '  ', 'sky']) {
+    page.once('dialog', d => void (answer === null ? d.dismiss() : d.accept(answer)));
+    await page.getByRole('button', { name: '名前を変更' }).click();
+    await expect(page.locator('#images-list figcaption')).toHaveText(['sky.png']);
+  }
+  await page.getByRole('button', { name: '‹ 原稿へ' }).click();
+  await expect(page.locator('#send')).toBeDisabled();
+  await page.getByRole('button', { name: '資料', exact: true }).click();
+  page.once('dialog', d => void d.accept('sky2'));
+  await page.getByRole('button', { name: '名前を変更' }).click();
+  await expect(page.locator('#toast')).toHaveText('画像の名前を変更しました');
+  await expect(page.locator('#images-list figcaption')).toHaveText(['sky2.png']);
+  /** @type {string[]} */
+  const said = [];
+  page.once('dialog', d => {
+    said.push(d.message());
+    void d.accept();
+  });
+  await page.getByRole('button', { name: '削除' }).click();
+  await expect(page.locator('#images-list')).toHaveText('まだ画像がありません。');
+  expect(said).toEqual(['「sky2.png」を削除しますか？ 削除した画像は作品の _trash/ に残ります']);
+});
+
+// FR-EDIT-07〜09, FR-WORK-04: novel.toml with line ends of two kinds is not written: a picture added, renamed or put in
+// the trash is refused, said
+test('novel.toml with line ends of two kinds: a picture added, renamed or put in the trash refused, said', async ({ page, gh, work }) => {
+  work.push({ 'novel.toml': WITH_NOTES.replace('\n', '\r\n') });
+  await openWork(page);
+  await page.getByRole('button', { name: '資料', exact: true }).click();
+  const refused = 'novel.toml の改行の形が行によって違うので、書き換えません（GitHub か Working Copy でそろえてください）';
+  await addPicture(page, [{ name: 'dot.gif', mimeType: 'image/gif', buffer: GIF }]);
+  await expect(page.locator('#toast')).toHaveText(refused);
+  page.once('dialog', d => void d.accept('sky2'));
+  await page.getByRole('button', { name: '名前を変更' }).click();
+  await expect(page.locator('#toast')).toHaveText(refused);
+  await page.locator('#toast').evaluate(t => (t.textContent = ''));
+  page.once('dialog', d => void d.accept());
+  await page.getByRole('button', { name: '削除' }).click();
+  await expect(page.locator('#toast')).toHaveText(refused);
+  await expect(page.locator('#images-list figcaption')).toHaveText(['sky.png']);
+  await page.getByRole('button', { name: '‹ 原稿へ' }).click();
+  await expect(page.locator('#send')).toBeDisabled();
+});

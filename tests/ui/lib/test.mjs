@@ -1,7 +1,11 @@
 // The fixtures of the screen tests: a fake GitHub for each test (`gh`, with the work `work`), and the steps that most
-// tests start with (the token kept, the work chosen)
+// tests start with (the token kept, the work chosen). Every page's and service worker's counts of the app (istanbul,
+// coverage.mjs) are taken when its test ends (a page that goes away before keeps them for the page after it)
 import { test as base, expect } from '@playwright/test';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { FakeGitHub, FakeRepo, TOKEN } from './fake-github.mjs';
+import { OUT, TAKE, ON_LEAVE } from './coverage.mjs';
 
 export { expect, FakeRepo, TOKEN };
 
@@ -31,6 +35,23 @@ export const WORK_FILES = {
 /** @typedef {{ gh: FakeGitHub, work: FakeRepo }} Fixtures */
 export const test = base.extend(
   /** @type {any} */ ({
+    // the counts taken in this worker, written for global-teardown.mjs when the worker ends
+    taken: [
+      // eslint-disable-next-line no-empty-pattern
+      async ({}, /** @type {any} */ use, /** @type {any} */ workerInfo) => {
+        /** @type {object[]} */
+        const taken = [];
+        await use(taken);
+        mkdirSync(OUT, { recursive: true });
+        writeFileSync(join(OUT, `worker-${workerInfo.workerIndex}.json`), JSON.stringify(taken));
+      },
+      { scope: 'worker' },
+    ],
+    context: async (/** @type {any} */ { context, taken }, /** @type {any} */ use) => {
+      await context.addInitScript(ON_LEAVE);
+      await use(context);
+      await takeAll(context, taken);
+    },
     // (Playwright reads the fixtures a fixture needs from its first argument: none here)
     // eslint-disable-next-line no-empty-pattern
     work: async ({}, use) => use(new FakeRepo('author/novel', WORK_FILES)),
@@ -43,6 +64,17 @@ export const test = base.extend(
     },
   }),
 );
+
+// the counts of every page and service worker of a context (closed pages sent theirs when they went away)
+/** @param {import('@playwright/test').BrowserContext} context @param {object[]} taken */
+export async function takeAll(context, taken) {
+  for (const p of [...context.pages(), ...context.serviceWorkers()]) {
+    try {
+      const v = await p.evaluate(TAKE);
+      if (v) taken.push(JSON.parse(v));
+    } catch {}
+  }
+}
 
 // This browser has no passkey: the token is kept with a key that cannot be taken out (the path of a browser without
 // PRF; WebKit here has no authenticator to test with)

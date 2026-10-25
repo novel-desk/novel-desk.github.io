@@ -4,12 +4,10 @@ import { API, failure, nextPage } from '../lib/github.js';
 
 /** @type {string} */
 let token = '';
-/** @type {() => void} told when GitHub refuses the token (401: expired, or deleted) */
-let refused = () => {};
+// told when GitHub refuses the token (401: expired, or deleted): app.js listens
+const refusals = new EventTarget();
 /** @param {() => void} f */
-export const onRefused = f => {
-  refused = f;
-};
+export const onRefused = f => refusals.addEventListener('refused', f);
 /** @param {string} t */
 export const useToken = t => {
   token = t;
@@ -37,7 +35,7 @@ async function request(url, init = {}, as = '') {
   } catch {
     throw new GitHubError('GitHub につながりません（オフラインかもしれません）', 0);
   }
-  if (res.status === 401 && !as) refused();
+  if (res.status === 401 && !as) refusals.dispatchEvent(new Event('refused'));
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new GitHubError(failure(res.status, body.message), res.status);

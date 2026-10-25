@@ -16,6 +16,8 @@
   --accent: #a98be0; --accent-soft: #2f2840; --sel: #2a2c31; --error: #f2b8b5; --ok: #8fd1a8; color-scheme: dark; }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; }
+/* a swipe sideways (the preview turns the page) does not take the browser back in its history */
+html { overscroll-behavior-x: none; }
 body { background: var(--bg); color: var(--text); font: 15px/1.6 var(--gothic); -webkit-text-size-adjust: 100%; }
 [hidden] { display: none !important; }
 button, input, textarea { font: inherit; color: inherit; }
@@ -100,7 +102,7 @@ input:focus { border-color: var(--accent); }
 .scrim { display: none; }
 
 /* the preview */
-.preview { flex: 1; overflow-y: auto; font: 15px/1.85 var(--mincho); padding: 16px 20px 40vh; width: 100%; max-width: 46em; margin: 0 auto; overscroll-behavior-y: contain; }
+.preview { flex: 1; overflow-y: auto; font: 15px/1.85 var(--mincho); padding: 16px 20px 40vh; width: 100%; max-width: 46em; margin: 0 auto; overscroll-behavior-y: contain; overscroll-behavior-x: none; touch-action: pan-y pinch-zoom; }
 .preview p { margin: 0; min-height: 1em; } .preview h1, .preview h2, .preview h3, .preview h4 { font-family: var(--mincho); margin: .6em 0 .3em; line-height: 1.5; }
 .preview h1 { font-size: 1.3em; } .preview h2 { font-size: 1.15em; } .preview h3, .preview h4 { font-size: 1.05em; }
 .preview img { display: block; max-width: 100%; max-height: 70vh; margin: 12px auto; border-radius: 8px; }

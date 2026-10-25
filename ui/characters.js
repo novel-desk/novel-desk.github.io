@@ -96,9 +96,10 @@ async function boardClick(e) {
     i = Number(b.dataset.person);
   const head = people[i].head,
     nth = nthOf(people, i);
-  if (await openNote(note.path, { label: '‹ キャラ', title: 'キャラ一覧に戻る', go: () => void openCharacters() })) {
-    showPerson(personRange(/** @type {HTMLTextAreaElement} */ ($('note-body')).value, head, nth), head);
-  }
+  // (the note was read when the page was drawn: it opens)
+  await openNote(note.path, { label: '‹ キャラ', title: 'キャラ一覧に戻る', go: () => void openCharacters() });
+  // (the person is in it, as drawn)
+  showPerson(/** @type {[number, number]} */ (personRange(/** @type {HTMLTextAreaElement} */ ($('note-body')).value, head, nth)), head);
 }
 
 export function wireCharacters() {

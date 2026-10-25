@@ -45,7 +45,6 @@ const noteHead = name =>
 // what is kept for the work, shown: the list of its notes, or a note; nothing kept: the panel closed
 export async function renderSideNote() {
   const w = api.work();
-  if (!w) return hide();
   const n = ++draws;
   const path = await keptFor(w.repo);
   if (path === null) return n === draws && hide();
@@ -85,16 +84,17 @@ export async function renderSideNote() {
   // the same text: left as it is, where it was scrolled to
   const same = shown?.repo === w.repo && shown.path === path;
   if (same && shown?.text === text) return;
-  const top = same ? ($('side-note').querySelector('.side-note-body')?.scrollTop ?? 0) : 0;
-  shown = { repo: w.repo, path, text };
+  const top = same ? /** @type {HTMLElement} */ ($('side-note').querySelector('.side-note-body')).scrollTop : 0;
   /** @type {Record<string, string>} */
   const urls = {};
   for (const p of picturePaths(text, path)) urls[p] = await api.pictureUrl(p);
   if (n !== draws) return;
+  // (what is shown, once it is: a drawing given up for a later one has shown nothing)
+  shown = { repo: w.repo, path, text };
   $('side-note-in').innerHTML =
     noteHead(noteHeading(text) ?? /** @type {string} */ (path.split('/').pop())) +
     (api.drafts().has(path) ? '<p class="muted small">この端末に、まだ送っていない書きかけがあります（ここにはその内容を出しています）。</p>' : '') +
-    `<div class="preview side-note-body">${renderMd(text, path, p => urls[p] ?? '')}</div>`;
+    `<div class="preview side-note-body">${renderMd(text, path, p => urls[p])}</div>`;
   /** @type {HTMLElement} */ ($('side-note').querySelector('.side-note-body')).scrollTop = top;
 }
 /** @param {string | null} path a note, '' the list, null the panel closed */

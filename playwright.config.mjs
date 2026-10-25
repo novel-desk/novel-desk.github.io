@@ -1,10 +1,11 @@
 // Playwright Test: the screen tests (tests/ui/*.spec.mjs, fixtures in tests/ui/lib/test.mjs). `npm run test:ui`
 // Chrome (installed here) and WebKit (Safari's engine), from Playwright's image in Docker: this machine's system is too
 // old for Playwright's WebKit (it needs glibc 2.38), as in the server version. NW_NO_WEBKIT=1 leaves WebKit out.
+// NW_UI_PORT: another port for the app (two runs at once)
 // The app is served as files by tools/serve.mjs on localhost; GitHub is a fake (tests/ui/lib/fake-github.mjs)
 import { defineConfig } from '@playwright/test';
 
-const PORT = 4173;
+const PORT = Number(process.env.NW_UI_PORT || 4173);
 const WEBKIT_PORT = 3124;
 const webkit = !process.env.NW_NO_WEBKIT;
 // No service worker but in the test of offline: in WebKit, the requests of a page that a service worker controls are not
@@ -21,9 +22,12 @@ export default defineConfig({
   expect: { timeout: 10000 },
   reporter: [['list']],
   outputDir: 'test-results',
+  // the coverage of the app's scripts (tests/ui/lib/coverage.mjs): served instrumented, counted in every test
+  globalSetup: './tests/ui/lib/global-setup.mjs',
+  globalTeardown: './tests/ui/lib/global-teardown.mjs',
   projects: [{ name: 'chrome', use: chrome }, ...(webkit ? [{ name: 'webkit', use: webkitUse }] : [])],
   webServer: [
-    { command: `PORT=${PORT} node tools/serve.mjs`, port: PORT, reuseExistingServer: false, stdout: 'ignore' },
+    { command: `PORT=${PORT} NW_COVERAGE=1 node tools/serve.mjs`, port: PORT, reuseExistingServer: false, stdout: 'ignore' },
     // the WebKit of Playwright's image, on this machine's network (so it reaches the server on localhost). The container
     // is stopped when the run ends, and one left from a run that was killed is removed first
     ...(webkit

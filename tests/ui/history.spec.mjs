@@ -89,3 +89,80 @@ test("GitHub's versions not read (offline): said, this device's still listed", a
   await expect(page.locator('#versions .error')).toHaveText('GitHub の履歴を読めませんでした: GitHub につながりません（オフラインかもしれません）');
   await expect(page.locator('#versions .version')).toHaveCount(0);
 });
+
+// FR-HIST-01, FR-HIST-02: a version GitHub kept in no encoding the app reads: said, the list one tap away; a version
+// read once shows its length in the list; the comparison chosen stays for the next version; one the same as now says so
+test('a version not in UTF-8: said, back to the list; a version read shows its length; the comparison chosen stays', async ({ page, gh, work }) => {
+  work.push({ 'chapters/01_first.md': /** @type {any} */ (Buffer.from([0x82, 0xff, 0xff])) });
+  work.push({ 'chapters/01_first.md': '# 第1話 はじまり\n\n直す。\n' });
+  work.push({ 'chapters/01_first.md': '# 第1話 はじまり\n\n直した。\n' });
+  await openWork(page);
+  await page.getByRole('button', { name: 'この話の履歴' }).click();
+  const dlg = page.locator('#versions');
+  // (nothing happens on a tap outside the buttons)
+  await dlg.getByText('まだローカルの履歴はありません').click();
+  await expect(dlg.locator('.history-tabs')).toBeVisible();
+  await dlg.getByRole('button', { name: 'GitHub 履歴（4）' }).click();
+  await dlg.locator('.version').nth(2).click();
+  await expect(dlg.locator('.error')).toHaveText('この版は文字コードが UTF-8 ではないため開けません');
+  await dlg.getByRole('button', { name: '‹ 履歴' }).click();
+  // the newest, the same as now
+  await dlg.locator('.version').nth(0).click();
+  await expect(dlg.getByText('この版から今の本文（12 字）までの変更：ありません')).toBeHidden();
+  await dlg.getByRole('button', { name: '今と比べる' }).click();
+  await expect(dlg.getByText('この版から今の本文（12 字）までの変更：ありません')).toBeVisible();
+  await dlg.getByRole('button', { name: '‹ 履歴' }).click();
+  await expect(dlg.locator('.version small').first()).toHaveText('12 字 ・ ほかの端末で');
+  await dlg.locator('.version').nth(3).click();
+  await expect(dlg.locator('.version-diff[data-for="now"]')).toBeVisible();
+  await expect(dlg.locator('.version-diff[data-for="before"]')).toBeHidden();
+});
+
+// FR-HIST-03: the version not sent yet, read whole
+test('the version not sent yet: said as such', async ({ page, gh }) => {
+  await openWork(page);
+  await page.locator('#body').fill('書いている\n');
+  await page.getByRole('button', { name: 'この話の履歴' }).click();
+  const dlg = page.locator('#versions');
+  await dlg.locator('.version', { hasText: '未送信' }).click();
+  await expect(dlg.locator('.hist-head')).toContainText('まだ送っていない版');
+});
+
+// FR-HIST-01: closed while GitHub's versions or a version's text are still on their way: nothing shown afterwards
+test('closed while reading: what arrives later is not shown', async ({ page, gh }) => {
+  await openWork(page);
+  const dlg = page.locator('#versions');
+  /** @type {() => void} */
+  let release = () => {};
+  let gate = new Promise(r => (release = () => r(undefined)));
+  let arrived = false;
+  await page.route('https://api.github.com/repos/author/novel/commits?**', async route => {
+    arrived = true;
+    await gate;
+    await route.fallback();
+  });
+  await page.getByRole('button', { name: 'この話の履歴' }).click();
+  await expect.poll(() => arrived).toBe(true);
+  await dlg.getByRole('button', { name: '閉じる' }).click();
+  release();
+  await expect.poll(() => gh.calls.some(c => c.includes('/commits?'))).toBe(true);
+  await expect(dlg).toBeHidden();
+  await page.unroute('https://api.github.com/repos/author/novel/commits?**');
+  // a version's text on its way
+  arrived = false;
+  gate = new Promise(r => (release = () => r(undefined)));
+  await page.route('https://api.github.com/repos/author/novel/contents/**', async route => {
+    arrived = true;
+    await gate;
+    await route.fallback();
+  });
+  await page.getByRole('button', { name: 'この話の履歴' }).click();
+  await dlg.getByRole('button', { name: 'GitHub 履歴（1）' }).click();
+  await dlg.locator('.version').nth(0).click();
+  await expect.poll(() => arrived).toBe(true);
+  await dlg.getByRole('button', { name: '閉じる' }).click();
+  release();
+  await expect.poll(() => gh.calls.some(c => c.includes('/contents/'))).toBe(true);
+  await page.getByRole('button', { name: 'この話の履歴' }).click();
+  await expect(dlg.locator('.version')).toHaveCount(1);
+});

@@ -35,7 +35,8 @@ export async function showHistory(who) {
   const dlg = dialog();
   $('versions-title').textContent = `「${who.title}」の履歴`;
   body().innerHTML = '<p class="muted small">読み込んでいます…</p>';
-  if (!dlg.open) dlg.showModal();
+  // (opened from a button outside the dialog, which is modal: never open already)
+  dlg.showModal();
   let commits = [];
   failed = '';
   if (who.remote) {

@@ -60,17 +60,16 @@ export function inBoxCopy(area, fill) {
     copy.remove();
   }
 }
-// line n of the text box: its top and height (null when there is no such line)
+// line n of the text box: its top and height (the caller's line is one of the box's: the preview is of its text)
 /** @param {HTMLTextAreaElement} area @param {number} n */
 export function lineInBox(area, n) {
   const lines = area.value.split('\n');
-  if (n >= lines.length) return null;
   return inBoxCopy(area, copy => {
     copy.textContent = n ? lines.slice(0, n).join('\n') + (lines[n - 1] ? '' : '​') : '';
     const it = document.createElement('div');
     it.textContent = lines[n] || '​';
     copy.append(it);
-    return () => ({ top: it.offsetTop, height: it.offsetHeight || 1 });
+    return () => ({ top: it.offsetTop, height: it.offsetHeight });
   });
 }
 // the line at a height in the text box (lines are laid out 200 at a time, only as far as that height)
@@ -89,7 +88,7 @@ export function lineAtInBox(area, y) {
     const divs = /** @type {HTMLCollectionOf<HTMLElement>} */ (copy.children);
     let i = 0;
     while (i + 1 < divs.length && divs[i + 1].offsetTop <= y) i++;
-    return { line: i, top: divs[i]?.offsetTop || 0, height: divs[i]?.offsetHeight || 1 };
+    return { line: i, top: divs[i].offsetTop, height: divs[i].offsetHeight };
   });
 }
 
@@ -125,7 +124,7 @@ export function inputBar(bar, area, page, view) {
       const mark = document.createElement('span');
       mark.textContent = '​';
       copy.append(mark);
-      return () => ({ y: mark.offsetTop, line: mark.offsetHeight || parseFloat(getComputedStyle(area).lineHeight) || 28 });
+      return () => ({ y: mark.offsetTop, line: mark.offsetHeight });
     });
     if (y < area.scrollTop || y + line > area.scrollTop + area.clientHeight - 8) area.scrollTop = Math.max(0, y - area.clientHeight / 2);
   };
@@ -189,8 +188,8 @@ export function inputBar(bar, area, page, view) {
       const [o, c] = [...b.dataset.wrap];
       return sel ? put(o + sel + c) : put(o + c, 1);
     }
-    // ルビ: ｜選んだ文字《》 with the caret in 《》; nothing chosen: ｜《》 with the caret after ｜
-    if ('ruby' in b.dataset) return sel ? put(`｜${sel}《》`, 1) : put('｜《》', 2);
+    // ルビ (the bar's last kind of button): ｜選んだ文字《》 with the caret in 《》; nothing chosen: ｜《》 with the caret after ｜
+    return sel ? put(`｜${sel}《》`, 1) : put('｜《》', 2);
   });
 }
 

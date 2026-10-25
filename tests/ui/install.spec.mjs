@@ -41,3 +41,13 @@ test('a browser that offers to install the app: a button that asks it; nothing b
   await expect.poll(() => page.evaluate(() => /** @type {any} */ (window).asked)).toBe(true);
   await expect(page.locator('#install-app')).toBeHidden();
 });
+// FR-APP-03: installed from the browser's own menu after the offer: the button goes
+test('installed from the browser’s menu after the offer: the button goes', async ({ page, gh }) => {
+  await noPasskey(page);
+  await page.goto('./');
+  await expect(page.getByLabel('トークン', { exact: true })).toBeVisible();
+  await page.evaluate(() => dispatchEvent(Object.assign(new Event('beforeinstallprompt', { cancelable: true }), { prompt: async () => {} })));
+  await expect(page.locator('#install-app')).toBeVisible();
+  await page.evaluate(() => dispatchEvent(new Event('appinstalled')));
+  await expect(page.locator('#install-app')).toBeHidden();
+});

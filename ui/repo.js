@@ -25,12 +25,14 @@ export async function worksHere() {
   const r = await store.get('prefs', 'repo');
   return r ? [r] : [];
 }
+// the works taken off this device's list (FR-WORK-05), by repository
+/** @returns {Promise<string[]>} */
+export const offList = async () => (await store.get('prefs', 'off-list')) ?? [];
 // a repository opened on this device: put on its list (and back on it, if it had been taken off)
 /** @param {Repo} r */
 export async function keepWork(r) {
   await store.put('prefs', 'works', withWork(await worksHere(), r));
-  /** @type {string[]} */
-  const off = (await store.get('prefs', 'off-list')) ?? [];
+  const off = await offList();
   if (off.includes(r.full_name))
     await store.put(
       'prefs',
@@ -68,8 +70,7 @@ export async function forgetWork(repo) {
   for (const name of /** @type {const} */ (['drafts', 'snapshots', 'prefs']))
     for (const key of await store.keys(name)) if (isWorkKey(String(key), repo)) await store.del(name, String(key));
   if ((await store.get('prefs', 'repo'))?.full_name === repo) await store.del('prefs', 'repo');
-  /** @type {string[]} */
-  const off = (await store.get('prefs', 'off-list')) ?? [];
+  const off = await offList();
   if (!off.includes(repo)) await store.put('prefs', 'off-list', [...off, repo]);
 }
 // The token forgotten (NFR-SEC-16): what the device keeps of the works deleted (the works last read, the blobs, the
@@ -166,12 +167,11 @@ async function createWork(open, relist) {
 }
 
 const renameDialog = () => /** @type {HTMLDialogElement} */ (/** @type {unknown} */ ($('rename-repo')));
-/** @type {{ repo: () => Repo, settled: () => Promise<void>, reopen: (r: Repo) => Promise<void> } | null} */
-let desk = null;
+/** @typedef {{ repo: () => Repo, settled: () => Promise<void>, reopen: (r: Repo) => Promise<void> }} Desk the desk's */
 // リポジトリの名前を変更 (FR-GH-10): renamed on GitHub (with the token that has Administration), then what this device
 // keeps of the work moved to the new name, and the work opened by it
-async function renameRepo() {
-  if (!desk) return;
+/** @param {Desk} desk */
+async function renameRepo(desk) {
   const r = desk.repo();
   const name = repoName($('rename-repo-name').value);
   const admin = $('rename-admin-token').value.trim();
@@ -205,10 +205,9 @@ async function renameRepo() {
 
 /**
  * @param {{ open: (r: Repo) => Promise<void>, relist: () => Promise<void> }} shelf
- * @param {{ repo: () => Repo, settled: () => Promise<void>, reopen: (r: Repo) => Promise<void> }} on the desk's
+ * @param {Desk} on
  */
 export function wireRepo(shelf, on) {
-  desk = on;
   $('new-work').addEventListener('submit', e => {
     e.preventDefault();
     void createWork(shelf.open, shelf.relist);
@@ -221,7 +220,7 @@ export function wireRepo(shelf, on) {
   });
   $('rename-repo-form').addEventListener('submit', e => {
     e.preventDefault();
-    void renameRepo();
+    void renameRepo(on);
   });
   $('close-rename-repo').addEventListener('click', () => renameDialog().close());
 }

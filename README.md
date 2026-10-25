@@ -161,11 +161,12 @@ main に push すると、数分で https://novel-desk.github.io/ に反映さ�
 ```sh
 npm install
 npm run serve       # http://localhost:4173/ で開く
-npm run check:all   # 整形、書き方、型、単体試験（lib は 100%）、画面の試験（Chrome と WebKit）
+npm run check:all   # 整形、書き方、型、単体試験（lib は 100%）、画面の試験（Chrome と WebKit）、画面の JS のカバレッジ 100%
 ```
 
 - 決める部分は `lib/` の純粋な関数にし、vitest で試験します（`tests/unit/`。行・分岐とも 100%）
 - 画面は Playwright で試験します（`tests/ui/`）。GitHub の API は偽物（`tests/ui/lib/fake-github.mjs`）で、本物の GitHub には通信しません
+- 画面の JS（`app.js`、`sw.js`、`ui/`、`lib/`）は、画面の試験と単体試験を合わせて、全部の行と分岐を通します（NFR-MAINT-02）。画面の試験では、`tools/serve.mjs` がスクリプトを istanbul で計測できる形にして出し、`tools/coverage_all.mjs` が単体試験の記録と合わせます。通っていない所は `coverage/all/missing.txt` に出ます
 - WebKit は Playwright の Docker イメージで実行します。`NW_NO_WEBKIT=1` で WebKit を外せます
 - パスキーの試験は Chrome の仮想認証器で実行します。WebKit には Playwright から操作できる仮想認証器がないので、Chrome だけで実行します
 - オフラインの試験も Chrome だけで実行します。WebKit では、service worker が付いたページの通信を Playwright の route が受け取れず、偽物の GitHub に届かないためです

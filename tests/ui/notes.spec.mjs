@@ -1,6 +1,7 @@
 // 資料: the notes listed (the ones used most on top, then by folder), written, previewed, made, renamed and put in the
 // trash, each a change not sent until 「送る」 (FR-NOTE-01〜06)
 import { test, expect, openWork, stored, WORK_FILES } from './lib/test.mjs';
+import { CONFLICT_MARK } from '../../lib/merge.js';
 
 export const NOTES = {
   'novel.toml': `${WORK_FILES['novel.toml']}\n\n[notes]\ndir = "notes"\n`,
@@ -125,4 +126,171 @@ test("a note's history: its versions on GitHub and this device", async ({ page, 
   await page.locator('#versions').getByRole('button', { name: 'この版を復元' }).click();
   await expect(page.getByLabel('資料の本文')).toHaveValue(NOTES['notes/world.md']);
   await expect(page.locator('#note-state')).toHaveText('未送信（この端末に保存しました）');
+});
+
+// FR-NOTE-01, FR-NOTE-02: only the plot note (no 「そのほか」); a note no encoding reads, said, not opened; one without a
+// heading named by its file; one with both versions side by side, said; a tap beside the notes does nothing; adding
+// given up
+test('notes that cannot say their names or be read; both versions side by side said; adding given up', async ({ page, gh, work }) => {
+  work.push({ 'novel.toml': NOTES['novel.toml'], 'notes/plot.md': NOTES['notes/plot.md'] });
+  await openWork(page);
+  await page.getByRole('button', { name: '資料', exact: true }).click();
+  await expect(page.locator('#notes-list .notes-folder span')).toHaveText(['主な資料']);
+  await page.getByRole('button', { name: '‹ 原稿へ' }).click();
+  work.push({
+    'notes/bad.md': /** @type {any} */ (Buffer.from([0x82, 0xff, 0xff])),
+    'notes/memo.md': 'メモだけ\n',
+    'notes/both.md': `# 両方\n\nここ\n${CONFLICT_MARK}の版）\nあちら\n`,
+  });
+  await page.getByRole('button', { name: '再読み込み' }).click();
+  await expect(page.locator('#sync-state')).toHaveText(/GitHub から読みました/);
+  await page.getByRole('button', { name: '資料', exact: true }).click();
+  await expect(page.locator('#notes-list [data-note]')).toHaveText(['プロット プロット', 'bad.md', '両方', 'memo.md']);
+  await page.locator('#notes-list .notes-folder span', { hasText: 'そのほか' }).click();
+  await expect(page.locator('#notes-index')).toBeVisible();
+  await page.locator('#notes-list [data-note]', { hasText: 'bad.md' }).click();
+  await expect(page.locator('#toast')).toHaveText('この資料は開けません（文字コードが UTF-8 ではないか、この端末にまだ読み込まれていません）');
+  await expect(page.locator('#notes-index')).toBeVisible();
+  await page.locator('#notes-list [data-note]', { hasText: 'memo.md' }).click();
+  await expect(page.locator('#note-name')).toHaveText('memo.md');
+  await page.getByRole('button', { name: '‹ 一覧' }).click();
+  await page.locator('#notes-list [data-note]', { hasText: '両方' }).click();
+  await expect(page.locator('#note-state')).toHaveText('両方の版が並んでいます。「――― ここから」の行を探して整理してください');
+  await page.getByRole('button', { name: '‹ 一覧' }).click();
+  page.once('dialog', d => void d.dismiss());
+  await page.getByRole('button', { name: '＋ 資料を追加' }).click();
+  await expect(page.locator('#notes-index')).toBeVisible();
+  await expect(page.locator('#send')).toBeDisabled();
+});
+
+// FR-NOTE-05: a work without [plot] file: a note renamed (the plot found by its name only by its file name); given up,
+// the same name, a name taken: nothing changes
+test('a note renamed in a work without [plot] file; given up, the same name, a name taken', async ({ page, gh, work }) => {
+  work.push(NOTES);
+  await openWork(page);
+  await page.getByRole('button', { name: '資料', exact: true }).click();
+  await page.locator('#notes-list [data-note]', { hasText: '世界観' }).click();
+  page.once('dialog', d => void d.dismiss());
+  await page.getByRole('button', { name: '資料の名前を変更' }).click();
+  page.once('dialog', d => void d.accept('世界観'));
+  await page.getByRole('button', { name: '資料の名前を変更' }).click();
+  await expect(page.locator('#note-name')).toHaveText('世界観');
+  page.once('dialog', d => void d.accept('memo'));
+  await page.getByRole('button', { name: '資料の名前を変更' }).click();
+  await expect(page.locator('#toast')).toHaveText('同じ名前の資料があります');
+  page.once('dialog', d => void d.accept('Earth'));
+  await page.getByRole('button', { name: '資料の名前を変更' }).click();
+  await expect(page.locator('#note-name')).toHaveText('Earth');
+  await page.getByRole('button', { name: '‹ 一覧' }).click();
+  await page.locator('#notes-list [data-note]', { hasText: 'プロット' }).click();
+  page.once('dialog', d => {
+    expect(d.defaultValue()).toBe('plot');
+    void d.accept('story');
+  });
+  await page.getByRole('button', { name: '資料の名前を変更' }).click();
+  await expect(page.locator('#toast')).toHaveText('資料の名前を変更しました（送るまではこの端末だけの変更です）');
+  await page.getByRole('button', { name: '‹ 一覧' }).click();
+  await expect(page.locator('#notes-list [data-note]', { hasText: 'プロット' })).toBeVisible();
+});
+
+// FR-NOTE-01, FR-NOTE-05, FR-NOTE-06, FR-PLOT-08, NFR-USE-01: novel.toml with line ends of two kinds is not changed, so
+// a note is not made, renamed, put in the trash, chosen as the plot, nor given a picture: said, nothing changes; the
+// trash given up
+test('nothing done to a note while novel.toml cannot be changed: said; the trash given up', async ({ page, gh, work }) => {
+  work.push({ ...NOTES, 'notes/plot.md': null, 'novel.toml': NOTES['novel.toml'].replace('\n', '\r\n') });
+  await openWork(page);
+  await page.getByRole('button', { name: '資料', exact: true }).click();
+  const refused = /^novel.toml の改行の形が行によって違うので、書き換えません/;
+  // (a picture first: nothing else said before it)
+  await page.locator('#notes-list [data-note]', { hasText: '世界観' }).click();
+  const chooser = page.waitForEvent('filechooser');
+  await page.getByRole('button', { name: '資料に画像を挿入' }).click();
+  await (await chooser).setFiles({ name: 'map.png', mimeType: 'image/png', buffer: /** @type {Buffer} */ (WORK_FILES['notes/images/sky.png']) });
+  await expect(page.locator('#toast')).toHaveText(refused);
+  await expect(page.getByLabel('資料の本文')).toHaveValue(NOTES['notes/world.md']);
+  await page.getByRole('button', { name: '‹ 一覧' }).click();
+  page.once('dialog', d => void d.accept('新しい'));
+  await page.getByRole('button', { name: '＋ 資料を追加' }).click();
+  await expect(page.locator('#toast')).toHaveText(refused);
+  await expect(page.locator('#notes-index')).toBeVisible();
+  await page.locator('#notes-list [data-note]', { hasText: '世界観' }).click();
+  page.once('dialog', d => void d.accept('Earth'));
+  await page.getByRole('button', { name: '資料の名前を変更' }).click();
+  await expect(page.locator('#toast')).toHaveText(refused);
+  await expect(page.locator('#note-name')).toHaveText('世界観');
+  page.once('dialog', d => void d.dismiss());
+  await page.getByRole('button', { name: 'この資料を削除' }).click();
+  await expect(page.locator('#note-view')).toBeVisible();
+  page.once('dialog', d => void d.accept());
+  await page.getByRole('button', { name: 'この資料を削除' }).click();
+  await expect(page.locator('#toast')).toHaveText(refused);
+  await expect(page.locator('#note-view')).toBeVisible();
+  await page.locator('#note-as-plot').click();
+  await expect(page.locator('#toast')).toHaveText(refused);
+  await expect(page.locator('#note-as-plot')).toBeVisible();
+  await expect(page.locator('#send')).toBeDisabled();
+});
+
+// FR-PLOT-08, FR-NOTE-04: a note chosen as the plot from the note; a picture put in the note; one chosen after the note
+// was left, put nowhere
+test('a note chosen as the plot; a picture put in the note, not in another one left before it was chosen', async ({ page, gh, work }) => {
+  work.push({ ...NOTES, 'notes/plot.md': null });
+  await openWork(page);
+  await page.getByRole('button', { name: '資料', exact: true }).click();
+  await page.locator('#notes-list [data-note]', { hasText: '世界観' }).click();
+  await page.getByLabel('資料の本文').press('Control+End');
+  let chooser = page.waitForEvent('filechooser');
+  await page.getByRole('button', { name: '資料に画像を挿入' }).click();
+  await (await chooser).setFiles({ name: 'map.png', mimeType: 'image/png', buffer: /** @type {Buffer} */ (WORK_FILES['notes/images/sky.png']) });
+  await expect(page.getByLabel('資料の本文')).toHaveValue(/\n!\[\]\(images\/\d{8}-\d{6}-map\.jpg\)\n$/);
+  // chosen after the note was left
+  chooser = page.waitForEvent('filechooser');
+  await page.getByRole('button', { name: '資料に画像を挿入' }).click();
+  const late = await chooser;
+  await page.getByRole('button', { name: '‹ 一覧' }).click();
+  await late.setFiles({ name: 'late.png', mimeType: 'image/png', buffer: /** @type {Buffer} */ (WORK_FILES['notes/images/sky.png']) });
+  await page.locator('#notes-list [data-note]', { hasText: 'memo.md' }).click();
+  await expect(page.locator('#note-as-plot')).toBeVisible();
+  await page.locator('#note-as-plot').click();
+  await expect(page.locator('#toast')).toHaveText('この資料をプロットにしました（目次の「プロット」で箱になります）');
+  await expect(page.locator('#note-as-plot')).toBeHidden();
+  await page.getByRole('button', { name: '‹ 一覧' }).click();
+  await page.getByRole('button', { name: '‹ 原稿へ' }).click();
+  await page.getByRole('button', { name: '送る（3）' }).click();
+  await expect(page.locator('#sync-state')).toHaveText(/^送りました（/);
+  expect(work.text('novel.toml')).toBe(`${NOTES['novel.toml']}\n[plot]\nfile = "notes/memo.md"\n`);
+  expect(paths(work).filter(p => p.includes('late'))).toEqual([]);
+});
+
+// FR-HIST-01, FR-NOTE-02: a note's history with its draft; a word converted (an IME) kept when it is done
+test("a note's history shows its draft; a word being converted kept once converted", async ({ page, gh, work }) => {
+  work.push(NOTES);
+  await openWork(page);
+  await page.getByRole('button', { name: '資料', exact: true }).click();
+  await page.locator('#notes-list [data-note]', { hasText: '世界観' }).click();
+  const area = page.getByLabel('資料の本文');
+  await area.evaluate((/** @type {HTMLTextAreaElement} */ a) => {
+    a.value += '変換中';
+    a.dispatchEvent(new InputEvent('input', { isComposing: true }));
+  });
+  await expect(page.locator('#note-state')).toHaveText('');
+  await area.evaluate(a => a.dispatchEvent(new CompositionEvent('compositionend')));
+  await expect(page.locator('#note-state')).toHaveText('未送信（この端末に保存しました）');
+  await page.getByRole('button', { name: 'この資料の履歴' }).click();
+  await expect(page.locator('#versions .version .tag').first()).toHaveText('未送信');
+});
+
+// FR-EDIT-03, FR-NOTE-03: on a phone, the input bar's preview over a note
+test.describe('a phone (a finger)', () => {
+  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+  test("the input bar's preview: the note read", async ({ page, gh, work }) => {
+    work.push(NOTES);
+    await openWork(page);
+    await page.getByRole('button', { name: '目次' }).click();
+    await page.getByRole('button', { name: '資料', exact: true }).click();
+    await page.locator('#notes-list [data-note]', { hasText: '世界観' }).click();
+    await page.getByLabel('資料の本文').focus();
+    await page.locator('#note-kbar').getByRole('button', { name: 'プレビュー' }).click();
+    await expect(page.locator('#note-preview h1')).toHaveText('世界観');
+  });
 });

@@ -18,6 +18,38 @@ async function authenticator(page, hasPrf) {
     },
   });
 }
+// The passkey's answers changed for a test, as other authenticators and browsers give them: localStorage 「nw-create」 and
+// 「nw-get」 say how (none: as the virtual authenticator answers)
+/** @param {import('@playwright/test').Page} page */
+async function otherAnswers(page) {
+  await page.addInitScript(() => {
+    const c = navigator.credentials;
+    const [create, get] = [c.create.bind(c), c.get.bind(c)];
+    /** @param {any} cred @param {any} results */
+    const saying = (cred, results) => Object.assign(cred, { getClientExtensionResults: () => results });
+    c.create = async o => {
+      const how = localStorage.getItem('nw-create');
+      if (how === 'null') return null;
+      if (how === 'error') throw new TypeError('test');
+      const cred = await create(o);
+      // (PRF said to be there, its output given only on a get)
+      return how === 'later' ? saying(cred, { prf: { enabled: true } }) : cred;
+    };
+    c.get = async o => {
+      const how = localStorage.getItem('nw-get');
+      if (how === 'cancel') throw new DOMException('test', 'NotAllowedError');
+      if (how === 'error') throw new TypeError('test');
+      if (how === 'string') throw 'test';
+      if (how === 'null') return null;
+      const cred = await get(o);
+      if (how === 'none') return saying(cred, {});
+      if (how === 'other') return saying(cred, { prf: { results: { first: new Uint8Array(32).fill(7).buffer } } });
+      return cred;
+    };
+  });
+}
+/** @param {import('@playwright/test').Page} page @param {string} key @param {string} value */
+const answering = (page, key, value) => page.evaluate(([k, v]) => localStorage.setItem(k, v), [key, value]);
 /** @param {import('@playwright/test').Page} page */
 async function putToken(page) {
   await page.goto('./');
@@ -81,6 +113,128 @@ test.describe('a passkey', () => {
     await expect(page.locator('#setup-error')).toHaveText(/パスキーが作られませんでした/);
     expect(await stored(page, 'vault')).toEqual([]);
   });
+  // FR-GH-01: whether the browser has PRF, said in other ways (or not said): a passkey is tried all the same
+  for (const [said, caps] of /** @type {const} */ ([
+    ['not asked (no getClientCapabilities)', 'none'],
+    ['not said', 'silent'],
+    ['the question failing', 'throws'],
+  ]))
+    test(`PRF ${said}: the passkey tried, and kept with it`, async ({ page, gh }) => {
+      await page.addInitScript(how => {
+        const PKC = /** @type {any} */ (window.PublicKeyCredential);
+        PKC.getClientCapabilities = how === 'none' ? undefined : how === 'silent' ? async () => ({}) : async () => Promise.reject(new Error('test'));
+      }, caps);
+      await authenticator(page, true);
+      await putToken(page);
+      await expect(page.locator('#vault-kind')).toHaveText(/パスキー（PRF）から作った鍵で暗号化/);
+      expect(/** @type {any[]} */ (await stored(page, 'vault'))[0].kind).toBe('prf');
+    });
+
+  // FR-GH-01: an authenticator that gives PRF's output only on a get, or not at all, or no passkey, or a browser that
+  // cannot: kept with the passkey when its output comes, else with the key that cannot be taken out
+  for (const [what, create, get, kind] of /** @type {const} */ ([
+    ['the output given on a get', 'later', '', 'prf'],
+    ['the output not given on the get either', 'later', 'none', 'local'],
+    ['no passkey back from the get', 'later', 'null', 'local'],
+    ['no passkey made', 'null', '', 'local'],
+    ['the browser cannot make one', 'error', '', 'local'],
+  ]))
+    test(`a passkey made, ${what}: kept as ${kind}`, async ({ page, gh }) => {
+      await otherAnswers(page);
+      await authenticator(page, true);
+      await page.goto('./');
+      await answering(page, 'nw-create', create);
+      await answering(page, 'nw-get', get);
+      await page.getByLabel('トークン', { exact: true }).fill(TOKEN);
+      await page.getByRole('button', { name: 'パスキーで保管する' }).click();
+      await expect(page.getByRole('button', { name: 'リポジトリを開く' })).toBeVisible();
+      expect(/** @type {any[]} */ (await stored(page, 'vault'))[0].kind).toBe(kind);
+    });
+
+  // NFR-USE-01: the token not opened by the passkey: why, said; opened when the passkey answers. Forgotten in another tab
+  // meanwhile: the first screen again
+  test('the passkey not opening the token: said why; opened once it does; forgotten elsewhere: the first screen', async ({ page, context, gh }) => {
+    await otherAnswers(page);
+    await authenticator(page, true);
+    await putToken(page);
+    await expect(page.getByRole('button', { name: 'リポジトリを開く' })).toBeVisible();
+    await page.reload();
+    for (const [how, said] of [
+      ['cancel', 'パスキーで開けませんでした（取り消されたか、時間切れです）'],
+      ['error', 'パスキーを使えません（TypeError）'],
+      ['string', 'パスキーを使えません（test）'],
+      ['none', 'パスキーが PRF の値を返しませんでした'],
+      ['other', 'トークンを復号できませんでした（作ったときと違うパスキーかもしれません）'],
+    ]) {
+      await answering(page, 'nw-get', how);
+      await page.getByRole('button', { name: 'パスキーで開く' }).click();
+      await expect(page.locator('#unlock-error')).toHaveText(said);
+    }
+    await answering(page, 'nw-get', '');
+    await page.getByRole('button', { name: 'パスキーで開く' }).click();
+    await expect(page.getByRole('button', { name: 'リポジトリを開く' })).toBeVisible();
+    await page.reload();
+    await expect(page.locator('#unlock')).toBeVisible();
+    const other = await context.newPage();
+    await other.goto('./');
+    other.once('dialog', d => void d.accept());
+    await other.getByRole('button', { name: 'トークンを忘れる' }).click();
+    await expect(other.locator('#setup')).toBeVisible();
+    await page.getByRole('button', { name: 'パスキーで開く' }).click();
+    await expect(page.locator('#setup')).toBeVisible();
+  });
+});
+
+// NFR-USE-01, FR-AUTH-07: the token kept without a passkey that cannot be opened (the browser's key no longer works):
+// said on the screen that opens it, and forgotten from there
+test('a token kept without a passkey that cannot be opened: said; forgotten from that screen', async ({ page, gh }) => {
+  await noPasskey(page);
+  await putToken(page);
+  await expect(page.getByRole('button', { name: 'リポジトリを開く' })).toBeVisible();
+  await page.addInitScript(() => {
+    crypto.subtle.decrypt = async () => Promise.reject(new DOMException('test', 'OperationError'));
+  });
+  await page.reload();
+  await expect(page.locator('#unlock')).toBeVisible();
+  await expect(page.locator('#unlock-error')).toHaveText('test');
+  page.once('dialog', d => void d.accept());
+  await page.locator('#forget-token-unlock').click();
+  await expect(page.locator('#setup')).toBeVisible();
+  expect(await stored(page, 'vault')).toEqual([]);
+});
+
+// FR-GH-01, NFR-SEC-16: a token of nothing but spaces is not kept; one whose user GitHub does not say is kept without
+// a user noted; one GitHub refuses while it is checked whose it is is not taken for the token in use refused
+test('the token put in: spaces only, nothing; its user not said, kept without one; refused by GitHub, nothing deleted', async ({ page, gh }) => {
+  await noPasskey(page);
+  await page.goto('./');
+  await page.getByLabel('トークン', { exact: true }).fill('   ');
+  await page.getByRole('button', { name: 'パスキーで保管する' }).click();
+  await expect(page.locator('#setup')).toBeVisible();
+  expect(await stored(page, 'vault')).toEqual([]);
+  await page.route('https://api.github.com/user', route =>
+    route.request().method() === 'GET'
+      ? route.fulfill({ status: 200, headers: { 'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json' }, body: '{}' })
+      : route.fallback(),
+  );
+  await page.getByLabel('トークン', { exact: true }).fill(TOKEN);
+  await page.getByRole('button', { name: 'パスキーで保管する' }).click();
+  await expect(page.getByRole('button', { name: 'リポジトリを開く' })).toBeVisible();
+  expect(await stored(page, 'prefs')).not.toContain('author');
+  // forgotten, and a token GitHub does not take put in: the check of its user is refused, and nothing more happens
+  const answers = [false, true];
+  page.on('dialog', d => void (answers.shift() ? d.accept() : d.dismiss()));
+  await page.getByRole('button', { name: 'トークンを忘れる' }).click();
+  // (not confirmed: nothing forgotten)
+  await expect(page.locator('#repos')).toBeVisible();
+  expect((await stored(page, 'vault')).length).toBe(1);
+  await page.getByRole('button', { name: 'トークンを忘れる' }).click();
+  await expect(page.locator('#setup')).toBeVisible();
+  await page.unroute('https://api.github.com/user');
+  await page.getByLabel('トークン', { exact: true }).fill('not-a-token');
+  await page.getByRole('button', { name: 'パスキーで保管する' }).click();
+  await expect(page.getByRole('button', { name: 'リポジトリを開く' })).toBeVisible();
+  await expect(page.locator('#token-notice')).toBeHidden();
 });
 
 test('no passkey in this browser: kept with a key that cannot be taken out; opened without asking', async ({ page, gh }) => {
@@ -214,7 +368,8 @@ test('a token GitHub refuses: said, with the way to put a new one in; a token th
   await page.getByRole('button', { name: '再読み込み' }).click();
   await expect(page.locator('#token-notice-text')).toHaveText(/^GitHub がトークンを断りました（期限が切れたか、消されたかもしれません）。/);
   await expect.poll(() => stored(page, 'snapshots')).toEqual([]);
-  expect(await stored(page, 'blobs')).toEqual([]);
+  // (deleted one by one, after the copies)
+  await expect.poll(() => stored(page, 'blobs')).toEqual([]);
   expect((await stored(page, 'drafts')).map(d => d.text)).toEqual(['# 第1話 はじまり\n\n断られても残る\n']);
   await page.getByRole('button', { name: '新しいトークンを入れる' }).click();
   await page.getByLabel('新しいトークン', { exact: true }).fill('wrong-token');
@@ -224,6 +379,38 @@ test('a token GitHub refuses: said, with the way to put a new one in; a token th
   await page.getByRole('button', { name: 'パスキーで保管する' }).click();
   await expect(page.locator('#sync-state')).toHaveText(/GitHub から読みました/);
   await expect(page.locator('#token-notice')).toBeHidden();
+});
+
+// FR-GH-01, NFR-USE-01: refused on the list of works: after a reload (the expiry kept deleted with the rest) nothing is
+// said until GitHub is asked; the new token put in there, the list shown again. The dialog closed without one, and a
+// token of spaces only, change nothing
+test('refused on the list of works: said when GitHub is asked; the new token put in there, the list shown again', async ({ page, gh }) => {
+  await openWork(page);
+  await page.getByRole('button', { name: 'ほかの作品' }).click();
+  gh.tokens = ['new-test-token-not-real'];
+  await page.getByRole('button', { name: 'リポジトリを開く' }).click();
+  await expect(page.locator('#token-notice-text')).toHaveText(/^GitHub がトークンを断りました/);
+  await expect.poll(() => stored(page, 'snapshots')).toEqual([]);
+  await page.reload();
+  await expect(page.locator('#repos')).toBeVisible();
+  await expect(page.locator('#token-notice')).toBeHidden();
+  await page.getByRole('button', { name: 'リポジトリを開く' }).click();
+  await expect(page.locator('#token-notice-text')).toHaveText(/^GitHub がトークンを断りました/);
+  await page.getByRole('button', { name: '新しいトークンを入れる' }).click();
+  await page.locator('#close-token-replace').click();
+  await expect(page.locator('#token-replace')).toBeHidden();
+  await page.getByRole('button', { name: '新しいトークンを入れる' }).click();
+  await page.getByLabel('新しいトークン', { exact: true }).fill('   ');
+  await page.getByRole('button', { name: 'パスキーで保管する' }).click();
+  await expect(page.locator('#token-replace-error')).toHaveText('');
+  await expect(page.locator('#token-replace')).toBeVisible();
+  await page.getByLabel('新しいトークン', { exact: true }).fill('new-test-token-not-real');
+  await page.getByRole('button', { name: 'パスキーで保管する' }).click();
+  await expect(page.locator('#toast')).toHaveText('新しいトークンを保管しました');
+  await expect(page.locator('#token-notice')).toBeHidden();
+  await expect(page.locator('#repos')).toBeVisible();
+  await page.getByRole('button', { name: 'リポジトリを開く' }).click();
+  await expect(page.locator('#picker-list button')).toHaveText(['author/novel', 'author/other']);
 });
 
 // NFR-SEC-16: the token forgotten: with it, what the device keeps of the works; the drafts too when the author says so

@@ -57,8 +57,8 @@ async function picked() {
 
 /** @type {string[]} the pictures listed, by their place in the list */
 let listed = [];
-/** @type {() => void} what draws 資料 again after a picture changed */
-let again = () => {};
+/** @type {() => void} what draws 資料 again after a picture changed (wireImages) */
+let again;
 // the pictures drawn on 資料, by folder (in more than one folder, each under its path, so two of the same name are told apart)
 export async function renderImages() {
   const l = api.view().layout;

@@ -176,3 +176,131 @@ test('taken off the list, what was not sent given up: nothing sent, the drafts g
   expect(await stored(page, 'drafts')).toEqual([]);
   expect(gh.calls.filter(c => !c.startsWith('GET'))).toEqual([]);
 });
+
+// FR-WORK-05, FR-WORK-03: a work taken off the list is offered by 「リポジトリを開く」; opened, it is on the list again
+test('taken off the list, then opened from リポジトリを開く: on the list again', async ({ page, gh }) => {
+  await openWork(page);
+  page.once('dialog', d => void d.accept());
+  await page.getByRole('button', { name: '一覧から外す' }).click();
+  await expect(page.locator('#off-list summary')).toHaveText('一覧から外した作品（1）');
+  await page.getByRole('button', { name: 'リポジトリを開く' }).click();
+  await expect(page.locator('#picker-list button')).toHaveText(['author/novel', 'author/other']);
+  await page.locator('#picker-list button', { hasText: 'author/novel' }).click();
+  await expect(page.locator('#episode-title')).toHaveValue('はじまり');
+  await page.getByRole('button', { name: 'ほかの作品' }).click();
+  await expect(page.locator('#repo-list .work b')).toHaveText(['試験の作品']);
+  await expect(page.locator('#off-list')).toBeEmpty();
+});
+
+// FR-WORK-01, FR-GH-11: the work a device had open kept from before its visibility was (only `private`): its row says
+// it all the same, and opens it
+test('the work kept from before its visibility was: 非公開 or 公開 from `private`', async ({ page, gh }) => {
+  await openWork(page);
+  for (const [priv, tag] of /** @type {const} */ ([
+    [true, '非公開'],
+    [false, '公開'],
+  ])) {
+    await page.evaluate(
+      p =>
+        new Promise((resolve, reject) => {
+          const req = indexedDB.open('novel-writer-js');
+          req.onsuccess = () => {
+            const tx = req.result.transaction('prefs', 'readwrite');
+            tx.objectStore('prefs').delete('works');
+            tx.objectStore('prefs').put({ full_name: 'author/novel', default_branch: 'main', private: p }, 'repo');
+            tx.oncomplete = resolve;
+            tx.onerror = () => reject(tx.error);
+          };
+          req.onerror = () => reject(req.error);
+        }),
+      priv,
+    );
+    await page.reload();
+    await expect(page.locator('#episode-title')).toHaveValue('はじまり');
+    await page.getByRole('button', { name: 'ほかの作品' }).click();
+    await expect(page.locator('#repo-list .vis')).toHaveText(tag);
+    await expect(page.locator('#repo-list .work')).toHaveAttribute('data-visibility', priv ? 'private' : 'public');
+  }
+  await page.locator('#repo-list .work').click();
+  await expect(page.locator('#episode-title')).toHaveValue('はじまり');
+});
+
+// FR-WORK-01: a summary kept that no longer holds (a commit made elsewhere; a branch it read deleted): read again
+test('a summary kept no longer holding (a commit elsewhere, a branch deleted): read again', async ({ page, gh, work }) => {
+  const other = /** @type {import('./lib/test.mjs').FakeRepo} */ (gh.repos.get('author/other'));
+  other.push({ 'novel.toml': 'title = "ほかの試験"\n\n[git]\nbranch = "draft"\n' });
+  other.refs.draft = other.refs.main;
+  other.push({ '01.md': '# 一\n\nあいうえお\n' }, 'draft');
+  await openWork(page);
+  await page.getByRole('button', { name: 'ほかの作品' }).click();
+  await openRepo(page, 'author/other');
+  await page.getByRole('button', { name: 'ほかの作品' }).click();
+  await expect(rows(page)).toHaveText([/^37 字 ・ 3 話 /, /^7 字 ・ 1 話 .* author\/other（draft）公開$/]);
+  work.push({ 'chapters/04_new.md': '# 第4話 新\n\n一二三\n' });
+  delete other.refs.draft;
+  await page.locator('#repo-list .work', { hasText: 'author/novel' }).click();
+  await expect(page.locator('#episode-title')).toHaveValue('はじまり');
+  await page.getByRole('button', { name: 'ほかの作品' }).click();
+  await expect(rows(page)).toHaveText([/^45 字 ・ 4 話 /, /^0 字 ・ 0 話 .* author\/other（main）公開$/]);
+});
+
+// FR-WORK-01: the list asked for twice at once (two taps): shown once, its rows filled
+test('the list asked for twice at once: shown and filled once', async ({ page, gh }) => {
+  await openWork(page);
+  await page.evaluate(() => {
+    const b = /** @type {HTMLElement} */ (document.getElementById('change-repo'));
+    b.click();
+    b.click();
+  });
+  await expect(rows(page)).toHaveText([/^37 字 ・ 3 話 /]);
+});
+
+// FR-WORK-01: the list left and shown again while its works were still being read (a slow GitHub): the rows of the
+// list shown now only, the reading for the one before stopped
+test('the list shown again while the one before was still reading: only the new one fills in', async ({ page, gh }) => {
+  for (const name of ['author/third', 'author/fourth']) {
+    const repo = new FakeRepo(name, { 'novel.toml': `title = "${name.split('/')[1]}"\n`, '01.md': '# 一\n\nあ\n' });
+    repo.id = ++gh.ids;
+    gh.repos.set(name, repo);
+  }
+  await openWork(page);
+  for (const name of ['author/other', 'author/third', 'author/fourth']) {
+    await page.getByRole('button', { name: 'ほかの作品' }).click();
+    await openRepo(page, name);
+    await expect(page.locator('#work-repo a')).toHaveText(name);
+  }
+  await page.getByRole('button', { name: 'ほかの作品' }).click();
+  await expect(rows(page)).toHaveCount(4);
+  await expect(page.locator('#repo-list .work small', { hasText: '読み込んでいます' })).toHaveCount(0);
+  await page.getByRole('button', { name: '戻る' }).click();
+  await expect(page.locator('#work-repo a')).toHaveText('author/fourth');
+  // the summaries asked again: the refs of the first three works held (three are read at once; the fourth is the work
+  // open, which the desk reads too)
+  /** @type {((how: 'go' | 'fail') => void)[]} */
+  const held = [];
+  let holding = true;
+  await page.route('https://api.github.com/repos/*/*/git/ref/heads/**', async route => {
+    if (!holding || route.request().method() !== 'GET' || route.request().url().includes('/author/fourth/')) return route.fallback();
+    const how = await new Promise(r => held.push(r));
+    return how === 'go' ? route.fallback() : route.abort('failed');
+  });
+  await page.getByRole('button', { name: 'ほかの作品' }).click();
+  await expect.poll(() => held.length).toBe(3);
+  holding = false;
+  await page.getByRole('button', { name: '戻る' }).click();
+  await expect(page.locator('#work-repo a')).toHaveText('author/fourth');
+  await page.getByRole('button', { name: 'ほかの作品' }).click();
+  await expect(page.locator('#repo-list .work b')).toHaveText(['試験の作品', 'other', 'third', 'fourth']);
+  await expect(page.locator('#repo-list .work small', { hasText: '読み込んでいます' })).toHaveCount(0);
+  const [fail, ...go] = held.splice(0);
+  let answered = 0;
+  page.on('requestfinished', r => void (/\/git\/ref\/heads\/main$/.test(r.url()) && answered++));
+  fail('fail');
+  for (const g of go) g('go');
+  // (the reading for the list before stops without anything to see: once its answers are in, and the page has had a
+  // turn after them, the rows stay as they are)
+  await expect.poll(() => answered).toBeGreaterThanOrEqual(2);
+  await page.evaluate(() => new Promise(r => setTimeout(r, 100)));
+  await expect(page.locator('#repo-list .work b')).toHaveText(['試験の作品', 'other', 'third', 'fourth']);
+  await expect(rows(page).first()).toHaveText(/^37 字 ・ 3 話 /);
+});

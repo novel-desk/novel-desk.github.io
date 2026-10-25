@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest';
-import { draftKey, draftOf, afterSend, typedOver } from '../../lib/drafts.js';
+import { draftKey, draftOf, afterSend, goneWhileSent, typedOver } from '../../lib/drafts.js';
 
 describe('drafts', () => {
   test('draftKey: one for each repository and path', () => {
@@ -17,6 +17,13 @@ describe('drafts', () => {
     const more = { ...draft, text: '送った後も' };
     expect(afterSend(more, '送った', 's2', false)).toEqual({ ...more, base: 's2' });
     expect(afterSend(more, '送った', 's2', true)).toBe(more);
+  });
+  // FR-SAVE-01
+  test('goneWhileSent: a text typed back to the one read while it was sent is that text read; an operation as it was sent', () => {
+    const draft = { repo: 'o/r', path: '01.md', base: 's1', text: '送った', at: 5 };
+    expect(goneWhileSent(draft, '元')).toEqual({ ...draft, text: '元' });
+    const op = { repo: 'o/r', path: '02.md', base: '', sha: 's1', op: 'op1', at: 1 };
+    expect(goneWhileSent(op, '元')).toBe(op);
   });
   test("typedOver: a file an operation put there keeps being that operation's, with the text typed", () => {
     const moved = { repo: 'o/r', path: '02.md', base: '', sha: 's1', from: { path: '01.md', base: 's1' }, op: 'op1', auto: true, at: 1 };

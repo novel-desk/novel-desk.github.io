@@ -69,8 +69,8 @@ export async function openRecord() {
     w.repo,
     api.episodes().reduce((sum, e) => sum + e.chars, 0),
   );
-  /** @type {Kept} */
-  const kept = (await store.get('prefs', key(w.repo))) ?? { days: {}, history: false };
+  /** @type {Kept} (noted just now) */
+  const kept = await store.get('prefs', key(w.repo));
   let failed = '';
   if (!kept.history && !w.offline) {
     try {

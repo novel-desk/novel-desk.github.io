@@ -2,7 +2,7 @@
 // renamed, put in the trash and reordered, and sending and reading again. The work, the changes not sent and the
 // episode open are this module's: the others call open() and the functions it gives them
 import { moveFiles, rebase, relabel, unsentList, withoutOp, writeFile } from '../lib/changes.js';
-import { afterSend, draftKey, draftOf, typedOver } from '../lib/drafts.js';
+import { afterSend, draftKey, draftOf, goneWhileSent, typedOver } from '../lib/drafts.js';
 import * as plans from '../lib/episodes.js';
 import { charsOf, esc, n, rowTimes, whenLong } from '../lib/format.js';
 import { imageType } from '../lib/github.js';
@@ -132,6 +132,9 @@ const unsent = () => drafts.size + (edits.length && !drafts.has('novel.toml') ? 
 
 // --- the table of contents
 
+// the screens of the work (資料, プロット, キャラ, 記録, リリース): not until it is read (the branches and 一覧から外す
+// say what they need when it is not)
+const WORK_TOOLS = ['open-notes', 'open-plot', 'open-characters', 'open-record', 'name-version', 'open-versions'];
 function renderToc() {
   const v = shown();
   const w = /** @type {NonNullable<typeof work>} */ (work);
@@ -178,6 +181,7 @@ function renderToc() {
   $('reload').disabled = busy || mode === 'off';
   $('sync-mode').value = mode;
   for (const id of ['add-episode', 'add-chapter', 'toggle-reorder', 'trash-episode']) $(id).disabled = busy || (id === 'trash-episode' && !current);
+  for (const id of WORK_TOOLS) $(id).disabled = false;
   $('prev-episode').disabled = !neighbor(-1);
   $('next-episode').disabled = !neighbor(1);
   paintTimes();
@@ -228,7 +232,7 @@ function showUpdated() {
 function paintTimes() {
   const said = rowTimes(Object.fromEntries(episodes().map(e => [e.path, updatedOf(e.path)])));
   for (const u of /** @type {NodeListOf<HTMLElement>} */ ($('tree').querySelectorAll('.node.episode .u')))
-    u.textContent = said[/** @type {HTMLElement} */ (u.parentElement).dataset.path ?? ''] ?? '';
+    u.textContent = said[/** @type {string} */ (/** @type {HTMLElement} */ (u.parentElement).dataset.path)];
   showUpdated();
 }
 // The last commits of the episodes, asked of GitHub lazily: a row when it comes into sight, the open episode when it
@@ -272,24 +276,25 @@ let sight = null;
 function watchRows() {
   sight?.disconnect();
   for (const row of /** @type {NodeListOf<HTMLElement>} */ ($('tree').querySelectorAll('.node.episode')))
-    if (!updatedOf(row.dataset.path ?? '')) sight?.observe(row);
+    if (!updatedOf(/** @type {string} */ (row.dataset.path))) sight?.observe(row);
 }
 /** @param {string} path @returns {Promise<boolean>} */
 async function openEpisode(path) {
   const w = /** @type {NonNullable<typeof work>} */ (work);
   current = path;
-  const e = findEpisode(path);
-  const text = e ? textOf(path) : null;
+  // (an episode of the table of contents: the callers open one of its rows)
+  const e = /** @type {import('../lib/layout.js').TocEpisode} */ (findEpisode(path));
+  const text = textOf(path);
   const area = /** @type {HTMLTextAreaElement} */ ($('body'));
   area.value = text ?? '';
   area.disabled = text === null;
   area.scrollTop = 0;
-  $('episode-title').value = e ? titleAt(e.rel) : '';
-  $('episode-title').disabled = !e;
+  $('episode-title').value = titleAt(e.rel);
+  $('episode-title').disabled = false;
   $('toggle-preview').disabled = text === null;
   stopReading();
   showCounts();
-  if (e && text === null) {
+  if (text === null) {
     const note = $('episode-note');
     note.hidden = false;
     note.textContent = w.offline ? 'この話はまだこの端末に読み込まれていません（つながってから開いてください）' : '文字コードが UTF-8 ではないため開けません';
@@ -395,6 +400,8 @@ async function openHistory() {
       if (current !== path) return;
       await snapshot(path, $('body').value, true);
       setKeepingCaret(/** @type {HTMLTextAreaElement} */ ($('body')), text);
+      // (the text put back is shown: the preview was of the text before)
+      stopReading();
       typed();
       toast(`「${titleAt(e.rel)}」を復元しました（送るまではこの端末だけの変更です）`);
     },
@@ -468,7 +475,6 @@ async function addChapter() {
   if (plan) await apply(plan, plan.path);
 }
 async function renameEpisode() {
-  if (!current) return;
   const title = $('episode-title').value;
   const e = findEpisode(current);
   if (!e || title === titleAt(e.rel)) return;
@@ -477,8 +483,7 @@ async function renameEpisode() {
 }
 /** @param {string} path */
 async function renameChapter(path) {
-  const it = shown().toc.find(c => c.path === path);
-  if (!it) return;
+  const it = /** @type {import('../lib/layout.js').TocItem} */ (shown().toc.find(c => c.path === path));
   const now = titleAt(it.rel);
   const title = prompt('章の題名', now);
   if (title === null || !title.trim() || title === now) return;
@@ -493,11 +498,12 @@ async function trashEpisode() {
   )
     return;
   const i = episodes().indexOf(e);
-  const plan = planned(() => plans.trash(forPlans(), current, Date.now()));
-  if (!plan) return;
+  const plan = plans.trash(forPlans(), current, Date.now());
   const rest = episodes().filter(x => x !== e);
   const next = rest[Math.max(0, i - 1)];
-  if (await apply(plan, next?.path ?? '')) toast('削除しました（_trash/ に移動。送るまではこの端末だけの変更です）');
+  // (no key of novel.toml to set that it could not take: the trash only takes away the titles novel.toml has)
+  await apply(plan, next?.path ?? '');
+  toast('削除しました（_trash/ に移動。送るまではこの端末だけの変更です）');
 }
 /** @param {import('../lib/episodes.js').OrderItem[] | null} want */
 async function sendOrder(want) {
@@ -552,7 +558,8 @@ async function texts(paths) {
   for (const p of paths) {
     const c = drafts.get(p);
     if (!files[p]) out[p] = null;
-    else if (c) out[p] = c.text ?? w.shaTexts[c.sha ?? ''] ?? null;
+    // (a text file's change: its text, or the blob it moved)
+    else if (c) out[p] = c.text ?? w.shaTexts[/** @type {string} */ (c.sha)] ?? null;
     else out[p] = w.texts[p] ?? w.shaTexts[files[p].sha] ?? null;
   }
   return out;
@@ -563,7 +570,8 @@ function insertImage() {
   if (!path) return;
   pickImage(async (file, put) => {
     if (current !== path) return;
-    if (!(await apply({ moves: [], writes: [{ path: file, bytes: put }], edits: [], path: file }, undefined, true))) return;
+    // (no key of novel.toml to set: kept)
+    await apply({ moves: [], writes: [{ path: file, bytes: put }], edits: [], path: file }, undefined, true);
     insertAt(/** @type {HTMLTextAreaElement} */ ($('body')), `\n![](${relPath(path, file)})\n`);
     toast('画像を挿入しました（送るまではこの端末だけの変更です）');
   });
@@ -621,10 +629,8 @@ async function keepConverted() {
   if (!paths.length) return;
   const got = await texts(paths);
   const next = new Map(drafts);
-  for (const p of paths) {
-    const text = got[p];
-    if (text !== null) next.set(p, { repo: w.repo, path: p, base: w.blobs[p].sha, text, at: Date.now() });
-  }
+  // (read as text before: a blob is noted as converted when its text is read)
+  for (const p of paths) next.set(p, { repo: w.repo, path: p, base: w.blobs[p].sha, text: /** @type {string} */ (got[p]), at: Date.now() });
   keep(next);
 }
 // reads the work from GitHub again; the changes stay as they are, and the episode open shows its draft if it has one.
@@ -734,7 +740,7 @@ async function relinkRepo() {
 // sent first, or given up, as the author chooses
 async function deleteWork() {
   const r = /** @type {Repo} */ (repo);
-  const title = $('work-title').value || r.full_name;
+  const title = $('work-title').value;
   if (!confirm(`「${title}」を作品の一覧から外しますか？（GitHub のリポジトリ ${r.full_name} は消しません。この端末に残した控え・履歴・設定は消します）`))
     return;
   const left = unsent();
@@ -842,7 +848,8 @@ async function sendDrafts() {
     failed = new Set();
     const next = new Map(drafts);
     for (const { draft, blob, both } of result.sent) {
-      const after = afterSend(next.get(draft.path) ?? draft, draft.text, blob, both);
+      // (gone from the device while it was sent: what the author has is the text read, not the one sent)
+      const after = afterSend(next.get(draft.path) ?? goneWhileSent(draft, remoteText(draft.path)), draft.text, blob, both);
       if (after) next.set(draft.path, after);
       else next.delete(draft.path);
     }
@@ -897,6 +904,8 @@ export async function open(r) {
   /** @type {HTMLTextAreaElement} */ ($('body')).disabled = true;
   $('episode-title').value = '';
   $('tree').innerHTML = '';
+  // (the operations wait until the work is read: renderToc)
+  for (const id of ['add-episode', 'add-chapter', 'toggle-reorder', 'trash-episode', ...WORK_TOOLS]) $(id).disabled = true;
   $('work-title').value = r.full_name.split('/')[1];
   /** @type {Draft[]} */
   const kept = await store.all('drafts');
@@ -939,7 +948,7 @@ function wireDrag() {
   tree.addEventListener('dragstart', e => {
     const node = /** @type {HTMLElement} */ (e.target).closest('[data-node]');
     if (!(node instanceof HTMLElement)) return;
-    dragging = node.dataset.node ?? null;
+    dragging = /** @type {string} */ (node.dataset.node);
     if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
   });
   tree.addEventListener('dragover', e => {
@@ -974,14 +983,11 @@ async function setMode(value) {
   sendSoon();
 }
 
-/** the list of works shown (app.js) */
-let changeRepo = () => {};
-let wired = false;
-// the desk's buttons and the text box, once
+/** @type {() => void} the list of works shown (app.js) */
+let changeRepo;
+// the desk's buttons and the text box (once, by app.js)
 /** @param {{ changeRepo: () => void, open: (r: Repo) => Promise<void>, relist: () => Promise<void> }} on */
 export function wire(on) {
-  if (wired) return;
-  wired = true;
   const area = /** @type {HTMLTextAreaElement} */ ($('body'));
   evenBreaks(area);
   area.addEventListener('input', e => {
@@ -997,8 +1003,9 @@ export function wire(on) {
     }
   });
   $('tree').addEventListener('change', e => {
-    const s = /** @type {HTMLElement} */ (e.target).closest('[data-to-chapter]');
-    if (s instanceof HTMLSelectElement) void sendOrder(plans.moveToChapter(plans.orderOf(shown().toc), /** @type {string} */ (s.dataset.path), s.value));
+    // (the chapter to move an episode to: the only field in the rows)
+    const s = /** @type {HTMLSelectElement} */ (e.target);
+    void sendOrder(plans.moveToChapter(plans.orderOf(shown().toc), /** @type {string} */ (s.dataset.path), s.value));
   });
   wireDrag();
   $('send').addEventListener('click', () => void sendDrafts());
@@ -1065,7 +1072,7 @@ export function wire(on) {
     for (const e of seen)
       if (e.isIntersecting) {
         sight?.unobserve(e.target);
-        ask(/** @type {HTMLElement} */ (e.target).dataset.path ?? '');
+        ask(/** @type {string} */ (/** @type {HTMLElement} */ (e.target).dataset.path));
       }
   });
   setInterval(() => void readIn(), 60000);

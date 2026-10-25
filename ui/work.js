@@ -96,8 +96,8 @@ async function readIfThere(repo, branch, heads) {
 // else the default branch; a branch that GitHub no longer has is passed over (and named in `gone`). `heads`: every ref
 // looked at on the way, and the commit it was at ('' not there), so that a summary kept by them can be checked with
 // those refs alone (FR-WORK-01)
-/** @param {string} repo @param {string} defaultBranch @param {string} [chosen] */
-export async function readFiles(repo, defaultBranch, chosen = '') {
+/** @param {string} repo @param {string} defaultBranch @param {string} chosen ('' none) */
+export async function readFiles(repo, defaultBranch, chosen) {
   /** @type {[string, string][]} */
   const heads = [];
   let gone = '';
@@ -115,8 +115,8 @@ export async function readFiles(repo, defaultBranch, chosen = '') {
   return { files, gone, heads };
 }
 // The work, read from GitHub (readFiles). Offline, the one last read
-/** @param {string} repo @param {string} defaultBranch @param {string} [chosen] @returns {Promise<Work & { gone: string }>} */
-export async function load(repo, defaultBranch, chosen = '') {
+/** @param {string} repo @param {string} defaultBranch @param {string} chosen ('' none) @returns {Promise<Work & { gone: string }>} */
+export async function load(repo, defaultBranch, chosen) {
   /** @type {Files} */
   let files;
   let offline = false;

@@ -211,6 +211,8 @@ export class FakeGitHub {
     this.down = false;
     /** @type {((method: string, path: string) => void) | null} done before a request is answered, for a test */
     this.before = null;
+    // the trees answered as cut short (a repository with too many files for one listing)
+    this.truncated = false;
   }
   // a repository renamed (or moved to another owner) on GitHub: its old name sent on to it
   /** @param {string} from @param {string} to */
@@ -418,7 +420,7 @@ export class FakeGitHub {
         ...[...folders].map(p => ({ path: p, mode: '040000', type: 'tree', sha: sha1(p) })),
         ...Object.entries(entries).map(([p, e]) => ({ path: p, mode: e.mode, type: e.mode === '160000' ? 'commit' : 'blob', sha: e.sha })),
       ];
-      return reply(200, { sha: g[1], tree, truncated: false });
+      return reply(200, { sha: g[1], tree, truncated: this.truncated });
     }
     if (method === 'GET' && (g = /^blobs\/(\w+)$/.exec(rest))) {
       const b = repo.blobs.get(g[1]);

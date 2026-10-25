@@ -12,7 +12,7 @@ import { $ } from './dom.js';
 import * as store from './db.js';
 import * as gh from './github.js';
 import { pick } from './picker.js';
-import { worksHere } from './repo.js';
+import { offList, worksHere } from './repo.js';
 import { contents, each, readFiles } from './work.js';
 
 /** @typedef {import('../lib/works.js').Summary} Summary */
@@ -50,9 +50,9 @@ function render(list, kept) {
   rows().forEach((b, i) => putRow(b, list[i], kept.get(list[i].full_name) ?? null, state(list[i])));
 }
 /** @param {Listed} r @param {Summary | null} s @param {string} [state] */
+// (called only while the list is the one shown: its rows are the list's)
 function fill(r, s, state) {
-  const b = rows().find(x => x.dataset.repo === r.full_name);
-  if (b) putRow(b, r, s, state);
+  putRow(/** @type {HTMLElement} */ (rows().find(x => x.dataset.repo === r.full_name)), r, s, state);
 }
 // a ref's commit now ('' when the branch is not there)
 /** @param {string} repo @param {string} branch */
@@ -99,7 +99,7 @@ function renderOff(off) {
 // the repositories the list shows (not the ones taken off it), and those taken off shown apart
 /** @param {Listed[]} all */
 async function shownOf(all) {
-  const { shown, off } = listed(all, (await store.get('prefs', 'off-list')) ?? []);
+  const { shown, off } = listed(all, await offList());
   renderOff(off);
   return shown;
 }
@@ -108,8 +108,7 @@ export function wireWorks(on) {
   $('off-list').addEventListener('click', async e => {
     const b = /** @type {HTMLElement} */ (e.target).closest('[data-back-on]');
     if (!(b instanceof HTMLElement)) return;
-    /** @type {string[]} */
-    const off = (await store.get('prefs', 'off-list')) ?? [];
+    const off = await offList();
     await store.put(
       'prefs',
       'off-list',
@@ -136,7 +135,7 @@ async function openOther(open) {
   } finally {
     $('open-other').disabled = false;
   }
-  const on = listed(await worksHere(), (await store.get('prefs', 'off-list')) ?? []).shown;
+  const on = listed(await worksHere(), await offList()).shown;
   const choices = offered(
     all,
     on.map(r => r.full_name),

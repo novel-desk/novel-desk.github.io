@@ -12,21 +12,20 @@ let items = [];
 // a path as the list says it: an episode by its title, anything else by its path
 /** @param {string} path */
 const said = path => api.episodes().find(e => e.path === path)?.title ?? path;
+// (opened, and drawn again, only while something is not sent: the button is hidden otherwise)
 function render() {
   items = api.unsentItems();
-  $('unsent-body').innerHTML = items.length
-    ? items
-        .map((it, i) => {
-          if (it.kind === 'text')
-            return `<div class="unsent-item"><div><b>${esc(said(it.path))}</b><small>書いた文章</small></div><button class="ghost danger" data-discard="${i}">取り消す</button></div>`;
-          const lines = kindsOf(it.changes).map(k =>
-            k.kind === 'R' ? `${esc(said(k.path))} → ${esc(k.to)}` : `${esc(said(k.path))}（${{ A: '追加', D: '削除', M: '書き換え' }[k.kind]}）`,
-          );
-          if (it.keys) lines.push(`novel.toml の設定 ${it.keys} か所`);
-          return `<div class="unsent-item"><div><b>操作</b><small>${lines.join('<br>')}</small></div><button class="ghost danger" data-discard="${i}">取り消す</button></div>`;
-        })
-        .join('')
-    : '<p class="muted small">未送信の変更はありません。</p>';
+  $('unsent-body').innerHTML = items
+    .map((it, i) => {
+      if (it.kind === 'text')
+        return `<div class="unsent-item"><div><b>${esc(said(it.path))}</b><small>書いた文章</small></div><button class="ghost danger" data-discard="${i}">取り消す</button></div>`;
+      const lines = kindsOf(it.changes).map(k =>
+        k.kind === 'R' ? `${esc(said(k.path))} → ${esc(k.to)}` : `${esc(said(k.path))}（${{ A: '追加', D: '削除', M: '書き換え' }[k.kind]}）`,
+      );
+      if (it.keys) lines.push(`novel.toml の設定 ${it.keys} か所`);
+      return `<div class="unsent-item"><div><b>操作</b><small>${lines.join('<br>')}</small></div><button class="ghost danger" data-discard="${i}">取り消す</button></div>`;
+    })
+    .join('');
 }
 /** @param {number} i */
 async function discard(i) {
@@ -36,10 +35,8 @@ async function discard(i) {
       ? 'この操作を取り消しますか？（その中で書いた文章は、元の話に残ります）'
       : `「${said(it.path)}」に書いた文章を捨てますか？（GitHub の版に戻ります。捨てた文章はこの端末の履歴に残ります）`;
   if (!confirm(what)) return;
-  if (it.kind === 'text') {
-    const text = (await api.texts([it.path]))[it.path];
-    if (text !== null) await api.snapshot(it.path, text, true);
-  }
+  // (the text given up kept in the history: a text written alone always has one)
+  if (it.kind === 'text') await api.snapshot(it.path, /** @type {string} */ (api.drafts().get(it.path)?.text), true);
   await api.discard(it);
   if (api.unsent()) render();
   else dialog().close();

@@ -13,7 +13,9 @@ import { forgetDevice, keepWork } from './ui/repo.js';
 
 /** @typedef {import('./ui/desk.js').Repo} Repo */
 
+// what the screen says of how the token is kept ('' none kept yet)
 const KINDS = {
+  '': '',
   prf: 'トークンはパスキー（PRF）から作った鍵で暗号化して、この端末に置いています。開くたびにパスキーを使います。',
   local:
     'このブラウザーはパスキーの PRF に対応していないため、トークンはこの端末の取り出せない鍵（WebCrypto）で暗号化して置いています。パスキーは使いません。この端末でこのブラウザーを開ける人は、トークンを使えます。',
@@ -126,7 +128,7 @@ function screenInfo() {
 async function chooseRepo() {
   show('repos');
   $('screen-info').textContent = screenInfo();
-  $('vault-kind').textContent = kind ? KINDS[kind] : '';
+  $('vault-kind').textContent = KINDS[kind];
   $('repos-back').hidden = !(await store.get('prefs', 'repo'));
   await showWorks();
   switchSoon();
@@ -179,8 +181,9 @@ async function replaceToken(/** @type {SubmitEvent} */ e) {
     /** @type {HTMLDialogElement} */ (/** @type {unknown} */ ($('token-replace'))).close();
     hideNotice();
     toast('新しいトークンを保管しました');
+    // (the notice that opens this is shown on the desk and on the list of works only)
     if (!$('desk').hidden) await api.reload();
-    else if (!$('repos').hidden) await chooseRepo();
+    else await chooseRepo();
   } catch (err) {
     gh.useToken(before);
     $('token-replace-error').textContent = err.message;
@@ -259,8 +262,8 @@ addEventListener('appinstalled', () => {
   offer = null;
   showInstall();
 });
+// (the button is shown only while the browser's offer is kept)
 $('install').addEventListener('click', async () => {
-  if (!offer) return;
   await offer.prompt();
   offer = null;
   showInstall();
@@ -286,7 +289,7 @@ try {
 }
 $('theme-pick').addEventListener('click', e => {
   const b = /** @type {HTMLElement} */ (e.target).closest('[data-theme-pick]');
-  if (b instanceof HTMLElement) setTheme(b.dataset.themePick ?? '');
+  if (b instanceof HTMLElement) setTheme(/** @type {string} */ (b.dataset.themePick));
 });
 // --- a new version of the app (FR-APP-02): its worker takes over at once (sw.js); the page is loaded again when
 // nothing typed can be lost (lib/install.js switchNow): off the desk, or when the desk is left (the page hidden). The
@@ -309,4 +312,8 @@ if ('serviceWorker' in navigator) {
   setInterval(check, 3600000);
   navigator.serviceWorker.register('sw.js').catch(() => {});
 }
-void start();
+// (this device's store cannot be opened: a newer version of the app made it, or the browser does not allow it)
+void start().catch(err => {
+  show('setup');
+  $('setup-error').textContent = `この端末の保存場所を開けません（${err.message}）`;
+});

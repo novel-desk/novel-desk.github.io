@@ -125,28 +125,24 @@ function showLines(start, end, name) {
 /** @param {'g' | 'c'} kind @param {number} gi @param {number | undefined} ci @param {string} want the box's heading */
 export function showBox(kind, gi, ci, want) {
   const lines = area().value.split('\n');
-  let range;
-  try {
-    range = boxRange(parsePlot(area().value), kind, gi, ci);
-  } catch {
-    return;
-  }
-  if (!/^#{1,2}\s/.test(lines[range[0]] ?? '') || lines[range[0]].replace(/^#{1,2}\s+/, '').trim() !== want) return;
+  // (the note open is the one the boxes were drawn from: the box is in it. A box without a heading, the part before the
+  // first 大箱, is not written by itself)
+  const range = boxRange(parsePlot(area().value), kind, gi, ci);
+  if (!/^#{1,2}\s/.test(lines[range[0]]) || lines[range[0]].replace(/^#{1,2}\s+/, '').trim() !== want) return;
   showLines(range[0], range[1], want.replace(/^大箱[\d０-９]+[：:]\s*/, ''));
 }
 // a person of the characters written by itself (FR-NOTE-08), as a box of the plot
-/** @param {[number, number] | null} range its lines in the note open @param {string} head */
+/** @param {[number, number]} range its lines in the note open @param {string} head */
 export function showPerson(range, head) {
-  if (range) showLines(range[0], range[1], head);
+  showLines(range[0], range[1], head);
 }
-// 「全体」: the whole note again, the caret where the box begins
+// 「全体」: the whole note again, the caret where the box begins (its button shown only while a box is written by itself)
 function showWhole() {
-  if (!noteSection) return;
-  const at = noteSection.before.reduce((n, l) => n + l.length + 1, 0);
+  const at = /** @type {NonNullable<typeof noteSection>} */ (noteSection).before.reduce((n, l) => n + l.length + 1, 0);
   area().value = noteText();
   noteSection = null;
   $('note-whole').hidden = true;
-  $('note-name').textContent = noteHeading(area().value) ?? /** @type {string} */ (notePath?.split('/').pop());
+  $('note-name').textContent = noteHeading(area().value) ?? /** @type {string} */ (/** @type {string} */ (notePath).split('/').pop());
   area().setSelectionRange(at, at);
   const { y } = inBoxCopy(area(), copy => {
     copy.textContent = area().value.slice(0, at);
@@ -164,7 +160,8 @@ async function previewHtml() {
   /** @type {Record<string, string>} */
   const urls = {};
   for (const p of picturePaths(text, path)) urls[p] = await api.pictureUrl(p);
-  return renderMd(text, path, p => urls[p] ?? '');
+  // (the same pictures as picturePaths found)
+  return renderMd(text, path, p => urls[p]);
 }
 async function togglePreview() {
   const on = $('note-preview').hidden === true;
@@ -192,9 +189,9 @@ async function addNote(folder = '') {
     toast(err.message);
   }
 }
+// (the buttons on a note open: a note is open)
 async function renameOpen() {
-  const path = notePath;
-  if (!path) return;
+  const path = /** @type {string} */ (notePath);
   const l = api.view().layout;
   const byName = !l.plot && (await plotPath()) === path;
   const isPlot = l.plot === path || byName;
@@ -218,8 +215,8 @@ async function renameOpen() {
   }
 }
 async function trashOpen() {
-  const path = notePath;
-  if (!path || !confirm(`「${$('note-name').textContent}」を削除しますか？（作品の _trash/ フォルダに移動します。完全には消えません）`)) return;
+  const path = /** @type {string} */ (notePath);
+  if (!confirm(`「${$('note-name').textContent}」を削除しますか？（作品の _trash/ フォルダに移動します。完全には消えません）`)) return;
   if (await api.apply(trashNote(api.view().layout, api.files(), path, trashStamp(Date.now())))) {
     toast('削除しました（_trash/ に移動。送るまではこの端末だけの変更です）');
     await openNotes();
@@ -238,8 +235,8 @@ async function historyOfOpen() {
     snapshots: await api.snapshots(path),
     remote: Boolean(w.blobs[path]),
     now: noteText,
+    // (the history is a modal dialog: the note stays open until it is closed)
     restore: async text => {
-      if (notePath !== path) return;
       await api.snapshot(path, noteText(), true);
       noteSection = null;
       $('note-whole').hidden = true;
@@ -259,9 +256,9 @@ export function wireNotes() {
     api.keepText(notePath, noteText());
     showState();
   });
+  // (the text box is shown only with a note open)
   area().addEventListener('compositionend', () => {
-    if (!notePath) return;
-    api.keepText(notePath, noteText());
+    api.keepText(/** @type {string} */ (notePath), noteText());
     showState();
   });
   $('open-notes').addEventListener('click', () => void openNotes());
@@ -287,15 +284,16 @@ export function wireNotes() {
   $('note-whole').addEventListener('click', showWhole);
   $('note-preview-toggle').addEventListener('click', () => void togglePreview());
   $('note-as-plot').addEventListener('click', async () => {
-    if (notePath && (await api.apply({ moves: [], writes: [], edits: [{ key: ['plot', 'file'], value: notePath }], path: '' }, undefined, true))) {
+    if (await api.apply({ moves: [], writes: [], edits: [{ key: ['plot', 'file'], value: /** @type {string} */ (notePath) }], path: '' }, undefined, true)) {
       $('note-as-plot').hidden = true;
       toast('この資料をプロットにしました（目次の「プロット」で箱になります）');
     }
   });
   $('note-image').addEventListener('click', () => {
-    const path = notePath;
+    const path = /** @type {string} */ (notePath);
     pickImage(async (file, bytes) => {
-      if (notePath !== path || !path) return;
+      // (another note, or none, open by the time the picture was chosen: not put anywhere)
+      if (notePath !== path) return;
       if (await api.apply({ moves: [], writes: [{ path: file, bytes }], edits: [], path: file }, undefined, true))
         insertAt(area(), `\n![](${relPath(path, file)})\n`);
     });
