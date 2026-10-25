@@ -22,6 +22,8 @@ describe('changes', () => {
   });
   test('foldersOf: every folder that holds a path, once', () => {
     expect(foldersOf(['a/b/c.md', 'a/d.md', 'e.md']).sort()).toEqual(['a', 'a/b']);
+    // (a path from the top: no folder named '')
+    expect(foldersOf(['/e.md'])).toEqual([]);
   });
   test('moveFiles: a file of the branch moved (gone where it was, its blob put where it goes, where it came from kept)', () => {
     const { changes: next, merged } = moveFiles(blobs, new Map(), [['a.md', 'x/a.md']], o);
@@ -76,6 +78,36 @@ describe('changes', () => {
     const gone = changes([{ repo: 'o/r', path: 'b.md', base: 'sb', gone: true, op: 'op1', at: 1 }]);
     const { changes: next } = moveFiles(blobs, gone, [['a.md', 'b.md']], o);
     expect(next.get('b.md')).toMatchObject({ base: 'sb', sha: 'sa', op: 'op2' });
+  });
+  // FR-SAVE-01, NFR-MAINT-02
+  test('moveFiles: a change moved keeps its mode; one moved onto a change of another operation takes that operation in', () => {
+    const before = changes([
+      { repo: 'o/r', path: 'n.sh', base: '', text: 'x', mode: '100755', op: 'op0', at: 1 },
+      { repo: 'o/r', path: 'm.md', base: '', text: 'y', op: 'op1', at: 1 },
+    ]);
+    const { changes: next, merged } = moveFiles(blobs, before, [['n.sh', 'm.md']], o);
+    expect(merged).toEqual(new Set(['op0', 'op1']));
+    expect(next.get('m.md')).toEqual({ repo: 'o/r', path: 'm.md', base: '', text: 'x', mode: '100755', op: 'op2', at: 9 });
+  });
+  // FR-SAVE-01, NFR-MAINT-02
+  test('moveFiles: the blob of the branch moved onto its own blob is still a change when the change there was made on another', () => {
+    const same = { 'a.md': { sha: 'sa', mode: '100644' }, 'b.md': { sha: 'sa', mode: '100644' } };
+    const before = changes([{ repo: 'o/r', path: 'b.md', base: 'old', text: 'z', at: 1 }]);
+    const { changes: next } = moveFiles(same, before, [['a.md', 'b.md']], o);
+    expect(next.get('b.md')).toEqual({
+      repo: 'o/r',
+      path: 'b.md',
+      base: 'old',
+      sha: 'sa',
+      mode: '100644',
+      from: { path: 'a.md', base: 'sa' },
+      op: 'op2',
+      at: 9,
+    });
+  });
+  // FR-SAVE-01, NFR-MAINT-02
+  test('writeFile: over nothing, no operation taken in', () => {
+    expect(writeFile(blobs, new Map(), 'n.md', { text: 't' }, o).merged).toEqual(new Set());
   });
   test('writeFile: a new file of an operation; over a file moved, where it came from stays', () => {
     const { changes: next } = writeFile(blobs, new Map(), 'n.md', { text: '# 新しい話\n' }, o);
@@ -172,6 +204,14 @@ describe('the list of changes not sent', () => {
       { kind: 'op', op: 'op2', changes: [], keys: 1 },
       { kind: 'op', op: 'op3', changes: [list.get('n.md')], keys: 0 },
     ]);
+  });
+  // FR-SAVE-09, NFR-MAINT-02
+  test('withoutOp: the changes of the other operations are left exactly as they are (a text moved by one stays where it went)', () => {
+    const other = changes([
+      { repo: 'o/r', path: 'k.md', base: '', text: '移した', from: { path: 'z.md', base: 'sz' }, op: 'op4', at: 4 },
+      { repo: 'o/r', path: 'g.md', base: 'sg', gone: true, op: 'op5', at: 5 },
+    ]);
+    expect([...withoutOp(other, [], 'op5').changes.values()]).toEqual([other.get('k.md')]);
   });
   test('withoutOp: the operation given up, the text written in it kept where it came from; its keys gone', () => {
     const { changes: next, edits: left } = withoutOp(list, edits, 'op1');

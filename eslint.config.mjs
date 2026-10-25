@@ -4,7 +4,7 @@ import js from '@eslint/js';
 import globals from 'globals';
 
 export default [
-  { ignores: ['node_modules/', 'coverage/', 'test-results/', 'playwright-report/'] },
+  { ignores: ['node_modules/', 'coverage/', 'test-results/', 'playwright-report/', 'reports/', '.stryker-tmp/'] },
   js.configs.recommended,
   {
     rules: {

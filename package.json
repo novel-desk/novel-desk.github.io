@@ -10,6 +10,8 @@
     "check:types": "tsc -p tsconfig.json && tsc -p tsconfig.sw.json",
     "test:unit": "vitest run --coverage",
     "test:ui": "playwright test",
+    "test:mutation": "stryker run",
+    "test:mutation:save": "stryker run stryker.save.config.mjs",
     "check:all": "bash tools/check_all.sh"
   },
   "devDependencies": {
