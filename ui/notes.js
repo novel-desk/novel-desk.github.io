@@ -102,6 +102,28 @@ export async function openNote(path, from = LIST) {
   $('note-as-plot').hidden = Boolean(plot);
   return true;
 }
+// The work read in, or sent, while the notes are shown (FR-SAVE-08): the list drawn again; the note open, with no draft
+// of it, shows what the branch has now, the caret where it was (a box written by itself: the whole note); its draft
+// left as it is. A note gone (deleted or moved elsewhere) closed, and said
+export async function readInNotes() {
+  if ($('notes').hidden) return;
+  const path = notePath;
+  if (path === null) return openNotes();
+  if (!api.files().includes(path)) {
+    toast('この資料は、ほかの所で削除されたか、動かされました（書きかけがあれば「未送信の一覧」に残しています）');
+    return openNotes();
+  }
+  if (api.drafts().has(path)) return;
+  // (one that cannot be read now, not UTF-8: left as it is)
+  const text = (await api.texts([path]))[path] ?? noteText();
+  if (text !== noteText()) {
+    noteSection = null;
+    $('note-whole').hidden = true;
+    $('note-name').textContent = noteHeading(text) ?? /** @type {string} */ (path.split('/').pop());
+    setKeepingCaret(area(), text);
+  }
+  showState();
+}
 function showState() {
   const text = area().value;
   $('note-state').textContent = text.includes(CONFLICT_MARK)

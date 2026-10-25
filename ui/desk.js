@@ -24,9 +24,9 @@ import { evenBreaks, inputBar, insertAt, setKeepingCaret } from './textbox.js';
 import { showHistory, wireHistory } from './history.js';
 import { pickImage } from './images.js';
 import { api } from './shared.js';
-import { wireNotes } from './notes.js';
-import { renderPlotPanel, wirePlot } from './plot.js';
-import { wireCharacters } from './characters.js';
+import { readInNotes, wireNotes } from './notes.js';
+import { openPlot, renderPlotPanel, wirePlot } from './plot.js';
+import { openCharacters, wireCharacters } from './characters.js';
 import { noteToday, wireRecord } from './record.js';
 import { wireReleases } from './releases.js';
 import { renderSideNote, wireSideNote } from './sidenote.js';
@@ -802,6 +802,7 @@ async function reload() {
   else openNone();
   if (place && place.path === current) await showPreviewAt(place.at);
   if (gone) toast(`${gone} は GitHub にもう無いので、${w.branch} を開きました`);
+  await refreshScreens();
   sendSoon();
 }
 /** @param {string} name */
@@ -878,12 +879,23 @@ const otherBranchSaid = branch =>
 async function forgetBranch(repoName, branch) {
   if ((await store.get('prefs', `branch:${repoName}`)) === branch) await store.del('prefs', `branch:${repoName}`);
 }
+// the screens of the work open: the desk, and the ones over it (資料, プロット, キャラ, 記録)
+const WORK_SCREENS = ['desk', 'notes', 'plot', 'characters', 'record'];
+// whether one of them is shown (not the list of works, nor the first screens)
+export const onWork = () => WORK_SCREENS.some(id => !$(id).hidden);
+// the screen over the desk shown again with the work as it is now (read in, or sent): the note open keeps its draft,
+// else shows what the branch has, the caret where it was (FR-SAVE-08); the plot and the characters drawn again
+async function refreshScreens() {
+  await readInNotes();
+  if (!$('plot').hidden) await openPlot();
+  if (!$('characters').hidden) await openCharacters();
+}
 // written elsewhere while the work is open (another device, GitHub): read in when the branch moved, and shown, but the
-// text being written and its caret are left as they are (FR-SAVE-08). Every minute while the desk is shown, and when
-// the app comes back in front
+// text being written and its caret are left as they are (FR-SAVE-08). Every minute while a screen of the work is
+// shown, and when the app comes back in front
 async function readIn() {
   const w = work;
-  if (!w || busy || w.offline || mode === 'off' || $('desk').hidden || document.visibilityState !== 'visible') return;
+  if (!w || busy || w.offline || mode === 'off' || !onWork() || document.visibilityState !== 'visible') return;
   let head;
   try {
     head = await headOf(w.repo, w.branch);
@@ -907,9 +919,10 @@ async function readIn() {
   await keepConverted();
   renderWork();
   await showOpen();
-  await trace('ReadIn');
   // (what was set aside is said instead)
   if (!set) toast('ほかの所での変更を読み込みました');
+  await refreshScreens();
+  await trace('ReadIn');
 }
 // the episode open, after the work changed under it (read in, or sent): gone, the first one opened; else, with no
 // draft of it, what the branch has now shown, the caret and the place read where they were (FR-SAVE-08)
@@ -947,7 +960,7 @@ function sendSoon(wait = AUTO_WAIT) {
 async function sendNow() {
   clearTimeout(autoTimer);
   const w = work;
-  if (!w || $('desk').hidden) return;
+  if (!w || !onWork()) return;
   if (busy && mode === 'auto' && unsent()) return sendSoon(5000);
   const elsewhere = onOtherBranch([...drafts.values()], w.branch).length;
   if (!stopped && sendsItself({ mode, unsent: unsent(), offline: w.offline, busy, elsewhere })) await sendDrafts();
@@ -1009,6 +1022,7 @@ async function sendDrafts() {
     void noteNow();
     await showOpen();
     park([...refused, ...moved], MOVED);
+    await refreshScreens();
     showCounts();
     showUpdated();
     await trace('Sent');

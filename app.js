@@ -220,8 +220,8 @@ async function replaceToken(/** @type {SubmitEvent} */ e) {
     /** @type {HTMLDialogElement} */ (/** @type {unknown} */ ($('token-replace'))).close();
     hideNotice();
     toast('新しいトークンを保管しました');
-    // (the notice that opens this is shown on the desk and on the list of works only)
-    if (!$('desk').hidden) await api.reload();
+    // (the notice that opens this is shown on the screens of the work and on the list of works only)
+    if (desk.onWork()) await api.reload();
     else await chooseRepo();
   } catch (err) {
     gh.useToken(before);
