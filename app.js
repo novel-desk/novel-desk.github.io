@@ -188,8 +188,9 @@ async function checkExpiry() {
   if (text) showNotice(text);
   else hideNotice();
 }
-// a token GitHub refuses: said, with the way to put a new one in; and, as when the server version's session ends
-// (NFR-SEC-16), what the device keeps of the works deleted (the copies, the settings, the records), the drafts kept
+// a token GitHub refuses: said, with the way to put a new one in. Nothing the device keeps of the works is deleted
+// (their settings, the branch chosen, the repositories' IDs, the records, the copies, the drafts): only the token is
+// put in again, and the work goes on as it was (what is not sent goes where and how it was written)
 gh.onRefused(() => {
   if (!using) return;
   showNotice(
@@ -197,7 +198,6 @@ gh.onRefused(() => {
       ? 'GitHub が GitHub App のトークンを断りました（秘密鍵が消されたか、App が外されたかもしれません）。'
       : 'GitHub がトークンを断りました（期限が切れたか、消されたかもしれません）。',
   );
-  void forgetDevice(true);
 });
 async function replaceToken(/** @type {SubmitEvent} */ e) {
   e.preventDefault();

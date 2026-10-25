@@ -29,6 +29,7 @@
  * @property {() => number} unsent how many files the changes not sent change
  * @property {() => ReturnType<typeof import('../lib/changes.js').unsentList>} unsentItems the changes not sent, as listed
  * @property {(item: import('../lib/changes.js').Unsent) => Promise<void>} discard a change not sent given up
+ * @property {() => string} otherBranch the branch the changes not sent were written on, when it is not the one open ('' none)
  */
 /** @type {Api} */
 export const api = /** @type {any} */ ({});

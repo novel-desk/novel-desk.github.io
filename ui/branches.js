@@ -12,10 +12,15 @@ import { api } from './shared.js';
 const UNSENT = '未送信の変更があります。「送る」で送ってから、ブランチを切り替えたりマージしたりしてください';
 const NO_WORK = '作品を読み込めていません。「再読み込み」で読み込んでから、ブランチを切り替えたりマージしたりしてください';
 
+// The changes not sent written on another branch than the one open (the device's settings gone, or the branch gone on
+// GitHub): only that branch can be chosen, to send them where they were written
+/** @param {string} other */
+const onlyThat = other => `未送信の変更は ${other} で書いたものです。${other} に切り替えるか、「送る」で送ってから、ほかのブランチに切り替えてください`;
 async function chooseBranch() {
   const w = api.work();
   if (!w) return toast(NO_WORK);
-  if (api.unsent()) return toast(UNSENT);
+  const other = api.otherBranch();
+  if (api.unsent() && !other) return toast(UNSENT);
   let list;
   try {
     list = await gh.branches(w.repo);
@@ -30,6 +35,7 @@ async function chooseBranch() {
     help: '選ぶと、この端末ではそのブランチを読み書きします。無い名前を入れると、今読んでいる版から新しく作ります。',
   });
   if (!name || name === w.branch) return;
+  if (api.unsent() && name !== other) return toast(onlyThat(other));
   if (!list.includes(name)) {
     const why = branchNameError(name);
     if (why) return toast(why);

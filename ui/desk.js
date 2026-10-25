@@ -11,7 +11,7 @@ import { isNote } from '../lib/notes.js';
 import { picturePaths, relPath, renderMd } from '../lib/markdown.js';
 import { CONFLICT_MARK } from '../lib/merge.js';
 import { editToml } from '../lib/tomledit.js';
-import { AUTO_WAIT, saveState, sendsItself, syncMode } from '../lib/sync.js';
+import { AUTO_WAIT, keptMode, onOtherBranch, saveState, sendsItself, stamped, syncMode, writtenOn } from '../lib/sync.js';
 import { viewOf } from '../lib/view.js';
 import { visibilityTag } from '../lib/works.js';
 import { $, show, toast } from './dom.js';
@@ -93,10 +93,12 @@ function refreshView() {
 
 // --- the changes kept on the device
 
-/** @param {Map<string, Draft>} next @param {Edit[]} [nextEdits] */
-function keep(next, nextEdits = edits) {
+/** @param {Map<string, Draft>} given @param {Edit[]} [nextEdits] */
+function keep(given, nextEdits = edits) {
   const w = /** @type {NonNullable<typeof work>} */ (work);
   const before = drafts;
+  // (each change new or changed kept with the branch it was written on and the work's mode: lib/sync.js stamped)
+  const next = new Map([...given].map(([path, d]) => [path, before.get(path) === d ? d : stamped(d, before.get(path), w.branch, mode)]));
   drafts = next;
   const editsChanged = nextEdits !== edits;
   edits = nextEdits;
@@ -356,11 +358,14 @@ const noteSoon = () => {
   clearTimeout(noteTimer);
   noteTimer = setTimeout(() => void noteNow(), 2000);
 };
-const noteNow = () =>
-  noteToday(
-    /** @type {NonNullable<typeof work>} */ (work).repo,
-    episodes().reduce((sum, e) => sum + charsOf(textOf(e.path) ?? ''), 0),
-  );
+// (none when no work is read: another work being opened, its note from the one before not written)
+const noteNow = async () => {
+  if (work)
+    await noteToday(
+      work.repo,
+      episodes().reduce((sum, e) => sum + charsOf(textOf(e.path) ?? ''), 0),
+    );
+};
 // the text of a file as read from GitHub ('' when it is not there, or not read)
 /** @param {string} path */
 function remoteText(path) {
@@ -654,7 +659,7 @@ async function reload() {
   /** @type {{ m: import('../lib/works.js').RepoMeta | null }} the repository found renamed or moved on GitHub */
   const moving = { m: null };
   try {
-    const chosen = (await store.get('prefs', `branch:${r.full_name}`)) ?? '';
+    const chosen = await chosenBranch(r.full_name);
     // 同期しない (FR-GH-04): nothing read in from GitHub; the work as last read on this device, when it has it
     const kept = mode === 'off' ? await store.get('snapshots', r.full_name) : null;
     /** @type {import('./work.js').Work & { gone: string }} */
@@ -703,6 +708,7 @@ async function reload() {
   refreshView();
   readState(now());
   if (stopped) syncState(stopSaid(r.full_name), 'err');
+  else if (mode !== 'off' && otherBranch()) syncState(otherBranchSaid(otherBranch()), 'err');
   await rebaseChanges();
   await readMoved();
   refreshView();
@@ -778,6 +784,15 @@ async function reopen(r) {
   await store.put('prefs', 'repo', r);
   await open(r);
 }
+// the branch to read: the one chosen on this device, else the one the changes not sent were written on (the device's
+// settings gone: ログアウト with the drafts kept), else none (novel.toml's, else the default branch)
+/** @param {string} repoName */
+const chosenBranch = async repoName => (await store.get('prefs', `branch:${repoName}`)) ?? writtenOn([...drafts.values()]);
+// the branch the changes not sent were written on, when it is not the one open ('' when it is, or none is known)
+const otherBranch = () => writtenOn(onOtherBranch([...drafts.values()], /** @type {NonNullable<typeof work>} */ (work).branch));
+/** @param {string} branch */
+const otherBranchSaid = branch =>
+  `この端末の未送信の変更は、ブランチ ${branch} で書いたものです。いまは ${/** @type {NonNullable<typeof work>} */ (work).branch} を開いているので、自動では送りません。${branch} に送るときは「⎇」で ${branch} に切り替えてください（「送る」を押すと、いまのブランチに送るかを確かめます）`;
 // a branch that GitHub no longer has: no longer the one chosen on this device (the changes not sent stay as they are)
 /** @param {string} repoName @param {string} branch */
 async function forgetBranch(repoName, branch) {
@@ -799,7 +814,7 @@ async function readIn() {
   const r = /** @type {Repo} */ (repo);
   let next;
   try {
-    next = await load(r.full_name, r.default_branch, (await store.get('prefs', `branch:${r.full_name}`)) ?? '');
+    next = await load(r.full_name, r.default_branch, await chosenBranch(r.full_name));
   } catch {
     return;
   }
@@ -845,11 +860,22 @@ async function sendNow() {
   const w = work;
   if (!w || $('desk').hidden) return;
   if (busy && mode === 'auto' && unsent()) return sendSoon(5000);
-  if (!stopped && sendsItself({ mode, unsent: unsent(), offline: w.offline, busy })) await sendDrafts();
+  const elsewhere = onOtherBranch([...drafts.values()], w.branch).length;
+  if (!stopped && sendsItself({ mode, unsent: unsent(), offline: w.offline, busy, elsewhere })) await sendDrafts();
+  else if (elsewhere && mode === 'auto') syncState(otherBranchSaid(otherBranch()), 'err');
 }
 async function sendDrafts() {
   if (stopped) return;
   const w = /** @type {NonNullable<typeof work>} */ (work);
+  // (written on another branch: sent to the one open only when the author says so)
+  const other = otherBranch();
+  if (
+    other &&
+    !confirm(
+      `未送信の変更は、ブランチ ${other} で書いたものです。いま開いている ${w.branch} に送りますか？（「キャンセル」なら送りません。${other} に送るときは「⎇」で ${other} に切り替えてください）`,
+    )
+  )
+    return;
   busy = true;
   renderToc();
   syncState('送っています…');
@@ -864,6 +890,8 @@ async function sendDrafts() {
       if (after) next.set(draft.path, after);
       else next.delete(draft.path);
     }
+    // (what is left was typed during the send, over what it sent: of the branch sent to)
+    for (const [path, d] of next) next.set(path, { ...d, branch: w.branch });
     work = await contents(
       { repo: w.repo, branch: w.branch, commit: result.commit, tree: result.tree, updated: result.updated, blobs: result.blobs, folders: result.folders },
       false,
@@ -926,7 +954,8 @@ export async function open(r) {
   edits = (await store.get('prefs', `edits:${r.full_name}`)) ?? [];
   folded = (await store.get('prefs', `closed:${r.full_name}`)) ?? [];
   changed = new Map(Object.entries((await store.get('prefs', `changed:${r.full_name}`)) ?? {}));
-  mode = syncMode(await store.get('prefs', `sync:${r.full_name}`));
+  // (the mode kept on the device, else the one the drafts were written with: lib/sync.js keptMode)
+  mode = keptMode(await store.get('prefs', `sync:${r.full_name}`), [...drafts.values()]);
   await reload();
 }
 
@@ -991,6 +1020,8 @@ async function setMode(value) {
   const w = /** @type {NonNullable<typeof work>} */ (work);
   mode = syncMode(value);
   await store.put('prefs', `sync:${w.repo}`, mode);
+  // (the changes not sent keep the mode too: lib/sync.js stamped)
+  keep(new Map([...drafts].map(([path, d]) => [path, { ...d, sync: mode }])));
   renderToc();
   readState(now());
   sendSoon();
@@ -1085,6 +1116,7 @@ export function wire(on) {
     busy: () => busy,
     unsent,
     unsentItems: () => unsentList(drafts, edits),
+    otherBranch,
     discard,
   });
   wireRepo(on, { repo: () => /** @type {Repo} */ (repo), settled: () => writing, reopen });

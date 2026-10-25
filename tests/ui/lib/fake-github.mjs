@@ -453,6 +453,8 @@ export class FakeGitHub {
     if (r && method === 'GET' && this.repos.get(r[1])) {
       const repo = /** @type {FakeRepo} */ (this.repos.get(r[1]));
       const from = repo.refs[url.searchParams.get('sha') ?? repo.defaultBranch] ?? url.searchParams.get('sha') ?? '';
+      // (a branch or a commit it does not have: GitHub says so)
+      if (from && !repo.commits.has(from)) return reply(404, { message: 'No commit found for SHA' });
       const per = Number(url.searchParams.get('per_page') || 30),
         page = Number(url.searchParams.get('page') || 1);
       const all = repo.log(from, url.searchParams.get('path') ?? undefined);

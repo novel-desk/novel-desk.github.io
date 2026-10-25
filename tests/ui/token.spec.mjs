@@ -1,6 +1,6 @@
 // The token: kept encrypted with a passkey (PRF), or without PRF with a key that cannot be taken out; the CSP; the
 // repositories it can read
-import { test, expect, noPasskey, openRepo, openWork, stored, TOKEN } from './lib/test.mjs';
+import { test, expect, FakeRepo, noPasskey, openRepo, openWork, stored, TOKEN, WORK_FILES } from './lib/test.mjs';
 
 /** @param {import('@playwright/test').Page} page @param {boolean} hasPrf */
 async function authenticator(page, hasPrf) {
@@ -350,26 +350,26 @@ test('the expiry: 90 days filled in; from 14 days before, said on the screen; th
   await page.getByRole('button', { name: '送る（1）' }).click();
   await expect(page.locator('#sync-state')).toHaveText(/^送りました（/);
   expect(work.text('chapters/01_first.md')).toBe('# 第1話 はじまり\n\n新しいトークンで\n');
-  // (the refusal deleted what the device kept of the works, the choice of the work too: chosen again)
+  // (the refusal deleted nothing the device kept of the works: the work chosen opened again)
   await page.reload();
-  await openRepo(page, 'author/novel');
   await expect(page.locator('#episode-title')).toHaveValue('はじまり');
   await expect(page.locator('#token-notice')).toBeHidden();
 });
 
-// NFR-USE-01: a token GitHub refuses (expired, deleted) is said with what to do, and a new one put in its place
-// NFR-SEC-16: and, as when a session ends, the works' copies and settings deleted, the drafts kept
+// NFR-USE-01: a token GitHub refuses (expired, deleted) is said with what to do, and a new one put in its place.
+// Nothing the device keeps of the works is deleted (the copies, the blobs read, the drafts): only the token is put in
+// again
 test('a token GitHub refuses: said, with the way to put a new one in; a token that does not work is not kept', async ({ page, gh }) => {
   await openWork(page);
   await page.locator('#body').fill('# 第1話 はじまり\n\n断られても残る\n');
   await expect.poll(async () => (await stored(page, 'drafts')).length).toBe(1);
   await expect(page.locator('#token-notice')).toBeHidden();
+  const [snapshots, blobs] = [await stored(page, 'snapshots'), await stored(page, 'blobs')];
   gh.tokens = ['new-test-token-not-real'];
   await page.getByRole('button', { name: '再読み込み' }).click();
   await expect(page.locator('#token-notice-text')).toHaveText(/^GitHub がトークンを断りました（期限が切れたか、消されたかもしれません）。/);
-  await expect.poll(() => stored(page, 'snapshots')).toEqual([]);
-  // (deleted one by one, after the copies)
-  await expect.poll(() => stored(page, 'blobs')).toEqual([]);
+  expect(await stored(page, 'snapshots')).toEqual(snapshots);
+  expect(await stored(page, 'blobs')).toEqual(blobs);
   expect((await stored(page, 'drafts')).map(d => d.text)).toEqual(['# 第1話 はじまり\n\n断られても残る\n']);
   await page.getByRole('button', { name: '新しいトークンを入れる' }).click();
   await page.getByLabel('新しいトークン', { exact: true }).fill('wrong-token');
@@ -381,21 +381,75 @@ test('a token GitHub refuses: said, with the way to put a new one in; a token th
   await expect(page.locator('#token-notice')).toBeHidden();
 });
 
-// FR-GH-01, NFR-USE-01: refused on the list of works: after a reload (the expiry kept deleted with the rest) nothing is
-// said until GitHub is asked; the new token put in there, the list shown again. The dialog closed without one, and a
-// token of spaces only, change nothing
+// FR-GH-04, FR-GH-09, FR-GH-12, NFR-USE-01: a token GitHub refuses, then a new one: what the device keeps of the work
+// is all there (opened again too): the drafts go to the branch they were written on, by the mode chosen, and the
+// repository's ID kept when it was first opened still tells another repository under its name. Nothing goes by itself
+// to another branch
+test('refused, then a new token: the branch, the mode and the repository’s ID kept; nothing sent by itself to another branch', async ({ page, gh, work }) => {
+  work.refs.side = work.refs.main;
+  await page.clock.install();
+  await openWork(page);
+  await page.getByRole('button', { name: /⎇ main/ }).click();
+  await page.locator('#picker').getByRole('button', { name: 'side' }).click();
+  await expect(page.getByRole('button', { name: /⎇ side/ })).toBeVisible();
+  await page.locator('#body').fill('# 第1話 はじまり\n\n枝で書いた\n');
+  await expect.poll(async () => (await stored(page, 'drafts')).length).toBe(1);
+  // refused when it goes by itself
+  gh.tokens = ['new-test-token-not-real'];
+  await page.clock.fastForward(61000);
+  await expect(page.locator('#token-notice-text')).toHaveText(/^GitHub がトークンを断りました/);
+  await page.getByRole('button', { name: '新しいトークンを入れる' }).click();
+  await page.getByLabel('新しいトークン', { exact: true }).fill('new-test-token-not-real');
+  await page.getByRole('button', { name: 'パスキーで保管する' }).click();
+  await expect(page.locator('#sync-state')).toHaveText(/GitHub から読みました/);
+  // opened again: the branch chosen, the mode, the draft
+  await page.reload();
+  await expect(page.locator('#body')).toHaveValue('# 第1話 はじまり\n\n枝で書いた\n');
+  await expect(page.getByRole('button', { name: /⎇ side/ })).toBeVisible();
+  await page.clock.fastForward(61000);
+  await expect(page.locator('#sync-state')).toHaveText(/^送りました（/);
+  expect(work.text('chapters/01_first.md', 'side')).toBe('# 第1話 はじまり\n\n枝で書いた\n');
+  expect(work.text('chapters/01_first.md')).toBe(WORK_FILES['chapters/01_first.md']);
+  // 送るを押したときだけ: refused, a new token, opened again: still that mode, nothing sent by itself
+  await page.locator('#sync-mode').selectOption('manual');
+  await page.locator('#body').fill('# 第1話 はじまり\n\n押すまで待つ\n');
+  gh.tokens = ['third-test-token-not-real'];
+  await page.getByRole('button', { name: '再読み込み' }).click();
+  await expect(page.locator('#token-notice-text')).toHaveText(/^GitHub がトークンを断りました/);
+  await page.getByRole('button', { name: '新しいトークンを入れる' }).click();
+  await page.getByLabel('新しいトークン', { exact: true }).fill('third-test-token-not-real');
+  await page.getByRole('button', { name: 'パスキーで保管する' }).click();
+  await expect(page.locator('#token-notice')).toBeHidden();
+  await page.reload();
+  await expect(page.locator('#body')).toHaveValue('# 第1話 はじまり\n\n押すまで待つ\n');
+  await expect(page.locator('#sync-mode')).toHaveValue('manual');
+  await page.clock.fastForward(120000);
+  expect(work.text('chapters/01_first.md', 'side')).toBe('# 第1話 はじまり\n\n枝で書いた\n');
+  // FR-GH-12: another repository under the work's name is told by the ID kept before the token was refused
+  gh.rename('author/novel', 'author/gone');
+  gh.unreadable.add('author/gone');
+  const other = new FakeRepo('author/novel', { 'novel.toml': 'title = "別の作品"\n', '01.md': '# 別\n' });
+  other.id = ++gh.ids;
+  gh.repos.set('author/novel', other);
+  await page.getByRole('button', { name: '再読み込み' }).click();
+  await expect(page.locator('#sync-state')).toHaveText(/^author\/novel は、つないだリポジトリとは別のリポジトリになっています/);
+  await expect(page.locator('#send')).toBeDisabled();
+});
+
+// FR-GH-01, NFR-USE-01: refused on the list of works: said; nothing the device keeps deleted, so opened again the work
+// chosen opens, and GitHub refusing is said there too; the new token put in on the list, the list shown again. The
+// dialog closed without one, and a token of spaces only, change nothing
 test('refused on the list of works: said when GitHub is asked; the new token put in there, the list shown again', async ({ page, gh }) => {
   await openWork(page);
   await page.getByRole('button', { name: 'ほかの作品' }).click();
   gh.tokens = ['new-test-token-not-real'];
   await page.getByRole('button', { name: 'リポジトリを開く' }).click();
   await expect(page.locator('#token-notice-text')).toHaveText(/^GitHub がトークンを断りました/);
-  await expect.poll(() => stored(page, 'snapshots')).toEqual([]);
+  expect((await stored(page, 'snapshots')).length).toBe(1);
   await page.reload();
-  await expect(page.locator('#repos')).toBeVisible();
-  await expect(page.locator('#token-notice')).toBeHidden();
-  await page.getByRole('button', { name: 'リポジトリを開く' }).click();
+  await expect(page.locator('#desk')).toBeVisible();
   await expect(page.locator('#token-notice-text')).toHaveText(/^GitHub がトークンを断りました/);
+  await page.getByRole('button', { name: 'ほかの作品' }).click();
   await page.getByRole('button', { name: '新しいトークンを入れる' }).click();
   await page.locator('#close-token-replace').click();
   await expect(page.locator('#token-replace')).toBeHidden();
@@ -409,8 +463,10 @@ test('refused on the list of works: said when GitHub is asked; the new token put
   await expect(page.locator('#toast')).toHaveText('新しいトークンを保管しました');
   await expect(page.locator('#token-notice')).toBeHidden();
   await expect(page.locator('#repos')).toBeVisible();
+  // (the work stays on this device's list: the others offered)
+  await expect(page.locator('#repo-list [data-repo="author/novel"]')).toBeVisible();
   await page.getByRole('button', { name: 'リポジトリを開く' }).click();
-  await expect(page.locator('#picker-list button')).toHaveText(['author/novel', 'author/other']);
+  await expect(page.locator('#picker-list button')).toHaveText(['author/other']);
 });
 
 // NFR-SEC-16: the token forgotten: with it, what the device keeps of the works; the drafts too when the author says so
@@ -428,6 +484,66 @@ test('the token forgotten: the works’ copies and settings deleted; the drafts 
   expect(await stored(page, 'blobs')).toEqual([]);
   expect(await stored(page, 'prefs')).toEqual(['author']);
   expect((await stored(page, 'drafts')).map(d => d.text)).toEqual(['# 第1話 はじまり\n\n残す書きかけ\n']);
+});
+
+// NFR-SEC-16, FR-GH-04, FR-GH-09: logged out with the drafts kept (the settings deleted): opened again with the token,
+// the drafts go where and how they were written (their branch, their mode). Their branch gone on GitHub: not sent by
+// itself to the one open; 送る asks first; only their branch can be chosen
+test('logged out with the drafts kept, opened again: their branch and mode; never sent by itself to another branch', async ({ page, gh, work }) => {
+  work.refs.side = work.refs.main;
+  work.refs.other = work.refs.main;
+  await page.clock.install();
+  await openWork(page);
+  await page.getByRole('button', { name: /⎇ main/ }).click();
+  await page.locator('#picker').getByRole('button', { name: 'side' }).click();
+  await expect(page.getByRole('button', { name: /⎇ side/ })).toBeVisible();
+  await page.locator('#body').fill('# 第1話 はじまり\n\n枝の書きかけ\n');
+  await page.locator('#sync-mode').selectOption('manual');
+  await expect.poll(async () => (await stored(page, 'drafts')).map(d => [d.branch, d.sync])).toEqual([['side', 'manual']]);
+  await page.getByRole('button', { name: 'ほかの作品' }).click();
+  const answers = [true, false];
+  page.on('dialog', d => void (answers.shift() ? d.accept() : d.dismiss()));
+  await page.getByRole('button', { name: 'ログアウト' }).click();
+  await expect(page.locator('#setup')).toBeVisible();
+  expect(await stored(page, 'prefs')).toEqual(['author']);
+  await page.getByLabel('トークン', { exact: true }).fill(TOKEN);
+  await page.getByRole('button', { name: 'パスキーで保管する' }).click();
+  await openRepo(page, 'author/novel');
+  await expect(page.locator('#body')).toHaveValue('# 第1話 はじまり\n\n枝の書きかけ\n');
+  await expect(page.getByRole('button', { name: /⎇ side/ })).toBeVisible();
+  await expect(page.locator('#sync-mode')).toHaveValue('manual');
+  await page.clock.fastForward(120000);
+  expect([work.text('chapters/01_first.md'), work.text('chapters/01_first.md', 'side')]).toEqual([
+    WORK_FILES['chapters/01_first.md'],
+    WORK_FILES['chapters/01_first.md'],
+  ]);
+  // their branch gone on GitHub: the default one opened; nothing sent by itself to it, 自動 too
+  delete work.refs.side;
+  await page.getByRole('button', { name: '再読み込み' }).click();
+  await expect(page.locator('#toast')).toHaveText('side は GitHub にもう無いので、main を開きました');
+  await expect(page.locator('#sync-state')).toHaveText(
+    /^この端末の未送信の変更は、ブランチ side で書いたものです。いまは main を開いているので、自動では送りません/,
+  );
+  await page.locator('#sync-mode').selectOption('auto');
+  await page.clock.fastForward(61000);
+  await expect(page.locator('#sync-state')).toHaveText(/^この端末の未送信の変更は、ブランチ side で書いたものです/);
+  expect(work.text('chapters/01_first.md')).toBe(WORK_FILES['chapters/01_first.md']);
+  // 送る asks; not wanted, nothing sent
+  answers.push(false);
+  await page.getByRole('button', { name: '送る（1）' }).click();
+  expect(work.text('chapters/01_first.md')).toBe(WORK_FILES['chapters/01_first.md']);
+  // another branch cannot be chosen; theirs can (made again from the one open), and they go there
+  await page.getByRole('button', { name: /⎇ main/ }).click();
+  await page.locator('#picker').getByRole('button', { name: 'other' }).click();
+  await expect(page.locator('#toast')).toHaveText(/^未送信の変更は side で書いたものです。side に切り替えるか/);
+  await page.getByRole('button', { name: /⎇ main/ }).click();
+  await page.locator('#picker-input').fill('side');
+  await page.locator('#picker').getByRole('button', { name: '決定' }).click();
+  await expect(page.getByRole('button', { name: /⎇ side/ })).toBeVisible();
+  await page.clock.fastForward(61000);
+  await expect(page.locator('#sync-state')).toHaveText(/^送りました（/);
+  expect(work.text('chapters/01_first.md', 'side')).toBe('# 第1話 はじまり\n\n枝の書きかけ\n');
+  expect(work.text('chapters/01_first.md')).toBe(WORK_FILES['chapters/01_first.md']);
 });
 
 // NFR-SEC-16: another user's token where the drafts of the one before are left: asked without showing them; kept
