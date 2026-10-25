@@ -317,3 +317,19 @@ input:focus { border-color: var(--accent); }
 .parked-text { width: 100%; min-height: 6em; max-height: 30vh; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--text); padding: 8px; font: 14px/1.8 var(--mincho); resize: vertical; }
 .parked-tools { display: flex; flex-wrap: wrap; gap: 6px; }
 .picker-form { display: flex; gap: 8px; padding: 8px 14px; } .picker-form input { flex: 1; min-width: 0; }
+
+/* 押す部品は、iPhone の幅と指で押す画面では、縦横 44px 以上で押せる（NFR-USE-02。Apple のヒューマンインターフェイス
+   ガイドライン）。小さく見せている部品（入力補助のバー、画像や箱の道具、並べ替えの ↑↓）も、押せる大きさは 44px にする。
+   tests/ui/touch.spec.mjs が iPhone の幅で全部の画面を測る */
+@media (max-width: 760px), (pointer: coarse) {
+  button, a.button, select, input:not([type="checkbox"]):not([type="radio"]), .node { min-height: 44px !important; }
+  button, a.button, select { min-width: 44px !important; }
+  summary { min-height: 44px; line-height: 44px; padding-top: 0 !important; padding-bottom: 0 !important; }
+  .sync-row a, .token-notice a { display: inline-flex; align-items: center; min-height: 44px; }
+  .kbar { padding-top: 0; padding-bottom: 0; }
+  .order-tools select { max-width: 96px; }
+  .note-head { flex-wrap: wrap; }
+  /* (the table of contents, taller with these, scrolled as a whole on a phone's height) */
+  .toc { overflow-y: auto; }
+  .tree { flex: 1 0 auto; overflow-y: visible; }
+}
