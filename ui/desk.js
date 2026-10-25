@@ -33,6 +33,7 @@ import { snapshotted } from '../lib/history.js';
 import { previewPlace, reading, showPreviewAt, stopReading, togglePreview, wireReading } from './reading.js';
 import { wireBranches } from './branches.js';
 import { wireUnsent } from './unsent.js';
+import { trace, traceFailed, traceWith } from './trace.js';
 import { forgetWork, keepWork, locate, moveRepo, relink, startWork, titleFor, wireRepo } from './repo.js';
 
 /** @typedef {import('../lib/drafts.js').Draft} Draft */
@@ -339,12 +340,14 @@ function keepText(path, text) {
   void snapshot(path, text, false);
   noteSoon();
 }
-// what was typed in the episode
-function typed() {
+// what was typed in the episode: a key, a letter of a word being converted (an input method), the word converted
+/** @param {'Type' | 'Compose' | 'Converted'} step */
+function typed(step) {
   keepText(current, $('body').value);
   showCounts();
   renderToc();
   showUpdated();
+  void trace(step, { composing: step === 'Compose' });
 }
 // 記録: the work's length today, noted on the device a moment after the last key (and when it is read and sent)
 /** @type {ReturnType<typeof setTimeout> | undefined} */
@@ -402,7 +405,7 @@ async function openHistory() {
       setKeepingCaret(/** @type {HTMLTextAreaElement} */ ($('body')), text);
       // (the text put back is shown: the preview was of the text before)
       stopReading();
-      typed();
+      typed('Type');
       toast(`「${titleAt(e.rel)}」を復元しました（送るまではこの端末だけの変更です）`);
     },
   });
@@ -418,6 +421,11 @@ const newOp = () => `${Date.now().toString(36)}-${Math.random().toString(36).sli
  * @param {boolean} [stay] the open episode stays as it is in the text box (a picture added to it)
  */
 async function apply(plan, open, stay = false) {
+  // (not while a send is on its way: its end would take the changes it sent from under the operation: formal/Rebase.tla)
+  if (busy) {
+    toast('送っている間は、話の追加・名前の変更・削除・並べ替えはできません。送り終わってからやり直してください');
+    return false;
+  }
   const w = /** @type {NonNullable<typeof work>} */ (work);
   const op = newOp(),
     at = Date.now();
@@ -480,6 +488,7 @@ async function renameEpisode() {
   if (!e || title === titleAt(e.rel)) return;
   const plan = planned(() => plans.rename(forPlans(), current, title));
   if (!plan || !(await apply(plan, plan.path))) $('episode-title').value = titleAt(e.rel);
+  else await trace('Rename');
 }
 /** @param {string} path */
 async function renameChapter(path) {
@@ -818,6 +827,7 @@ async function readIn() {
       }
     }
   }
+  await trace('ReadIn');
   toast('ほかの所での変更を読み込みました');
 }
 // 自動 (FR-SAVE-03, FR-GH-04): the changes not sent go by themselves a while after the last one (AUTO_WAIT), when the
@@ -844,6 +854,7 @@ async function sendDrafts() {
   renderToc();
   syncState('送っています…');
   try {
+    await trace('SendStart');
     const result = await sendAll(w, [...drafts.values()], edits);
     failed = new Set();
     const next = new Map(drafts);
@@ -873,7 +884,9 @@ async function sendDrafts() {
     if (current && findEpisode(current) && !drafts.has(current)) setKeepingCaret(/** @type {HTMLTextAreaElement} */ ($('body')), textOf(current) ?? '');
     showCounts();
     showUpdated();
+    await trace('Sent');
   } catch (err) {
+    void traceFailed(err);
     failed = new Set(drafts.keys());
     showCounts();
     syncState(
@@ -988,12 +1001,21 @@ let changeRepo;
 // the desk's buttons and the text box (once, by app.js)
 /** @param {{ changeRepo: () => void, open: (r: Repo) => Promise<void>, relist: () => Promise<void> }} on */
 export function wire(on) {
+  // (the steps written down are all made on a work read)
+  traceWith(() => ({
+    commit: /** @type {NonNullable<typeof work>} */ (work).commit,
+    blobs: Object.fromEntries(Object.entries(/** @type {NonNullable<typeof work>} */ (work).blobs).map(([p, b]) => [p, b.sha])),
+    drafts: [...drafts.values()].map(({ path, base, text, sha, gone, op }) => ({ path, base, text, sha, gone, op })),
+    current,
+    screen: $('body').value,
+  }));
   const area = /** @type {HTMLTextAreaElement} */ ($('body'));
   evenBreaks(area);
-  area.addEventListener('input', e => {
-    if (!(/** @type {InputEvent} */ (e).isComposing) && current) typed();
-  });
-  area.addEventListener('compositionend', () => current && typed());
+  // (a word being converted is kept too: the text box is not written over while a draft is kept, when the work is read
+  // in or a send ends: formal/Send.tla)
+  // (the box takes input only with an episode open: disabled otherwise, and the input bar shows only while writing in it)
+  area.addEventListener('input', e => typed(/** @type {InputEvent} */ (e).isComposing ? 'Compose' : 'Type'));
+  area.addEventListener('compositionend', () => current && typed('Converted'));
   $('tree').addEventListener('click', e => void treeClick(e));
   $('tree').addEventListener('keydown', e => {
     const t = /** @type {HTMLElement} */ (e.target);

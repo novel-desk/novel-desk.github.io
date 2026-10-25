@@ -10,6 +10,7 @@ import { keptBoth, sendPlan } from '../lib/merge.js';
 import { editToml } from '../lib/tomledit.js';
 import { viewOf } from '../lib/view.js';
 import * as gh from './github.js';
+import { trace, traceStop } from './trace.js';
 import { bytes } from './work.js';
 import * as store from './db.js';
 
@@ -57,7 +58,11 @@ export async function sendAll(work, drafts, edits) {
     }
     const ops = drafts.filter(d => d.op);
     const overlapped = conflictsOf(new Map(ops.map(d => [d.path, d])), blobs);
-    if (overlapped.length) throw new Overlapped(overlapped);
+    if (overlapped.length) {
+      const err = new Overlapped(overlapped);
+      await traceStop('Build', err);
+      throw err;
+    }
     // the texts there now, by path (an episode written, or a file an operation changes)
     /** @type {Record<string, string>} */
     const there = {};
@@ -128,15 +133,20 @@ export async function sendAll(work, drafts, edits) {
       ...changeParts(listed, was, now),
     ];
     const message = commitSubject(japanDay(Date.now()), parts);
+    await trace('Build');
     const newTree = await gh.newTree(work.repo, tree, entries);
     const newCommit = await gh.newCommit(work.repo, message, newTree, commit);
     try {
       await gh.moveBranch(work.repo, work.branch, newCommit);
     } catch (err) {
       // (moved on again between reading it and moving it: read again, a few times)
-      if (err instanceof gh.GitHubError && err.status === 422 && i + 1 < TRIES) continue;
+      if (err instanceof gh.GitHubError && err.status === 422) {
+        await traceStop('Moved', err);
+        if (i + 1 < TRIES) continue;
+      }
       throw err;
     }
+    await trace('Move');
     for (const e of entries) {
       blobs = { ...blobs };
       if (e.sha === null) delete blobs[e.path];

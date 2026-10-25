@@ -161,13 +161,14 @@ main に push すると、数分で https://novel-desk.github.io/ に反映さ�
 ```sh
 npm install
 npm run serve       # http://localhost:4173/ で開く
-npm run check:all   # 整形、書き方、型、単体試験（lib は 100%）、画面の試験（Chrome と WebKit）、画面の JS のカバレッジ 100%、保存の処理の変異テスト
+npm run check:all   # 整形、書き方、型、単体試験（lib は 100%）、画面の試験（Chrome と WebKit）、画面の JS のカバレッジ 100%、保存の処理の変異テスト、トレース検証
 ```
 
 - 決める部分は `lib/` の純粋な関数にし、vitest で試験します（`tests/unit/`。行・分岐とも 100%）
 - 画面は Playwright で試験します（`tests/ui/`）。GitHub の API は偽物（`tests/ui/lib/fake-github.mjs`）で、本物の GitHub には通信しません
 - 画面の JS（`app.js`、`sw.js`、`ui/`、`lib/`）は、画面の試験と単体試験を合わせて、全部の行と分岐を通します（NFR-MAINT-02）。画面の試験では、`tools/serve.mjs` がスクリプトを istanbul で計測できる形にして出し、`tools/coverage_all.mjs` が単体試験の記録と合わせます。通っていない所は `coverage/all/missing.txt` に出ます
 - 書いたものを残して送る処理（`lib/` の changes・drafts・merge・sync）は、Stryker の変異テストで、コードを少し変えた変異を単体試験が全部見つけることを確かめます（`npm run test:mutation:save`、NFR-MAINT-02）。`lib/` 全体の変異テストは `npm run test:mutation` で、結果は `reports/mutation/` に出ます（サーバー版と同じく、全体には止める基準を付けていません）
+- 送る処理の並行の動き（送っている間の入力、ほかの所で進んだブランチへの送信、送っていない操作の取り消し）は、`formal/` の TLA+ のモデルで、文章が消える順番が無いことを確かめます。モデルとコードが合っていることは、画面の試験の記録をモデルの手順でたどるトレース検証で確かめます（NFR-MAINT-03、`formal/README.md`）。TLC には `formal/tla2tools.jar`（コミットしません）と、Java か podman が要ります
 - WebKit は Playwright の Docker イメージで実行します。`NW_NO_WEBKIT=1` で WebKit を外せます
 - パスキーの試験は Chrome の仮想認証器で実行します。WebKit には Playwright から操作できる仮想認証器がないので、Chrome だけで実行します
 - オフラインの試験も Chrome だけで実行します。WebKit では、service worker が付いたページの通信を Playwright の route が受け取れず、偽物の GitHub に届かないためです
@@ -175,6 +176,7 @@ npm run check:all   # 整形、書き方、型、単体試験（lib は 100%）�
 ファイルの置き場所は次のとおりです。
 
 - `index.html`、`style.css`、`app.js`: 画面と、トークン・リポジトリの選択
-- `ui/`: I/O の層（IndexedDB、パスキー、GitHub の API、目次と本文、送る処理、入力補助のバー、プレビューと前後の話、画像、履歴、資料、プロット、キャラ、横の資料、記録、リリース、ブランチ、未送信の一覧）。`ui/shared.js` は、書く画面（desk.js）がほかの画面に渡す窓口です
+- `ui/`: I/O の層（IndexedDB、パスキー、GitHub の API、目次と本文、送る処理、入力補助のバー、プレビューと前後の話、画像、履歴、資料、プロット、キャラ、横の資料、記録、リリース、ブランチ、未送信の一覧、トレース検証の記録）。`ui/shared.js` は、書く画面（desk.js）がほかの画面に渡す窓口です
 - `lib/`: 純粋な関数（TOML とその書き換え、novel.toml と目次、未送信の変更、話の追加・題名の変更・削除・並べ替えの決まり、資料と画像、プロット、キャラ、記録、リリース、ブランチ、差分、Markdown、commit メッセージ、積み直し、文字コード）
 - `sw.js`、`manifest.webmanifest`: オフライン用の控えと、ホーム画面に追加するための設定
+- `formal/`: 送る処理の TLA+ のモデルと、トレース検証のモデル（`tools/trace_check.mjs`、`tools/trace/`）
