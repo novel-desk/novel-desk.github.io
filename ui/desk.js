@@ -993,11 +993,9 @@ async function sendDrafts() {
       else next.delete(draft.path);
     }
     // the texts refused (their file gone there, or another file now), as the device has them now: set aside
-    const refused = result.refused.flatMap(d => {
-      const now = next.get(d.path);
-      next.delete(d.path);
-      return now ? [now] : [];
-    });
+    // (one typed back to the text read during the send, or given up: none left to set aside)
+    const refused = result.refused.map(d => next.get(d.path)).filter(d => d !== undefined);
+    for (const d of result.refused) next.delete(d.path);
     // (what is left was typed during the send: on what the branch is now, of the branch sent to)
     const sent = await contents(
       { repo: w.repo, branch: w.branch, commit: result.commit, tree: result.tree, updated: result.updated, blobs: result.blobs, folders: result.folders },

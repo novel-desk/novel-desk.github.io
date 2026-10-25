@@ -20,6 +20,8 @@ describe('expiry', () => {
     const now = new Date(2026, 9, 25, 12).getTime();
     expect(WARN_DAYS).toBe(14);
     expect(expiryNotice(0, now)).toBe('');
+    // (none kept)
+    expect(expiryNotice(undefined, now)).toBe('');
     expect(expiryNotice(endOf('2026-11-08'), now)).toBe('');
     expect(expiryNotice(endOf('2026-11-07'), now)).toBe('トークンの期限が 11/7 に切れます（あと 14 日）。');
     expect(expiryNotice(endOf('2026-10-25'), now)).toBe('トークンの期限が 10/25 に切れます（あと 1 日）。');

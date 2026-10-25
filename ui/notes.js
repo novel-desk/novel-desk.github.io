@@ -114,8 +114,12 @@ export async function readInNotes() {
     return openNotes();
   }
   if (api.drafts().has(path)) return;
-  // (one that cannot be read now, not UTF-8: left as it is)
-  const text = (await api.texts([path]))[path] ?? noteText();
+  const text = (await api.texts([path]))[path];
+  // (one that cannot be read now, not UTF-8: what is written left as it is, and said)
+  if (text === null) {
+    $('note-state').textContent = 'GitHub にあるこの資料は UTF-8 ではないので、読み込めませんでした（書いている文章はそのままです）';
+    return;
+  }
   if (text !== noteText()) {
     noteSection = null;
     $('note-whole').hidden = true;

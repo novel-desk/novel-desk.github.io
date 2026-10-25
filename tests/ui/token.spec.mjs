@@ -406,9 +406,13 @@ test('refused, then a new token: the branch, the mode and the repository’s ID 
   await page.reload();
   await expect(page.locator('#body')).toHaveValue('# 第1話 はじまり\n\n枝で書いた\n');
   await expect(page.getByRole('button', { name: /⎇ side/ })).toBeVisible();
-  await page.clock.fastForward(61000);
-  await expect(page.locator('#sync-state')).toHaveText(/^送りました（/);
-  expect(work.text('chapters/01_first.md', 'side')).toBe('# 第1話 はじまり\n\n枝で書いた\n');
+  // (a minute at a time, the reading still going on when the clock moves)
+  await expect
+    .poll(async () => {
+      await page.clock.fastForward(61000);
+      return work.text('chapters/01_first.md', 'side');
+    })
+    .toBe('# 第1話 はじまり\n\n枝で書いた\n');
   expect(work.text('chapters/01_first.md')).toBe(WORK_FILES['chapters/01_first.md']);
   // 送るを押したときだけ: refused, a new token, opened again: still that mode, nothing sent by itself
   await page.locator('#sync-mode').selectOption('manual');
@@ -525,6 +529,7 @@ test('logged out with the drafts kept, opened again: their branch and mode; neve
     /^この端末の未送信の変更は、ブランチ side で書いたものです。いまは main を開いているので、自動では送りません/,
   );
   await page.locator('#sync-mode').selectOption('auto');
+  await expect(page.locator('#sync-state')).toHaveText(/GitHub から読みました/);
   await page.clock.fastForward(61000);
   await expect(page.locator('#sync-state')).toHaveText(/^この端末の未送信の変更は、ブランチ side で書いたものです/);
   expect(work.text('chapters/01_first.md')).toBe(WORK_FILES['chapters/01_first.md']);
@@ -540,9 +545,12 @@ test('logged out with the drafts kept, opened again: their branch and mode; neve
   await page.locator('#picker-input').fill('side');
   await page.locator('#picker').getByRole('button', { name: '決定' }).click();
   await expect(page.getByRole('button', { name: /⎇ side/ })).toBeVisible();
-  await page.clock.fastForward(61000);
-  await expect(page.locator('#sync-state')).toHaveText(/^送りました（/);
-  expect(work.text('chapters/01_first.md', 'side')).toBe('# 第1話 はじまり\n\n枝の書きかけ\n');
+  await expect
+    .poll(async () => {
+      await page.clock.fastForward(61000);
+      return work.text('chapters/01_first.md', 'side');
+    })
+    .toBe('# 第1話 はじまり\n\n枝の書きかけ\n');
   expect(work.text('chapters/01_first.md')).toBe(WORK_FILES['chapters/01_first.md']);
 });
 

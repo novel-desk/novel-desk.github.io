@@ -62,15 +62,18 @@ test('read in on the notes screen: the note open follows GitHub, its caret kept;
   await inFront(page);
   await expect(page.getByLabel('資料の本文')).toHaveValue('# 世界観\n\n空は青い。ほかで足した。\n');
   expect(await page.getByLabel('資料の本文').evaluate(a => /** @type {HTMLTextAreaElement} */ (a).selectionStart)).toBe(4);
-  // changed elsewhere into something not UTF-8: left as it is
-  const before = work.refs.main;
+  // changed elsewhere into something not UTF-8: what is written left as it is, and said
   work.push({ 'notes/world.md': /** @type {any} */ (Buffer.from([0x82, 0xff, 0xff])) });
   await inFront(page);
-  await expect(page.locator('#toast')).toHaveText('ほかの所での変更を読み込みました');
+  await expect(page.locator('#note-state')).toHaveText('GitHub にあるこの資料は UTF-8 ではないので、読み込めませんでした（書いている文章はそのままです）');
   await expect(page.getByLabel('資料の本文')).toHaveValue('# 世界観\n\n空は青い。ほかで足した。\n');
-  work.refs.main = before;
+  // its heading taken away elsewhere: called by its file
+  work.push({ 'notes/world.md': '空は青い。\n' });
+  await inFront(page);
+  await expect(page.locator('#note-name')).toHaveText('world.md');
   work.push({ 'notes/world.md': '# 世界観\n\n空は青い。ほかで足した。\n' });
   await inFront(page);
+  await expect(page.locator('#note-name')).toHaveText('世界観');
   // a draft: kept as it is, the other version beside it when sent
   await page.getByLabel('資料の本文').fill('# 世界観\n\nここで書いた。\n');
   work.push({ 'notes/world.md': '# 世界観\n\nほかで書いた。\n' });
@@ -140,8 +143,15 @@ test('a token refused on the notes screen: the new token put in there; the notes
   await page.getByLabel('新しいトークン', { exact: true }).fill('new-test-token-not-real');
   await page.getByRole('button', { name: 'パスキーで保管する' }).click();
   await expect(page.locator('#token-notice')).toBeHidden();
+  // (the work read again with the new token, behind the notes screen)
+  await expect(page.locator('#sync-state')).toHaveText(/GitHub から読みました/);
   await expect(page.locator('#notes')).toBeVisible();
   await expect(page.getByLabel('資料の本文')).toHaveValue('# 世界観\n\n断られても届く。\n');
-  await page.clock.fastForward(61000);
-  await expect.poll(() => work.text('notes/world.md')).toBe('# 世界観\n\n断られても届く。\n');
+  // (a minute at a time, the reading still going on when the clock moves)
+  await expect
+    .poll(async () => {
+      await page.clock.fastForward(61000);
+      return work.text('notes/world.md');
+    })
+    .toBe('# 世界観\n\n断られても届く。\n');
 });

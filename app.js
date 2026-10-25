@@ -184,7 +184,7 @@ function hideNotice() {
   $('token-notice').hidden = true;
 }
 async function checkExpiry() {
-  const text = expiryNotice((await store.get('prefs', 'token-expires')) ?? 0, Date.now());
+  const text = expiryNotice(await store.get('prefs', 'token-expires'), Date.now());
   if (text) showNotice(text);
   else hideNotice();
 }

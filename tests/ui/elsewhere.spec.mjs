@@ -210,3 +210,39 @@ test('a text set aside: the work not taken off the list for it; summed up withou
   await page.locator('#unsent [data-unpark-drop="0"]').click();
   await expect.poll(() => aside(page)).toEqual([['chapters/02_second.md', '# 第2話 駅で\n\n残る\n']]);
 });
+
+// FR-TOC-06, FR-SAVE-09: the only episode put in _trash/ elsewhere: none open, the text kept (not put in a text, none is
+// open); sent by the author where a file that cannot be read is now: said, still kept
+test('the only episode put in _trash/ elsewhere: none open, the text kept; sent where an unreadable file is now: said, kept', async ({ page, gh, work }) => {
+  work.push({ 'chapters/02_second.md': null, 'chapters/03_part/01_third.md': null });
+  await openWork(page);
+  await page.locator('#body').fill('# 第1話 はじまり\n\nひとつだけ\n');
+  work.push({ 'chapters/01_first.md': null, '_trash/20261005-000000/chapters/01_first.md': WORK_FILES['chapters/01_first.md'] });
+  await inFront(page);
+  await expect(page.locator('#sync-state')).toHaveText(/^「第1話 はじまり」は、ほかの所で削除されたか/);
+  await expect(page.locator('#episode-title')).toHaveValue('');
+  await expect(page.locator('#body')).toBeDisabled();
+  await page.getByRole('button', { name: '未送信の一覧' }).click();
+  await expect(page.locator('#unsent [data-unpark-put]')).toHaveCount(0);
+  await page.locator('#close-unsent').click();
+  // a file that is not UTF-8 put at its path elsewhere: not sent beside it
+  work.push({ 'chapters/01_first.md': /** @type {any} */ (Buffer.from([0x82, 0xff, 0xff])) });
+  await inFront(page);
+  await expect(page.locator('#toast')).toHaveText('ほかの所での変更を読み込みました');
+  await page.getByRole('button', { name: '未送信の一覧' }).click();
+  await page.locator('#unsent [data-unpark-send="0"]').click();
+  await expect(page.locator('#toast')).toHaveText(
+    'その場所のファイルを読めないので、送れません（文字コードが UTF-8 ではないか、この端末にまだ読み込まれていません）',
+  );
+  await expect.poll(() => aside(page)).toEqual([['chapters/01_first.md', '# 第1話 はじまり\n\nひとつだけ\n']]);
+});
+
+// FR-SAVE-08: the open episode read in while its title is being typed: the text follows GitHub, the title typed stays
+test('read in while the episode’s title is typed: the text follows GitHub, the title typed stays', async ({ page, gh, work }) => {
+  await openWork(page);
+  await page.locator('#episode-title').fill('はじまりの朝');
+  work.push({ 'chapters/01_first.md': '# 第1話 はじまり\n\nほかで書いた。\n' });
+  await inFront(page);
+  await expect(page.locator('#body')).toHaveValue('# 第1話 はじまり\n\nほかで書いた。\n');
+  await expect(page.locator('#episode-title')).toHaveValue('はじまりの朝');
+});
