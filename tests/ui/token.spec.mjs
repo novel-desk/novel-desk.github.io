@@ -83,7 +83,7 @@ test.describe('a passkey', () => {
     await expect(page.locator('#episode-title')).toHaveValue('はじまり');
     page.once('dialog', d => d.accept());
     await page.getByRole('button', { name: 'ほかの作品' }).click();
-    await page.getByRole('button', { name: 'トークンを忘れる' }).click();
+    await page.getByRole('button', { name: 'ログアウト' }).click();
     await expect(page.locator('#setup')).toBeVisible();
     expect(await stored(page, 'vault')).toEqual([]);
   });
@@ -178,7 +178,7 @@ test.describe('a passkey', () => {
     const other = await context.newPage();
     await other.goto('./');
     other.once('dialog', d => void d.accept());
-    await other.getByRole('button', { name: 'トークンを忘れる' }).click();
+    await other.getByRole('button', { name: 'ログアウト' }).click();
     await expect(other.locator('#setup')).toBeVisible();
     await page.getByRole('button', { name: 'パスキーで開く' }).click();
     await expect(page.locator('#setup')).toBeVisible();
@@ -224,11 +224,11 @@ test('the token put in: spaces only, nothing; its user not said, kept without on
   // forgotten, and a token GitHub does not take put in: the check of its user is refused, and nothing more happens
   const answers = [false, true];
   page.on('dialog', d => void (answers.shift() ? d.accept() : d.dismiss()));
-  await page.getByRole('button', { name: 'トークンを忘れる' }).click();
+  await page.getByRole('button', { name: 'ログアウト' }).click();
   // (not confirmed: nothing forgotten)
   await expect(page.locator('#repos')).toBeVisible();
   expect((await stored(page, 'vault')).length).toBe(1);
-  await page.getByRole('button', { name: 'トークンを忘れる' }).click();
+  await page.getByRole('button', { name: 'ログアウト' }).click();
   await expect(page.locator('#setup')).toBeVisible();
   await page.unroute('https://api.github.com/user');
   await page.getByLabel('トークン', { exact: true }).fill('not-a-token');
@@ -421,7 +421,7 @@ test('the token forgotten: the works’ copies and settings deleted; the drafts 
   await page.getByRole('button', { name: 'ほかの作品' }).click();
   const answers = [true, false];
   page.on('dialog', d => void (answers.shift() ? d.accept() : d.dismiss()));
-  await page.getByRole('button', { name: 'トークンを忘れる' }).click();
+  await page.getByRole('button', { name: 'ログアウト' }).click();
   await expect(page.locator('#setup')).toBeVisible();
   expect(await stored(page, 'vault')).toEqual([]);
   expect(await stored(page, 'snapshots')).toEqual([]);
@@ -439,7 +439,7 @@ test('another user’s token on a device with the drafts of the one before: not 
   await page.getByRole('button', { name: 'ほかの作品' }).click();
   const answers = [true, false, false, true];
   page.on('dialog', d => void (answers.shift() ? d.accept() : d.dismiss()));
-  await page.getByRole('button', { name: 'トークンを忘れる' }).click();
+  await page.getByRole('button', { name: 'ログアウト' }).click();
   gh.tokens.push('someone-test-token');
   gh.logins['someone-test-token'] = 'someone';
   await page.getByLabel('トークン', { exact: true }).fill('someone-test-token');

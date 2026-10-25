@@ -27,14 +27,14 @@ test('a picker closed and opened again at once: the second stays open', async ({
   });
   await openWork(page);
   await page.getByRole('button', { name: 'プロット', exact: true }).click();
-  const file = /** @type {{ x: number, y: number, width: number, height: number }} */ (await page.locator('#plot-file').boundingBox());
   await page.locator('#plot-file').click();
   const picker = page.locator('#picker');
   await expect(picker).toBeVisible();
-  const close = /** @type {{ x: number, y: number, width: number, height: number }} */ (await page.locator('#picker-close').boundingBox());
-  await page.mouse.click(close.x + close.width / 2, close.y + close.height / 2);
-  await page.mouse.click(file.x + file.width / 2, file.y + file.height / 2);
-  await page.waitForTimeout(300);
+  // (closed, and opened again in the same turn: the close event of the first is sent after the second opened)
+  await page.evaluate(() => {
+    /** @type {HTMLElement} */ (document.getElementById('picker-close')).click();
+    /** @type {HTMLElement} */ (document.getElementById('plot-file')).click();
+  });
   await expect(picker).toBeVisible();
   await picker.getByRole('button', { name: 'notes/other.md' }).click();
   await expect(picker).toBeHidden();

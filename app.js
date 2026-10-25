@@ -88,7 +88,12 @@ async function checkOwner(token) {
 // The token forgotten (NFR-SEC-16): with it, what the device keeps of the works (the works last read, the blobs, the
 // settings, the versions kept); the drafts not sent too, when the author says so
 async function forgetToken() {
-  if (!confirm('トークンをこの端末から消します。この端末に残した作品の控え・履歴・設定も消します。よろしいですか')) return;
+  if (
+    !confirm(
+      'ログアウトします。この端末からトークンと、この端末に残した作品の控え（オフライン用の版、読んだファイル、履歴、設定）を消します。GitHub の作品はそのままです。よろしいですか',
+    )
+  )
+    return;
   const left = (await store.all('drafts')).length;
   const dropDrafts =
     left > 0 &&
@@ -102,7 +107,7 @@ async function forgetToken() {
   gh.useToken('');
   using = '';
   kind = '';
-  toast('トークンと、この端末に残した作品の控えを消しました。パスキーはパスワードの管理に残っているので、要らなければそこで消してください');
+  toast('ログアウトしました。トークンと、この端末に残した作品の控えを消しました。パスキーはパスワードの管理に残っているので、要らなければそこで消してください');
   show('setup');
 }
 
