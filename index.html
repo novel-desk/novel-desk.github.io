@@ -36,6 +36,18 @@
     <button class="primary" id="keep-token">パスキーで保管する</button>
     <p id="setup-error" class="error" role="alert"></p>
   </form>
+  <!-- GitHub App の秘密鍵で始める -->
+  <form class="auth-card" id="app-form">
+    <h2>GitHub App の秘密鍵で始める</h2>
+    <p class="muted small">トークンの代わりに、作品のリポジトリに入れた GitHub App の秘密鍵（.pem）で始めます。期限が無いので、90 日ごとに作り直さなくて済みます。秘密鍵はこの端末の取り出せない鍵として置き、ファイルの中身は残しません。作り方は README の「GitHub App の秘密鍵で始める」にあります。</p>
+    <label>App ID（または Client ID）<input id="app-id" autocomplete="off" spellcheck="false" required></label>
+    <label>秘密鍵（.pem）<input id="app-key" type="file" accept=".pem" required></label>
+    <label>コミットに書く名前<input id="app-name" autocomplete="name" required></label>
+    <label>コミットに書くメールアドレス<input id="app-email" type="email" autocomplete="email" placeholder="GitHub の noreply のアドレス" required></label>
+    <p class="muted small">GitHub App で送ったコミットも、作者はここに書いた名前とメールアドレスになります（GitHub の Settings → Emails にある noreply のアドレスを勧めます）。</p>
+    <button class="primary" id="keep-app">秘密鍵を保管する</button>
+    <p id="app-error" class="error" role="alert"></p>
+  </form>
   <!-- ホーム画面に追加: iPhone の Safari のタブ（手順と、先に追加する理由）、またはインストールを勧めるブラウザー -->
   <div class="auth-card install" id="install-ios" hidden>
     <h2>先にホーム画面に追加してください</h2>
@@ -288,8 +300,10 @@
 <div id="token-notice" class="token-notice" role="alert" hidden>
   <p id="token-notice-text"></p>
   <div class="token-notice-row">
-    <a href="https://github.com/settings/personal-access-tokens" target="_blank" rel="noopener noreferrer">GitHub のトークンの一覧</a>
-    <button id="token-replace-open">新しいトークンを入れる</button>
+    <span id="token-notice-token" class="token-notice-row">
+      <a href="https://github.com/settings/personal-access-tokens" target="_blank" rel="noopener noreferrer">GitHub のトークンの一覧</a>
+      <button id="token-replace-open">新しいトークンを入れる</button>
+    </span>
     <button class="ghost" id="token-notice-close">あとで</button>
   </div>
 </div>

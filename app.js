@@ -9,6 +9,7 @@ import * as gh from './ui/github.js';
 import * as vault from './ui/vault.js';
 import { api } from './ui/shared.js';
 import { showWorks, wireWorks } from './ui/works.js';
+import { appOf, importKey } from './ui/appkey.js';
 import { forgetDevice, keepWork } from './ui/repo.js';
 
 /** @typedef {import('./ui/desk.js').Repo} Repo */
@@ -19,8 +20,11 @@ const KINDS = {
   prf: 'トークンはパスキー（PRF）から作った鍵で暗号化して、この端末に置いています。開くたびにパスキーを使います。',
   local:
     'このブラウザーはパスキーの PRF に対応していないため、トークンはこの端末の取り出せない鍵（WebCrypto）で暗号化して置いています。パスキーは使いません。この端末でこのブラウザーを開ける人は、トークンを使えます。',
+  app: 'GitHub App の秘密鍵は、この端末の取り出せない鍵（WebCrypto）として置いています。開くたびにパスキーを使います。',
+  'app-local':
+    'GitHub App の秘密鍵は、この端末の取り出せない鍵（WebCrypto）として置いています。このブラウザーはパスキーに対応していないため、パスキーは使いません。この端末でこのブラウザーを開ける人は、作品を読み書きできます。',
 };
-/** @type {'prf' | 'local' | ''} */
+/** @type {keyof typeof KINDS} */
 let kind = '';
 /** @type {string} the token in use ('' none yet) */
 let using = '';
@@ -47,12 +51,14 @@ async function keepToken(/** @type {SubmitEvent} */ e) {
   }
 }
 async function openToken() {
+  const a = await vault.keptApp();
   const v = await vault.kept();
-  if (!v) return start();
+  if (!a && !v) return start();
   $('unlock-error').textContent = '';
   $('open-token').disabled = true;
   try {
-    await withToken(await vault.open(v));
+    if (a) await withApp(await vault.openApp(a));
+    else await withToken(await vault.open(/** @type {import('./ui/vault.js').Vault} */ (v)));
   } catch (err) {
     $('unlock-error').textContent = err.message;
   } finally {
@@ -70,17 +76,26 @@ async function checkOwner(token) {
   try {
     login = (await gh.getJson('/user')).login ?? '';
   } catch {}
+  try {
+    await checkLogin(login, 'このトークン');
+  } catch (err) {
+    gh.useToken(using);
+    throw err;
+  }
+}
+// the drafts left on this device by another user (a token's GitHub user, or another App), deleted only when the
+// author says so; otherwise what is put in is not kept (throws)
+/** @param {string} login @param {string} what what is put in (このトークン, この秘密鍵) */
+async function checkLogin(login, what) {
   const owner = await store.get('prefs', 'owner');
   const left = (await store.all('drafts')).length;
   if (left && owner && login && login !== owner) {
     if (
       !confirm(
-        `この端末には、前のユーザーが GitHub に送っていない書きかけが ${left} 件残っています（中身は出しません）。消してから進みますか？（「キャンセル」なら、このトークンを保管しません）`,
+        `この端末には、前のユーザーが GitHub に送っていない書きかけが ${left} 件残っています（中身は出しません）。消してから進みますか？（「キャンセル」なら、${what}を保管しません）`,
       )
-    ) {
-      gh.useToken(using);
-      throw new Error('前のユーザーの書きかけを残すため、このトークンを保管しませんでした。前のユーザーがトークンを入れ直すと送れます');
-    }
+    )
+      throw new Error(`前のユーザーの書きかけを残すため、${what}を保管しませんでした。前のユーザーがトークンを入れ直すと送れます`);
     await forgetDevice(false);
   }
   if (login) await store.put('prefs', 'owner', login);
@@ -101,6 +116,8 @@ async function forgetToken() {
       `GitHub に送っていない書きかけが ${left} 件あります。この端末から消しますか？（「キャンセル」なら書きかけだけ残します。同じ GitHub のユーザーのトークンを入れ直すと送れます）`,
     );
   await vault.forget();
+  await vault.forgetApp();
+  gh.useApp(null);
   await forgetDevice(left > 0 && !dropDrafts);
   await store.del('prefs', 'token-expires');
   hideNotice();
@@ -147,7 +164,10 @@ const keepExpiry = day => store.put('prefs', 'token-expires', endOf(day));
 /** @param {string} text */
 function showNotice(text) {
   $('token-notice-text').textContent =
-    `${text} GitHub のトークンの一覧でトークンを作り直し（Regenerate token）、新しい値を入れてください。書いたものはこの端末に残っています。`;
+    using === 'app'
+      ? `${text} GitHub の App の設定で秘密鍵を作り直し、ログアウトしてから新しい秘密鍵で始めてください。書いたものはこの端末に残っています。`
+      : `${text} GitHub のトークンの一覧でトークンを作り直し（Regenerate token）、新しい値を入れてください。書いたものはこの端末に残っています。`;
+  $('token-notice-token').hidden = using === 'app';
   $('token-notice').hidden = false;
 }
 function hideNotice() {
@@ -162,7 +182,11 @@ async function checkExpiry() {
 // (NFR-SEC-16), what the device keeps of the works deleted (the copies, the settings, the records), the drafts kept
 gh.onRefused(() => {
   if (!using) return;
-  showNotice('GitHub がトークンを断りました（期限が切れたか、消されたかもしれません）。');
+  showNotice(
+    using === 'app'
+      ? 'GitHub が GitHub App のトークンを断りました（秘密鍵が消されたか、App が外されたかもしれません）。'
+      : 'GitHub がトークンを断りました（期限が切れたか、消されたかもしれません）。',
+  );
   void forgetDevice(true);
 });
 async function replaceToken(/** @type {SubmitEvent} */ e) {
@@ -199,14 +223,71 @@ async function replaceToken(/** @type {SubmitEvent} */ e) {
 
 /** @param {string} token */
 async function withToken(token) {
+  gh.useApp(null);
   gh.useToken(token);
   using = token;
   await checkExpiry();
+  await openFirst();
+}
+// the work chosen before, or the list of works
+async function openFirst() {
   const r = await store.get('prefs', 'repo');
   if (r) await desk.open(r);
   else await chooseRepo();
 }
+
+// --- a GitHub App's private key in place of the token (FR-GH-01, NFR-SEC-15: ui/appkey.js, ui/vault.js keepApp)
+
+async function keepApp(/** @type {SubmitEvent} */ e) {
+  e.preventDefault();
+  $('app-error').textContent = '';
+  const appId = $('app-id').value.trim();
+  const author = { name: $('app-name').value.trim(), email: $('app-email').value.trim() };
+  // (the form asks for each: it is not sent without them)
+  const file = /** @type {File} */ ($('app-key').files?.[0]);
+  $('keep-app').disabled = true;
+  try {
+    const key = await importKey(await file.text());
+    const app = appOf(appId, key, author);
+    /** @type {any[]} */
+    let repos;
+    try {
+      repos = await app.repos();
+    } catch (err) {
+      throw new Error(`GitHub App として GitHub に入れませんでした（App ID か秘密鍵が違うかもしれません）: ${err.message}`, { cause: err });
+    }
+    if (!repos.length)
+      throw new Error('この GitHub App は、どのリポジトリにも入っていません。GitHub の App の設定の Install App で、作品のリポジトリに入れてください');
+    await checkLogin(`app:${appId}`, 'この秘密鍵');
+    const v = await vault.keepApp({ appId, key, author });
+    await vault.forget();
+    /** @type {HTMLFormElement} */ (/** @type {unknown} */ ($('app-form'))).reset();
+    if (!v.credentialId) toast('パスキーに対応していないため、パスキーなしで保管しました');
+    await withApp(v, app);
+  } catch (err) {
+    $('app-error').textContent = err.message;
+  } finally {
+    $('keep-app').disabled = false;
+  }
+}
+/** @param {import('./ui/vault.js').AppVault} v @param {import('./ui/github.js').App} [app] the one it was checked with */
+async function withApp(v, app = appOf(v.appId, v.key, v.author)) {
+  kind = v.credentialId ? 'app' : 'app-local';
+  gh.useToken('');
+  gh.useApp(app);
+  using = 'app';
+  hideNotice();
+  await openFirst();
+}
+
 async function start() {
+  const a = await vault.keptApp();
+  if (a) {
+    if (!a.credentialId) return withApp(a);
+    kind = 'app';
+    $('unlock-note').textContent = KINDS.app;
+    return show('unlock');
+  }
   const v = await vault.kept();
   kind = v?.kind ?? '';
   if (!v) return show('setup');
@@ -224,6 +305,7 @@ async function start() {
 }
 
 $('setup-form').addEventListener('submit', e => void keepToken(/** @type {SubmitEvent} */ (e)));
+$('app-form').addEventListener('submit', e => void keepApp(/** @type {SubmitEvent} */ (e)));
 $('open-token').addEventListener('click', () => void openToken());
 $('forget-token').addEventListener('click', () => void forgetToken());
 $('forget-token-unlock').addEventListener('click', () => void forgetToken());

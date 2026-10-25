@@ -8,6 +8,17 @@ let token = '';
 const refusals = new EventTarget();
 /** @param {() => void} f */
 export const onRefused = f => refusals.addEventListener('refused', f);
+/**
+ * A GitHub App in use in place of the token (ui/appkey.js): the installation's token for a request (`fresh`: asked
+ * for again, the one before refused), the repositories it is installed on, and who the commits are written by
+ * @typedef {{ tokenFor: (url: string, fresh: boolean) => Promise<string>, repos: () => Promise<any[]>, author: { name: string, email: string } }} App
+ */
+/** @type {App | null} */
+let app = null;
+/** @param {App | null} a */
+export const useApp = a => {
+  app = a;
+};
 /** @param {string} t */
 export const useToken = t => {
   token = t;
@@ -24,23 +35,27 @@ export class GitHubError extends Error {
 /** @param {string} url @param {RequestInit} [init] @param {string} [as] another token than the one in use (the one with
  * Administration, for one request: not kept, and a refusal of it is not the token in use refused) */
 async function request(url, init = {}, as = '') {
-  /** @type {Response} */
-  let res;
-  try {
-    res = await fetch(url.startsWith('https://') ? url : API + url, {
-      ...init,
-      cache: 'no-store',
-      headers: { Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', Authorization: `Bearer ${as || token}`, ...init.headers },
-    });
-  } catch {
-    throw new GitHubError('GitHub につながりません（オフラインかもしれません）', 0);
-  }
+  let res = await attempt(url, init, as || (app ? await app.tokenFor(url, false) : token));
+  // (an App's installation token refused: asked for again, once)
+  if (res.status === 401 && !as && app) res = await attempt(url, init, await app.tokenFor(url, true));
   if (res.status === 401 && !as) refusals.dispatchEvent(new Event('refused'));
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new GitHubError(failure(res.status, body.message), res.status);
   }
   return res;
+}
+/** @param {string} url @param {RequestInit} init @param {string} bearer @returns {Promise<Response>} */
+async function attempt(url, init, bearer) {
+  try {
+    return await fetch(url.startsWith('https://') ? url : API + url, {
+      ...init,
+      cache: 'no-store',
+      headers: { Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', Authorization: `Bearer ${bearer}`, ...init.headers },
+    });
+  } catch {
+    throw new GitHubError('GitHub につながりません（オフラインかもしれません）', 0);
+  }
 }
 /** @param {string} path @returns {Promise<any>} */
 export const getJson = async path => (await request(path)).json();
@@ -50,8 +65,9 @@ export const send = async (method, path, body) =>
 
 // whether GitHub takes the token (a GitHubError when it does not)
 export const check = () => getJson('/user/repos?per_page=1');
-// the repositories the token can read, every page of them
+// the repositories the token can read, every page of them (an App: the ones it is installed on)
 export async function repos() {
+  if (app) return app.repos();
   /** @type {any[]} */
   const found = [];
   /** @type {string | null} */
@@ -161,7 +177,9 @@ export const newBytes = async (repo, base64) => (await send('POST', `/repos/${re
 export const newTree = async (repo, base, tree) => (await send('POST', `/repos/${repoPath(repo)}/git/trees`, { base_tree: base, tree })).sha;
 /** @param {string} repo @param {string} message @param {string} tree @param {string} parent */
 export const newCommit = async (repo, message, tree, parent) =>
-  (await send('POST', `/repos/${repoPath(repo)}/git/commits`, { message, tree, parents: [parent] })).sha;
+  (await send('POST', `/repos/${repoPath(repo)}/git/commits`, { message, tree, parents: [parent], ...writtenBy() })).sha;
+// who a commit is written by: an App's commits, the author (GitHub would write them as the App); a token's, its user
+const writtenBy = () => (app ? { author: app.author, committer: app.author } : {});
 // moves the branch onto the commit, only forward (a branch moved on elsewhere since: GitHubError 422)
 /** @param {string} repo @param {string} branch @param {string} commit */
 export const moveBranch = (repo, branch, commit) => send('PATCH', `/repos/${repoPath(repo)}/git/refs/heads/${refPath(branch)}`, { sha: commit, force: false });
@@ -187,10 +205,21 @@ export const repoById = id => metaAt(`/repositories/${id}`);
 // a file put in a repository with its commit (the Contents API: the only way to make the first commit of an empty one)
 /** @param {string} repo @param {string} path @param {string} base64 @param {string} message @returns {Promise<string>} the commit */
 export const putFile = async (repo, path, base64, message) =>
-  (await send('PUT', `/repos/${repoPath(repo)}/contents/${path.split('/').map(encodeURIComponent).join('/')}`, { message, content: base64 })).commit.sha;
+  (await send('PUT', `/repos/${repoPath(repo)}/contents/${path.split('/').map(encodeURIComponent).join('/')}`, { message, content: base64, ...writtenBy() }))
+    .commit.sha;
+// a request with another token than the one in use (`as`: the one with Administration, an App's JWT or an
+// installation's token), its answer and the next page's address
+/** @param {string} as @param {string} method @param {string} path @param {unknown} [body] @returns {Promise<{ json: any, next: string | null }>} */
+export async function requestAs(as, method, path, body) {
+  const res = await request(
+    path,
+    body === undefined ? { method } : { method, body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' } },
+    as,
+  );
+  return { json: await res.json(), next: nextPage(res.headers.get('Link')) };
+}
 /** @param {string} as @param {string} method @param {string} path @param {unknown} [body] @returns {Promise<any>} */
-const sendAs = async (as, method, path, body) =>
-  (await request(path, body === undefined ? { method } : { method, body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' } }, as)).json();
+const sendAs = async (as, method, path, body) => (await requestAs(as, method, path, body)).json;
 // a private repository made with the token `as` (Administration): the owner's (its user's when '' or its own login)
 /** @param {string} as @param {string} owner @param {string} name @param {string} description @returns {Promise<RepoMeta>} */
 export async function createRepo(as, owner, name, description) {

@@ -1,7 +1,7 @@
 // A GitHub of the screen tests: the REST API that the app uses (the repositories of the token, refs, commits, trees,
 // blobs), kept in memory and answered through Playwright's routing. Nothing reaches the real GitHub: every request that
 // is not to this page's server is answered here or refused (and noted in `outside`)
-import { createHash } from 'node:crypto';
+import { createHash, verify } from 'node:crypto';
 
 export const TOKEN = 'test-token-not-real';
 const sha1 = (/** @type {string | Buffer} */ s) => createHash('sha1').update(s).digest('hex');
@@ -213,6 +213,69 @@ export class FakeGitHub {
     this.before = null;
     // the trees answered as cut short (a repository with too many files for one listing)
     this.truncated = false;
+    /**
+     * A GitHub App (its ID or Client ID, the public key of its private key, and where it is installed: the owners and
+     * their repositories), or none. Its JWTs are checked with the key; its installations' tokens are given for an hour
+     * (appTokenLife) and taken until they end or are revoked
+     * @type {{ id: string, publicKey: import('node:crypto').KeyObject, installations: { id: number, account: string, repos: string[] }[] } | null}
+     */
+    this.app = null;
+    this.appTokenLife = 3600000;
+    /** @type {Map<string, { installation: number, expires: number }>} */
+    this.appTokens = new Map();
+    // the repositories of an installation come in pages of this many
+    this.installationPerPage = 100;
+    /** @type {{ author?: unknown, committer?: unknown }[]} who the commits made through the API were written by, as sent */
+    this.written = [];
+  }
+  // whether a request comes with a JWT of the App: signed by its key, its own, not ended, and for 10 minutes at most
+  /** @param {string | undefined} auth */
+  appJwt(auth) {
+    const [h, c, s] = String(auth)
+      .replace(/^Bearer /, '')
+      .split('.');
+    if (!this.app || !s) return false;
+    if (!verify('sha256', Buffer.from(`${h}.${c}`), this.app.publicKey, Buffer.from(s, 'base64url'))) return false;
+    const claims = JSON.parse(Buffer.from(c, 'base64url').toString());
+    return claims.iss === this.app.id && claims.exp * 1000 > Date.now() && claims.exp - claims.iat <= 660;
+  }
+  // the installation an installation's token is of (undefined: not one, ended, or revoked)
+  /** @param {string | undefined} auth */
+  installationOf(auth) {
+    const t = this.appTokens.get(String(auth).replace(/^Bearer /, ''));
+    return t && t.expires > Date.now() ? t.installation : undefined;
+  }
+  // the App's own requests: its installations, a token for one, the repositories of one
+  /** @param {string} method @param {URL} url @param {string | undefined} auth @param {(status: number, body: unknown, headers?: Record<string, string>) => Promise<void>} reply */
+  answerApp(method, url, auth, reply) {
+    const app = /** @type {NonNullable<FakeGitHub['app']>} */ (this.app);
+    if (url.pathname === '/installation/repositories') {
+      const i = app.installations.find(x => x.id === this.installationOf(auth));
+      if (!i) return reply(401, { message: 'Bad credentials' });
+      const page = Number(url.searchParams.get('page') || 1),
+        per = this.installationPerPage;
+      const repos = i.repos.map(n => /** @type {FakeRepo} */ (this.repos.get(n)).meta());
+      const more = page * per < repos.length;
+      return reply(
+        200,
+        { total_count: repos.length, repositories: repos.slice((page - 1) * per, page * per) },
+        more ? { Link: `<https://api.github.com/installation/repositories?page=${page + 1}>; rel="next"` } : {},
+      );
+    }
+    if (!this.appJwt(auth)) return reply(401, { message: 'A JSON web token could not be decoded' });
+    if (url.pathname === '/app/installations' && method === 'GET')
+      return reply(
+        200,
+        app.installations.map(i => ({ id: i.id, account: { login: i.account } })),
+      );
+    const m = /^\/app\/installations\/(\d+)\/access_tokens$/.exec(url.pathname);
+    if (m && method === 'POST' && app.installations.some(i => i.id === Number(m[1]))) {
+      const token = `ghs_test_${this.appTokens.size + 1}`;
+      const expires = Date.now() + this.appTokenLife;
+      this.appTokens.set(token, { installation: Number(m[1]), expires });
+      return reply(201, { token, expires_at: new Date(expires).toISOString() });
+    }
+    return reply(404, { message: 'Not Found' });
   }
   // a repository renamed (or moved to another owner) on GitHub: its old name sent on to it
   /** @param {string} from @param {string} to */
@@ -248,9 +311,12 @@ export class FakeGitHub {
     const reply = (status, body, headers = {}) =>
       route.fulfill({ status, headers: { ...CORS, 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body) });
     const headers = req.headers();
+    if (this.app && (url.pathname.startsWith('/app/') || url.pathname === '/installation/repositories'))
+      return this.answerApp(method, url, headers.authorization, reply);
     const admin = this.adminTokens.some(t => headers.authorization === `Bearer ${t}`);
     if (admin) this.adminCalls.push(`${method} ${url.pathname}`);
-    if (!admin && !this.tokens.some(t => headers.authorization === `Bearer ${t}`)) return reply(401, { message: 'Bad credentials' });
+    if (!admin && !this.tokens.some(t => headers.authorization === `Bearer ${t}`) && this.installationOf(headers.authorization) === undefined)
+      return reply(401, { message: 'Bad credentials' });
     const failing = this.fail?.(method, url.pathname);
     if (failing) return reply(failing, { message: 'test failure' });
     const body = method === 'GET' ? null : req.postDataJSON();
@@ -436,7 +502,10 @@ export class FakeGitHub {
       }
       return reply(201, { sha: repo.tree(entries) });
     }
-    if (method === 'POST' && rest === 'commits') return reply(201, { sha: repo.commitTree(body.tree, body.message, body.parents) });
+    if (method === 'POST' && rest === 'commits') {
+      this.written.push({ author: body.author, committer: body.committer });
+      return reply(201, { sha: repo.commitTree(body.tree, body.message, body.parents) });
+    }
     if (method === 'POST' && rest === 'refs') {
       const name = String(body.ref).replace(/^refs\/heads\//, '');
       if (repo.refs[name]) return reply(422, { message: 'Reference already exists' });

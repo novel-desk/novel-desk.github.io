@@ -123,3 +123,50 @@ export async function open(v) {
     throw new Error('トークンを復号できませんでした（作ったときと違うパスキーかもしれません）', { cause: err });
   }
 }
+
+// --- a GitHub App's private key (ui/appkey.js), kept in place of a token. The key is WebCrypto's that cannot be
+// taken out (extractable: false): kept as it is, so nothing can read it, on this device or off it. Where this browser
+// has passkeys, opening the app asks for the passkey made for it (as the token's does); the key is not encrypted
+// with it, since a key that cannot be taken out cannot be wrapped either (README: GitHub App の秘密鍵で始める)
+/**
+ * @typedef {{ appId: string, key: CryptoKey, author: { name: string, email: string }, credentialId: Uint8Array | null }} AppVault
+ */
+const APP = 'app';
+/** @returns {Promise<AppVault | undefined>} */
+export const keptApp = () => store.get('vault', APP);
+export const forgetApp = () => store.del('vault', APP);
+// Keeps the App's key, with a passkey to open it when this browser has passkeys. Throws when the author said no to
+// the passkey (nothing is kept then)
+/** @param {Omit<AppVault, 'credentialId'>} a @returns {Promise<AppVault>} */
+export async function keepApp(a) {
+  /** @type {Uint8Array | null} */
+  let credentialId = null;
+  if (window.PublicKeyCredential) {
+    try {
+      const cred = /** @type {PublicKeyCredential} */ (
+        await navigator.credentials.create({
+          publicKey: createOptions({ rpId: location.hostname, userId: random(16), challenge: random(32), salt: random(32) }),
+        })
+      );
+      credentialId = new Uint8Array(cred.rawId);
+    } catch (err) {
+      throw new Error(`パスキーが作られませんでした（${err.name}）。もう一度押してください`, { cause: err });
+    }
+  }
+  const v = { ...a, credentialId };
+  await store.put('vault', APP, v);
+  return v;
+}
+// The App's key, opened with its passkey (the author verified by it; one kept without a passkey is opened at once,
+// not here). Throws when it cannot be
+/** @param {AppVault} v @returns {Promise<AppVault>} */
+export async function openApp(v) {
+  try {
+    await navigator.credentials.get({
+      publicKey: getOptions({ rpId: location.hostname, credentialId: /** @type {Uint8Array} */ (v.credentialId), challenge: random(32), salt: random(32) }),
+    });
+  } catch (err) {
+    throw new Error(`パスキーで開けませんでした（${err.name}）`, { cause: err });
+  }
+  return v;
+}
