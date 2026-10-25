@@ -1,5 +1,4 @@
-/* The server version's look (public/style.css): 象牙色の紙（本文も周りも近い色で、白すぎない）、真っ黒でない墨茶の字、細い線。
-   暗い設定では墨色. Only what these screens use */
+/* 象牙色の紙（本文も周りも近い色で、白すぎない）、真っ黒でない墨茶の字、細い線。暗い設定では墨色 */
 :root {
   --bg: #f2eee6; --paper: #f6f2ea; --side: #ece7dd; --line: #ddd6c9; --text: #37322c; --muted: #898276;
   --accent: #6d4aa8; --accent-soft: #ebe4f4; --sel: #e5ded1; --error: #b3261e; --ok: #3b7a57;
@@ -7,37 +6,31 @@
   --gothic: -apple-system, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic", "YuGothic", "Meiryo", "Noto Sans CJK JP", "Noto Sans JP", sans-serif;
   color-scheme: light;
 }
-/* 黒: the device's dark setting (自動), or chosen (data-theme on <html>, kept on the device: FR-APP-01) */
+/* 黒: the device's dark setting (自動), or chosen in 設定 (data-theme on <html>, kept per device) */
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) { --bg: #16171a; --paper: #1c1d21; --side: #131417; --line: #2c2e33; --text: #e4e1da; --muted: #8e8b84;
+  :root:not([data-theme=light]) { --bg: #16171a; --paper: #1c1d21; --side: #131417; --line: #2c2e33; --text: #e4e1da; --muted: #8e8b84;
     --accent: #a98be0; --accent-soft: #2f2840; --sel: #2a2c31; --error: #f2b8b5; --ok: #8fd1a8; color-scheme: dark; }
 }
-:root[data-theme="dark"] { --bg: #16171a; --paper: #1c1d21; --side: #131417; --line: #2c2e33; --text: #e4e1da; --muted: #8e8b84;
+:root[data-theme=dark] { --bg: #16171a; --paper: #1c1d21; --side: #131417; --line: #2c2e33; --text: #e4e1da; --muted: #8e8b84;
   --accent: #a98be0; --accent-soft: #2f2840; --sel: #2a2c31; --error: #f2b8b5; --ok: #8fd1a8; color-scheme: dark; }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; }
-/* a swipe sideways (the preview turns the page) does not take the browser back in its history */
-html { overscroll-behavior-x: none; }
 body { background: var(--bg); color: var(--text); font: 15px/1.6 var(--gothic); -webkit-text-size-adjust: 100%; }
 [hidden] { display: none !important; }
 button, input, textarea { font: inherit; color: inherit; }
 button { cursor: pointer; border: 1px solid var(--line); background: var(--paper); border-radius: 8px; padding: 7px 12px; }
-button:disabled { opacity: .45; cursor: default; }
 button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
-/* a link that opens another page, drawn as a button */
-a.button { display: block; text-align: center; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; color: var(--text); text-decoration: none; background: var(--paper); }
 button.ghost { border-color: transparent; background: transparent; color: var(--muted); }
 button.link { border: 0; background: none; color: var(--accent); padding: 4px 0; }
 input { border: 1px solid var(--line); background: var(--paper); border-radius: 8px; padding: 8px 10px; min-width: 0; outline: none; }
 input:focus { border-color: var(--accent); }
-.muted { color: var(--muted); } .small { font-size: 12px; } .error { color: var(--error); min-height: 1em; margin: 0; }
+.muted { color: var(--muted); } .small { font-size: 12px; } .error { color: var(--error); min-height: 1em; }
 
-/* the token */
-.auth { min-height: 100%; display: grid; place-items: center; align-content: center; gap: 12px; padding: 24px 16px; }
+/* auth */
+.auth { min-height: 100%; display: grid; place-items: center; padding: 24px 16px; }
 .auth-card { width: min(100%, 360px); display: grid; gap: 12px; background: var(--paper); border: 1px solid var(--line); border-radius: 14px; padding: 24px; }
 .auth-card h1 { margin: 0; font: 600 22px/1.3 var(--mincho); letter-spacing: .05em; }
-.auth-card p { margin: 0; }
-.auth-card label { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
+.auth-card label, .card label { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
 
 /* bars */
 .bar { position: sticky; top: 0; z-index: 3; display: flex; align-items: center; justify-content: space-between; gap: 8px;
@@ -45,86 +38,76 @@ input:focus { border-color: var(--accent); }
   background: color-mix(in srgb, var(--bg) 90%, transparent); backdrop-filter: blur(10px); border-bottom: 1px solid var(--line); }
 .brand { font: 600 17px var(--mincho); letter-spacing: .06em; }
 
-/* the repositories */
-.shelf-main { max-width: 720px; margin: 0 auto; padding: 16px; display: grid; gap: 14px; }
-.shelf-main > p { margin: 0; }
+/* shelf */
+.shelf-main, .settings-main { max-width: 720px; margin: 0 auto; padding: 16px; display: grid; gap: 14px; }
+.new-work, #import-work { display: flex; gap: 8px; } .new-work input, #import-work input { flex: 1; }
 .works { display: grid; gap: 10px; }
 .work { text-align: left; display: grid; gap: 4px; background: var(--paper); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
-.work b { font: 600 17px/1.4 var(--mincho); overflow-wrap: anywhere; }
+.work b { font: 600 17px/1.4 var(--mincho); }
 .work small { color: var(--muted); }
-.card { background: var(--paper); border: 1px solid var(--line); border-radius: 12px; padding: 16px; display: grid; gap: 10px; }
-.card h2 { margin: 0; font-size: 15px; } .card p { margin: 0; }
-.card button { justify-self: start; }
+.import summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+.import form { margin-top: 8px; }
 
-/* the desk: the table of contents, and the text */
+/* desk */
 .desk { display: grid; grid-template-columns: 280px 1fr; height: 100%; height: 100dvh; }
 .toc { background: var(--side); border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0;
   padding: calc(8px + env(safe-area-inset-top)) 10px calc(10px + env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left)); }
-.toc-head { display: flex; justify-content: space-between; align-items: center; }
-.work-title { flex: 1; min-width: 0; border: 0; background: transparent; font: 600 18px/1.4 var(--mincho); padding: 6px 6px 2px; border-radius: 0; }
+.toc-head { display: flex; justify-content: space-between; }
+.work-title { border: 0; background: transparent; font: 600 18px/1.4 var(--mincho); padding: 6px 6px 2px; }
 .toc > p { margin: 0 6px 8px; }
-.problems { margin: 0 6px 8px; padding: 6px 8px; border: 1px solid var(--error); border-radius: 8px; color: var(--error); font-size: 12px; }
-.problems p { margin: 0; }
 .tree { flex: 1; overflow-y: auto; min-height: 0; padding-bottom: 10px; }
 .node { display: flex; align-items: center; gap: 6px; width: 100%; border: 0; border-radius: 7px; background: transparent; padding: 6px 8px; text-align: left; cursor: pointer; user-select: none; }
 .node:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .node .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .node .c { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
-.node .u { color: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.reorder .node .u { display: none; }
 .node.episode.active { background: var(--sel); font-weight: 600; }
-.node.chapter { font-weight: 700; font-size: 13px; color: var(--muted); margin-top: 6px; cursor: default; }
+.node.chapter { font-weight: 700; font-size: 13px; color: var(--muted); margin-top: 6px; }
+.node.chapter .fold { width: 1em; color: var(--muted); }
 .chapter-body { padding-left: 12px; }
-.node .unsent-tag { color: var(--accent); border: 1px solid var(--accent); border-radius: 4px; font-size: 10px; padding: 0 4px; white-space: nowrap; }
-.node .conflict { color: var(--error); border: 1px solid var(--error); border-radius: 4px; font-size: 10px; padding: 0 4px; white-space: nowrap; }
+.chapter-body.closed { display: none; }
+.node.drop-before { box-shadow: inset 0 2px var(--accent); } .node.drop-into { outline: 1px dashed var(--accent); }
+.reorder .node { cursor: grab; }
+.order-tools { display: none; gap: 2px; }
+.reorder .order-tools { display: flex; }
+.order-tools button { padding: 2px 7px; font-size: 12px; border-radius: 6px; }
+.order-tools select { font-size: 12px; max-width: 90px; border: 1px solid var(--line); border-radius: 6px; background: var(--paper); }
+.toc-add { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; padding: 8px 0 4px; }
+.toc-add #add-episode { grid-column: 1 / -1; }
 .sync { font-size: 12px; color: var(--muted); padding: 8px 6px 0; border-top: 1px solid var(--line); display: grid; gap: 6px; }
-.sync p { margin: 0; }
 .sync .err { color: var(--error); } .sync .ok { color: var(--ok); }
-.sync-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-.sync-row button { font-size: 13px; padding: 5px 10px; }
-.sync-row button.link { padding: 5px 4px; }
-.sync-row a { color: inherit; overflow-wrap: anywhere; }
-.sync-row select { min-width: 0; max-width: 100%; font-size: 13px; }
+.sync button { font-size: 12px; padding: 4px 8px; justify-self: start; }
 
-.paper { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--paper); overflow: hidden; }
-.paper-head { display: flex; align-items: center; gap: 4px; padding: calc(2px + env(safe-area-inset-top)) 10px 2px; border-bottom: 1px solid var(--line); min-height: 40px; }
-.episode-title { flex: 1; min-width: 0; border: 0; background: transparent; font: 600 16px/1.3 var(--mincho); padding: 1px 6px; border-radius: 0; }
-.episode-title:disabled { opacity: 1; }
-.menu { display: none; font-size: 16px; padding: 2px 8px; }
-.episode-note { margin: 0; padding: 6px 16px; font-size: 12px; color: var(--error); border-bottom: 1px solid var(--line); }
+.paper { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--paper); }
+/* the head: low, with little padding (a 16px title) */
+.paper-head { display: flex; align-items: center; gap: 4px; padding: calc(2px + env(safe-area-inset-top)) 10px 2px; border-bottom: 1px solid var(--line); }
+.episode-title { flex: 1; border: 0; background: transparent; font: 600 16px/1.3 var(--mincho); padding: 1px 6px; }
+.menu { display: none; font-size: 16px; padding: 2px 6px; }
+.paper-head .icon { padding: 3px 6px; }
 .body { flex: 1; width: 100%; max-width: 46em; margin: 0 auto; border: 0; outline: none; resize: none; background: transparent;
-  padding: 28px 22px 40vh; color: var(--text); min-height: 0;
-  font: 14px/1.95 "BIZ UDGothic", "BIZ UDゴシック", "ヒラギノ角ゴ ProN W3", "Hiragino Kaku Gothic ProN", "Hiragino Sans", "游ゴシック Medium", "Yu Gothic Medium", "メイリオ", Meiryo, var(--gothic); letter-spacing: .02em; }
+  padding: 28px 22px 40vh; font: 17px/2 var(--mincho); letter-spacing: .03em; color: var(--text);
+  /* the text box gives way to what is over it (the 中箱 shown): Safari would not shrink it under its padding, and the
+     foot went off the bottom of the screen */
+  min-height: 0; }
+/* the foot: low; the right side kept off the phone's rounded corner */
 .paper-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px;
-  padding: 4px calc(16px + env(safe-area-inset-right)) calc(4px + env(safe-area-inset-bottom)) 16px;
+  padding: 2px calc(28px + env(safe-area-inset-right)) calc(2px + env(safe-area-inset-bottom)) 16px;
   border-top: 1px solid var(--line); font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
-#save-state { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .scrim { display: none; }
 
-/* the preview */
-.preview { flex: 1; overflow-y: auto; font: 15px/1.85 var(--mincho); padding: 16px 20px 40vh; width: 100%; max-width: 46em; margin: 0 auto; overscroll-behavior-y: contain; overscroll-behavior-x: none; touch-action: pan-y pinch-zoom; }
-.preview p { margin: 0; min-height: 1em; } .preview h1, .preview h2, .preview h3, .preview h4 { font-family: var(--mincho); margin: .6em 0 .3em; line-height: 1.5; }
-.preview h1 { font-size: 1.3em; } .preview h2 { font-size: 1.15em; } .preview h3, .preview h4 { font-size: 1.05em; }
-.preview img { display: block; max-width: 100%; max-height: 70vh; margin: 12px auto; border-radius: 8px; }
-.preview rt { font-size: .5em; }
+/* settings */
+.card { background: var(--paper); border: 1px solid var(--line); border-radius: 12px; padding: 16px; display: grid; gap: 10px; }
+.card h2 { margin: 0; font-size: 15px; }
+.card form { display: grid; gap: 10px; }
+.check { display: flex !important; align-items: center; gap: 8px; color: var(--text) !important; font-size: 14px !important; }
+.users { display: grid; gap: 8px; }
+.user { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px 0; border-top: 1px solid var(--line); }
+.user b { flex: 1; min-width: 8em; } .user small { color: var(--muted); }
+.user button { font-size: 12px; padding: 4px 8px; }
+.add-user { display: grid; gap: 8px; }
 
 .toast { position: fixed; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom)); transform: translate(-50%, 10px); opacity: 0; z-index: 20;
   background: var(--text); color: var(--bg); padding: 9px 16px; border-radius: 999px; font-size: 13px; transition: .2s; pointer-events: none; max-width: calc(100vw - 32px); }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
-.token-notice { position: fixed; top: env(safe-area-inset-top); left: 0; right: 0; z-index: 15; background: var(--paper); border-bottom: 1px solid var(--error); color: var(--error); padding: 8px 16px; font-size: 13px; display: grid; gap: 6px; }
-.token-notice p { margin: 0; }
-.token-notice-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.token-notice a { color: var(--accent); }
-.author-notice { border-bottom-color: var(--line); color: var(--text); }
-.author-notice label { display: grid; gap: 2px; font-size: 12px; color: var(--muted); }
-.paste-form, .key-form { display: grid; gap: 12px; }
-#app-key-details summary { cursor: pointer; color: var(--muted); font-size: 14px; }
-#app-key-details[open] summary { margin-bottom: 12px; }
-.replace-form { display: grid; gap: 10px; padding: 12px 16px 16px; }
-.replace-form label, .new-work label { display: grid; gap: 4px; font-size: 13px; }
-.new-work { display: grid; gap: 10px; }
-.off-list summary { cursor: pointer; font-size: 13px; color: var(--muted); }
-.off-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 0; overflow-wrap: anywhere; }
 
 /* phones: the table of contents slides in */
 @media (max-width: 760px) {
@@ -133,206 +116,256 @@ input:focus { border-color: var(--accent); }
   .desk.toc-open .toc { transform: none; box-shadow: 0 0 40px rgba(0,0,0,.25); }
   .desk.toc-open .scrim { display: block; position: fixed; inset: 0; z-index: 9; background: rgba(0,0,0,.3); }
   .menu { display: inline-block; }
-  /* the text written stays 14px, as the server version's: iOS zooms in on tapping a text under 16px, but app.js sets
-     maximum-scale=1 on iOS (lib/install.js viewportOf), which keeps it from that (pinching still zooms). The other fields
-     are 16px, as the server version's */
-  .body { padding: 18px 14px 50vh; }
-  .preview { padding-left: 14px; padding-right: 14px; }
+  .body { padding: 18px 16px 50vh; font-size: 16px; }
   input, textarea { font-size: 16px; }
-  /* what the foot says of the episode (FR-SAVE-07) beside its buttons: in two lines when it does not go in one, never cut */
-  #save-state { white-space: normal; line-height: 1.35; overflow-wrap: anywhere; }
 }
+.gh-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.sync .notice { color: var(--accent); }
+a.button { display: block; text-align: center; text-decoration: none; border-radius: 8px; padding: 10px 12px; }
+a.button.primary { background: var(--accent); color: #fff; font-weight: 600; }
 
-/* the install hint of the first screen */
-.install h2 { margin: 0; font-size: 15px; } .install ol { margin: 0; padding-left: 1.4em; display: grid; gap: 4px; }
-
-/* the table of contents: folding, reordering, adding (the server version's look) */
-.node.chapter .fold { width: 1em; color: var(--muted); }
-.chapter-body.closed { display: none; }
-.node.drop-before { box-shadow: inset 0 2px var(--accent); } .node.drop-into { outline: 1px dashed var(--accent); }
-.reorder .node { cursor: grab; }
-.order-tools { display: none; gap: 2px; }
-.reorder .order-tools { display: flex; }
-.order-tools button { padding: 2px 7px; font-size: 12px; border-radius: 6px; }
-.order-tools select { font-size: 12px; max-width: 90px; border: 1px solid var(--line); border-radius: 6px; background: var(--paper); color: var(--text); }
-.toc-head button { white-space: nowrap; }
-.toc-add { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; padding: 8px 0 4px; }
-.toc-add #add-episode, .toc-add #add-chapter { grid-column: span 2; }
-.toc-add button { white-space: nowrap; padding: 7px 8px; }
-
-/* the paper's tools */
-.icon { display: inline-grid; place-items: center; padding: 6px; line-height: 0; color: var(--muted); }
-.icon:hover, .icon.on { color: var(--accent); }
-.icon.danger { color: var(--error); opacity: .85; }
-.icon:disabled { opacity: .3; }
-.paper-head .icon { padding: 3px 6px; }
-.episode-meta { margin: 0; padding: 2px 18px 0; font-size: 11px; display: flex; justify-content: flex-end; gap: 10px; }
-.foot-tools { display: flex; align-items: center; gap: 2px; flex-shrink: 0; } .foot-tools button { font-size: 12px; padding: 2px 8px; }
-.foot-tools .ep-step { font-size: 11px; padding: 2px 6px; white-space: nowrap; } .ep-step:disabled { opacity: .3; }
-.ep-nav { display: flex; justify-content: space-between; gap: 12px; margin: 48px 0 8px; padding-top: 16px; border-top: 1px solid var(--line); }
-.ep-nav button { font-size: 14px; max-width: 48%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* 「次の話へ移動」: over the preview's edge while a pull would move on (placed by ui/reading.js) */
-.pull-hint { position: fixed; z-index: 30; transform: translateX(-50%); margin: 0; padding: 3px 12px; border: 1px solid var(--accent); border-radius: 999px;
-  background: var(--paper); color: var(--accent); font-size: 12px; font-weight: 600; pointer-events: none; }
-/* the input bar: small buttons side by side from the left, off the edges */
-.kbar { display: flex; align-items: center; justify-content: flex-start; overflow-x: auto; background: var(--side); border-top: 1px solid var(--line);
-  padding: 1px calc(12px + env(safe-area-inset-right)) 1px calc(12px + env(safe-area-inset-left)); }
-.kbar button { flex-shrink: 0; display: inline-grid; place-items: center; min-width: 32px; height: 30px; padding: 0 6px; border: 0; background: transparent; color: var(--text); font: 13px var(--mincho); }
-.kbar button:active { background: var(--line); border-radius: 8px; }
-.kbar button svg { width: 18px; height: 18px; }
-.kbar rt { font-size: 7px; }
-.kbar-sep { flex: 0 0 1px; align-self: stretch; margin: 6px 2px; background: var(--line); }
-/* writing on a phone: the input bar instead of the foot, the page cut to above the keyboard (ui/textbox.js) */
-.desk.writing .paper-foot { display: none; }
-.desk.writing #body { min-height: 0; padding-bottom: 40px; }
-.desk.writing .episode-meta { display: none; }
-
-/* the screens over the desk (画像): a bar and a column (the server version's settings) */
-.settings-main { max-width: 720px; margin: 0 auto; padding: 16px; display: grid; gap: 14px; }
-.settings-main > p { margin: 0; }
-.notes-folder { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; font-size: 13px; font-weight: 600; color: var(--muted); }
-.images-list { display: grid; gap: 4px; }
-.images-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 8px; }
-.images-list figure { margin: 0; display: grid; gap: 4px; }
-.images-list img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); background: var(--side); }
-.images-list figcaption { font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.image-tools { display: flex; flex-wrap: wrap; gap: 4px; } .image-tools button { font-size: 11px; padding: 4px 6px; min-height: 28px; }
-.image-tools .danger { color: var(--error); }
-
-/* 履歴: a dialog over the desk */
+/* 版 */
+.versions-row { display: flex; gap: 6px; padding: 0 0 6px; } .versions-row button { flex: 1; font-size: 12px; padding: 6px 8px; }
 .versions { width: min(92vw, 640px); max-height: 86vh; border: 1px solid var(--line); border-radius: 14px; background: var(--paper); color: var(--text); padding: 0; }
 .versions::backdrop { background: rgba(0,0,0,.35); }
 .versions header { display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--paper); }
 #versions-body { padding: 10px 14px 16px; display: grid; gap: 8px; }
 .version { text-align: left; display: grid; gap: 2px; } .version b { font-weight: 600; } .version small { color: var(--muted); font-size: 12px; }
-.version .tag { font-size: 10px; border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; margin-left: 6px; color: var(--muted); }
 .version-text { width: 100%; min-height: 50vh; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--text);
   padding: 12px; font: 15px/1.9 var(--mincho); resize: vertical; }
-.version-text[hidden], .version-diff[hidden] { display: none; }
-.history-tabs { display: flex; gap: 6px; } .history-tabs button { flex: 1; font-size: 13px; white-space: nowrap; padding: 6px 4px; }
-.history-tabs button.on { border-color: var(--accent); color: var(--accent); font-weight: 600; }
-.hist-head { display: flex; align-items: center; gap: 8px; } .hist-head .back-history { padding: 4px 6px; white-space: nowrap; }
-/* the changes: what went and what came, from one version to the next */
-.diff { border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; margin: 8px 0; max-height: 60vh; overflow: auto; font: 15px/1.8 var(--mincho); }
-.diff p { margin: 0; white-space: pre-wrap; word-break: break-all; }
-.diff del { background: rgba(214, 69, 65, .18); color: inherit; text-decoration: line-through; text-decoration-color: rgba(214, 69, 65, .7); }
-.diff ins { background: rgba(46, 160, 67, .2); color: inherit; text-decoration: none; }
-.diff .diff-gap { color: var(--muted); text-align: center; }
 
-/* 資料: the list (主な資料, folders), a note open as an episode is (its own bar, the text to the bottom) */
+/* 資料と画像、プレビュー */
+.foot-tools { display: flex; gap: 2px; flex-shrink: 0; } .foot-tools button { font-size: 12px; padding: 2px 8px; }
+.preview { overflow-y: auto; font: 15px/1.85 var(--mincho); padding: 16px 20px; }
+.preview p { margin: 0; min-height: 1em; } .preview h1, .preview h2, .preview h3, .preview h4 { font-family: var(--mincho); margin: .6em 0 .3em; line-height: 1.5; }
+/* headings a size or so over the text, not a poster: an episode's 「# 第2話 …」 stays on one line on a phone */
+.preview h1 { font-size: 1.3em; } .preview h2 { font-size: 1.15em; } .preview h3, .preview h4 { font-size: 1.05em; }
+.preview img { display: block; max-width: 100%; max-height: 70vh; margin: 12px auto; border-radius: 8px; }
+.preview rt { font-size: .5em; }
 .notes-list { display: grid; gap: 6px; }
-.notes-list button { text-align: left; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
-.notes-in { display: grid; gap: 6px; }
+.notes-list button { text-align: left; display: flex; justify-content: space-between; gap: 8px; }
+.notes-list small { color: var(--muted); }
+.notes-folder { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; font-size: 13px; font-weight: 600; color: var(--muted); }
 .notes-folder button { padding: 2px 10px; }
+.notes-in { display: grid; gap: 6px; }
 .notes-h { font-size: 14px; margin: 16px 0 6px; display: flex; align-items: center; justify-content: space-between; }
-.unsent-tag { color: var(--accent); border: 1px solid var(--accent); border-radius: 4px; font-size: 10px; padding: 0 4px; white-space: nowrap; }
+.images-list { display: grid; gap: 4px; }
+.images-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 8px; }
+.images-list figure { margin: 0; display: grid; gap: 4px; } .images-list img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); background: var(--side); }
+.image-tools { display: flex; flex-wrap: wrap; gap: 4px; } .image-tools button { font-size: 11px; padding: 4px 6px; min-height: 28px; }
+.image-tools .danger { color: var(--error); }
+.images-list figcaption { font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.note-view { display: grid; gap: 8px; }
+.note-head { display: flex; align-items: center; gap: 6px; } .note-head button { white-space: nowrap; flex-shrink: 0; } .note-head b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.note-body { width: 100%; min-height: 60vh; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); color: var(--text); padding: 12px; font: 15px/1.9 var(--mincho); resize: vertical; }
+#note-preview { border: 1px solid var(--line); border-radius: 10px; background: var(--paper); min-height: 60vh; }
+.node .u { color: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.reorder .node .u { display: none; }
+.node .conflict { color: var(--error); border: 1px solid var(--error); border-radius: 4px; font-size: 10px; padding: 0 4px; white-space: nowrap; }
+.picker-list { display: grid; gap: 6px; padding: 12px 14px 4px; max-height: 45vh; overflow-y: auto; }
+.picker-list button { text-align: left; } .picker-list button.current { border-color: var(--accent); font-weight: 600; }
+.picker-form { display: flex; gap: 8px; padding: 8px 14px; } .picker-form input { flex: 1; min-width: 0; }
+.picker > p { padding: 0 14px 12px; margin: 0; }
+.sync-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.sync-row a { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.sync-row select { font-size: 12px; padding: 3px 4px; border: 1px solid var(--line); border-radius: 6px; background: var(--paper); color: var(--text); }
+.sync button.link { border: 0; background: none; padding: 0; color: var(--muted); text-decoration: underline dotted; }
+.episode-updated { margin: 0; padding: 2px 18px 0; font-size: 11px; text-align: right; min-height: 1em; }
+.episode-meta { margin: 0; padding: 2px 18px 0; font-size: 11px; display: flex; justify-content: flex-end; gap: 10px; }
+.icon { display: inline-grid; place-items: center; padding: 6px; line-height: 0; color: var(--muted); }
+.icon:hover, .icon.on { color: var(--accent); }
+.icon.danger { color: var(--error); opacity: .85; }
+.history-tabs { display: flex; gap: 6px; } .history-tabs button { flex: 1; font-size: 13px; } .history-tabs button.on { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.version .tag { font-size: 10px; border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; margin-left: 6px; color: var(--muted); }
+.unsent { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(56px + env(safe-area-inset-bottom)); z-index: 15; background: var(--accent); color: #fff; border: 0; border-radius: 999px; padding: 8px 16px; font-size: 13px; }
+#delete-work { color: var(--error); margin-top: 12px; justify-self: start; }
+.ep-nav { display: flex; justify-content: space-between; gap: 12px; margin: 48px 0 8px; padding-top: 16px; border-top: 1px solid var(--line); }
+.ep-nav button { font-size: 14px; max-width: 48%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 「次の話へ移動」: over the preview's edge while a pull would move on (placed by app.js) */
+.pull-hint { position: fixed; z-index: 30; transform: translateX(-50%); margin: 0; padding: 3px 12px; border: 1px solid var(--accent); border-radius: 999px;
+  background: var(--paper); color: var(--accent); font-size: 12px; font-weight: 600; pointer-events: none; }
+.icon:disabled { opacity: .3; }
+.foot-tools .ep-step { font-size: 11px; padding: 2px 6px; white-space: nowrap; } .ep-step:disabled { opacity: .3; }
+#save-state { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.preview { overscroll-behavior-y: contain; }
+.paper { overflow: hidden; }
+/* the input bar: small buttons side by side from the left, off the edges; the undo arrows drawn */
+.kbar { display: flex; align-items: center; justify-content: flex-start; overflow-x: auto; background: var(--side); border-top: 1px solid var(--line);
+  padding: 1px calc(12px + env(safe-area-inset-right)) 1px calc(12px + env(safe-area-inset-left)); }
+.kbar[hidden] { display: none; }
+.kbar button { flex-shrink: 0; display: inline-grid; place-items: center; min-width: 32px; height: 30px; padding: 0 6px; border: 0; background: transparent; color: var(--text); font: 13px var(--mincho); }
+.kbar button:active { background: var(--line); border-radius: 8px; }
+.kbar button svg { width: 18px; height: 18px; }
+.kbar rt { font-size: 7px; }
+.kbar-sep { flex: 0 0 1px; align-self: stretch; margin: 6px 2px; background: var(--line); }
+/* writing: ゴシック, a little smaller (Nola 風): Windows BIZ UDゴシック, Mac and iPhone ヒラギノ角ゴ (an older Windows
+   游ゴシック Medium or メイリオ). The preview stays 明朝. 14px on phones too: on iOS, maximum-scale=1 (set in
+   index.html for iOS only) keeps it from zooming in on tapping a text under 16px; pinching still zooms */
+#body.body, #note-body.note-body { font: 14px/1.95 "BIZ UDGothic", "BIZ UDゴシック", "ヒラギノ角ゴ ProN W3", "Hiragino Kaku Gothic ProN", "Hiragino Sans", "游ゴシック Medium", "Yu Gothic Medium", "メイリオ", Meiryo, var(--gothic); letter-spacing: .02em; }
+/* writing on a phone: the input bar instead of the foot */
+.desk.writing .paper-foot { display: none; }
+/* the page is cut to what is shown while writing: the half-screen space under the text (there for a keyboard laid over
+   it) would push the bar out of sight, so the text box may shrink and keeps a small space only */
+.desk.writing #body { min-height: 0; padding-bottom: 40px; }
+/* and no 字数・最終更新 line */
+.desk.writing .episode-meta { display: none; }
+.theme-pick { display: flex; gap: 6px; } .theme-pick button { flex: 1; } .theme-pick button.on { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+/* GitHub の公開状態: 非公開 quiet, 公開 in the accent (anyone can read it) */
 .vis { display: inline-block; margin: 0 4px; padding: 0 6px; border: 1px solid var(--line); border-radius: 999px; font-size: 10px; line-height: 16px; color: var(--muted); vertical-align: 1px; white-space: nowrap; }
 .vis.public { border-color: var(--accent); color: var(--accent); font-weight: 600; }
-.note-view { display: grid; gap: 8px; }
-.note-head { display: flex; align-items: center; gap: 6px; } .note-head button { white-space: nowrap; flex-shrink: 0; }
-.note-head b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.note-head .icon { padding: 3px 6px; }
-.note-body { width: 100%; min-height: 60vh; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); color: var(--text); padding: 12px; resize: vertical;
-  font: 14px/1.8 "BIZ UDGothic", "BIZ UDゴシック", "ヒラギノ角ゴ ProN W3", "Hiragino Kaku Gothic ProN", "Hiragino Sans", "游ゴシック Medium", "Yu Gothic Medium", "メイリオ", Meiryo, var(--gothic); }
-#note-preview { border: 1px solid var(--line); border-radius: 10px; background: var(--paper); min-height: 60vh; }
-#notes.note-open { display: flex; flex-direction: column; height: 100dvh; overflow: hidden; }
-#notes.note-open > header.bar { display: none; }
-#notes.note-open > .settings-main { flex: 1; min-height: 0; width: 100%; display: flex; flex-direction: column; padding-top: 0; padding-bottom: 0; }
-#notes.note-open #note-view { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 4px; }
-#notes.note-open .note-head { padding: calc(2px + env(safe-area-inset-top)) 2px 2px; border-bottom: 1px solid var(--line); }
-#notes.note-open .note-body, #notes.note-open #note-preview { flex: 1; min-height: 0; border: 0; border-radius: 0; background: transparent; padding: 8px 6px 30vh; resize: none; overflow-y: auto; outline: none; }
-#notes.note-open #note-state { margin: 0; padding: 2px 6px calc(2px + env(safe-area-inset-bottom)); }
-#notes.writing { display: flex; flex-direction: column; overflow: hidden; }
-#notes.writing .note-body { padding-bottom: 40px; }
-#notes.writing #note-state { display: none; }
-
-/* プロット and キャラ: 大箱 as sections, 中箱 (and people) as cards */
+/* プロット: 大箱 as sections, 中箱 as cards; the episodes written from a 中箱 under it */
+/* touch-action: a double tap opens a box for writing (app.js), instead of zooming the page */
 .plot-board { display: grid; gap: 12px; touch-action: manipulation; }
+/* 記録: the bars of what each day or month added (lib/record.js), and the table */
+.rec-chart { width: 100%; height: auto; display: block; margin: 8px 0 12px; }
+.rec-up { fill: var(--accent, #4a7); }
+.rec-down { fill: #c55; }
+.rec-zero { stroke: currentColor; stroke-width: 0.5; opacity: 0.5; }
+.rec-label { font-size: 9px; fill: currentColor; opacity: 0.7; }
+.rec-table { width: 100%; border-collapse: collapse; font-size: 14px; margin-bottom: 16px; }
+.rec-table th, .rec-table td { padding: 4px 6px; border-bottom: 1px solid rgba(128, 128, 128, 0.25); text-align: left; }
+.rec-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+#plot-where { margin: 0; }
 .pgroup { border: 1px solid var(--line); border-radius: 12px; background: var(--paper); padding: 4px 10px 6px; }
 .pgroup > summary { cursor: pointer; font: 600 15px/1.5 var(--mincho); padding: 2px 0; }
 .pgroup > summary small { font: 11px var(--gothic); color: var(--muted); margin-left: 6px; }
 .pgroup > summary .pbox-tools { float: right; margin-left: 6px; font-family: var(--gothic); font-weight: 400; }
+.pgroup > .pcard-sum { margin: 2px 0 0; }
+.pcard-head { display: flex; align-items: center; gap: 6px; }
+.pcard-head b { flex: 1; min-width: 0; font-weight: 600; }
 .pcards { display: grid; gap: 6px; margin: 6px 0 2px; }
 .pcard { border: 1px solid var(--line); border-radius: 10px; background: var(--bg); padding: 6px 8px; display: grid; gap: 2px; }
-.pcard-head { display: flex; align-items: center; gap: 6px; } .pcard-head b { flex: 1; min-width: 0; font-weight: 600; font-size: 14px; }
-.pcard-sum { margin: 0; font-size: 13px; color: var(--muted); line-height: 1.7; white-space: pre-line; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
+.pgroup [data-add-card], .pcard-eps button.ghost { padding: 2px 4px; }
+.pcard-head b { font-size: 14px; }
+.pcard-sum { margin: 0; font-size: 13px; color: var(--muted); line-height: 1.7; white-space: pre-line;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
 .pcard-sum.open { display: block; -webkit-line-clamp: unset; overflow: visible; }
 .sum-more { justify-self: start; padding: 0 2px !important; font-size: 12px; color: var(--accent) !important; }
 .pcard-eps { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
 .ep-chip { font-size: 12px; padding: 2px 8px; border-radius: 999px; } .ep-chip small { color: var(--muted); }
 .pbox-tools { display: flex; gap: 0; flex-shrink: 0; } .pbox-tools button { padding: 2px 6px; font-size: 12px; }
 .pbox-tools .danger { color: var(--error); }
-.plot-add-group { justify-self: start; }
+/* on a phone the screen's margin and the 大箱's padding add up: keep both small so the text gets the width */
+@media (max-width: 760px) {
+  #plot .settings-main { padding: 8px 4px; gap: 8px; }
+  #plot-where { padding: 0 6px; }
+  .pgroup { padding: 4px 6px 6px; border-radius: 10px; }
+  .pcard { padding: 6px; }
+}
 .grow { flex: 1; }
+.plot-add-group { justify-self: start; }
 /* the episode's 中箱, over the text */
 .plot-panel { margin: 0 auto; width: 100%; max-width: 46em; padding: 4px 16px 6px; border-bottom: 1px dashed var(--line); background: var(--side); flex-shrink: 0; }
-.plot-panel-head { display: flex; align-items: center; gap: 6px; font-size: 13px; } .plot-panel-head b { font-weight: 600; }
-.plot-panel-body { height: 24vh; overflow-y: auto; overscroll-behavior: contain; font-size: 13px; line-height: 1.8; padding: 2px 0 0; }
-.desk.writing .plot-panel { display: none; }
-@media (max-width: 760px) {
-  #plot .settings-main, #notes .settings-main, #characters .settings-main { padding: 8px 4px; gap: 8px; }
-  .pgroup { padding: 4px 6px 6px; border-radius: 10px; } .pcard { padding: 6px; }
-}
-
-/* 記録: the bars of what each day or month added, and the table */
-.rec-chart { width: 100%; height: auto; display: block; margin: 8px 0 12px; }
-.rec-up { fill: var(--accent); } .rec-down { fill: #c55; }
-.rec-zero { stroke: currentColor; stroke-width: 0.5; opacity: 0.5; }
-.rec-label { font-size: 9px; fill: currentColor; opacity: 0.7; }
-.rec-table { width: 100%; border-collapse: collapse; font-size: 14px; margin-bottom: 16px; }
-.rec-table th, .rec-table td { padding: 4px 6px; border-bottom: 1px solid rgba(128, 128, 128, 0.25); text-align: left; }
-.rec-table .num { text-align: right; font-variant-numeric: tabular-nums; }
-#record-body h2 { font-size: 15px; margin: 8px 0 0; }
-
-/* リリース, and choosing from a list */
-.toc-more { border-top: 1px solid var(--line); padding-top: 6px; }
-.toc-more > summary { cursor: pointer; font-size: 12px; color: var(--muted); padding: 4px 6px; }
-.versions-row { display: flex; gap: 6px; padding: 6px 0; } .versions-row button { flex: 1; font-size: 12px; padding: 6px 8px; white-space: nowrap; }
-#releases-body { padding: 10px 14px 16px; display: grid; gap: 8px; }
-.picker-list { display: grid; gap: 6px; padding: 12px 14px 4px; max-height: 45vh; overflow-y: auto; }
-.picker-list button { text-align: left; } .picker-list button.current { border-color: var(--accent); font-weight: 600; }
-.picker > p { padding: 0 14px 12px; margin: 0; }
-
+.plot-panel-head { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+.plot-panel-head b { font-weight: 600; }
 /* 横の資料: a third column on a PC's or an iPad's (landscape) width only (FR-NOTE-11) */
 .side-peek, .side-note { display: none; }
 @media (min-width: 1180px) {
   .side-peek { display: inline-grid; }
-  /* the width dragged (--side-w, ui/sidenote.js), held between the panel's least and the text's least as the screen
-     changes. Not dragged: all the screen beyond the table of contents and the text box at its widest, never under 360px */
+  /* the width dragged (--side-w, ui/sidenote.js), held between the panel's least and the text's least as the screen changes.
+     Not dragged: all the screen beyond the table of contents and the text box at its widest (#body: 46em of 14px), and
+     never under 360px */
   .desk:has(.side-note:not([hidden])) { grid-template-columns: 280px 1fr clamp(240px, var(--side-w, max(360px, calc(100vw - 280px - 644px))), calc(100vw - 700px)); }
   .side-note:not([hidden]) { display: flex; position: relative; min-height: 0; min-width: 0; border-left: 1px solid var(--line); background: var(--side); }
   .side-note-in { flex: 1; display: flex; flex-direction: column; min-height: 0; min-width: 0;
     padding: calc(8px + env(safe-area-inset-top)) calc(12px + env(safe-area-inset-right)) calc(8px + env(safe-area-inset-bottom)) 12px; }
   .side-note-body { overflow: auto; flex: 1; min-height: 0; font-size: 14px; }
   .side-grip { position: absolute; left: -5px; top: 0; bottom: 0; width: 10px; cursor: col-resize; touch-action: none; z-index: 1; }
+  /* a finger: a wider hold on the border */
   @media (pointer: coarse) { .side-grip { left: -14px; width: 28px; } }
   .side-grip.dragging { user-select: none; }
   .side-grip:hover, .side-grip:focus-visible, .side-grip.dragging { background: color-mix(in srgb, var(--accent) 35%, transparent); outline: none; }
 }
+/* a fixed height, the 中箱 scrolled inside it: the text and the foot stay where they are, whatever its length */
+.plot-panel-body { height: 24vh; overflow-y: auto; overscroll-behavior: contain; font-size: 13px; line-height: 1.8; padding: 2px 0 0; }
+.desk.writing .plot-panel { display: none; }
+/* 履歴の変更点: 前の版から消えた字と足された字 */
+.diff { border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; margin: 8px 0; max-height: 60vh; overflow: auto; font: 15px/1.8 var(--mincho, serif); }
+.diff p { margin: 0; white-space: pre-wrap; word-break: break-all; }
+.diff del { background: rgba(214, 69, 65, .18); color: inherit; text-decoration: line-through; text-decoration-color: rgba(214, 69, 65, .7); }
+.diff ins { background: rgba(46, 160, 67, .2); color: inherit; text-decoration: none; }
+.diff .diff-gap { color: var(--muted); text-align: center; }
+.version-text[hidden], .version-diff[hidden] { display: none; }
+/* a note being written on a phone: as an episode, the screen cut to above the keyboard, the input bar under the text */
+#notes.writing { display: flex; flex-direction: column; overflow: hidden; }
+#notes.writing > .settings-main { flex: 1; min-height: 0; width: 100%; display: flex; flex-direction: column; padding-bottom: 0; }
+#notes.writing #note-view { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 6px; }
+#notes.writing .note-body { flex: 1; min-height: 0; resize: none; }
+#notes.writing #note-state { display: none; }
+/* on a phone the screen's margin and the box's padding add up: keep both small so the text gets the width */
+@media (max-width: 760px) {
+  #notes .settings-main { padding: 8px 4px; gap: 8px; }
+}
+/* a note open: as an episode, the text runs to the bottom of the screen with no frame (the page itself does not
+   scroll), a little room under its last line */
+#notes.note-open { display: flex; flex-direction: column; height: 100dvh; overflow: hidden; }
+#notes.note-open > .settings-main { flex: 1; min-height: 0; width: 100%; display: flex; flex-direction: column; padding-bottom: 0; }
+#notes.note-open #note-view { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 4px; }
+#notes.note-open .note-body, #notes.note-open #note-preview { flex: 1; min-height: 0; border: 0; border-radius: 0; background: transparent;
+  padding: 8px 6px 30vh; resize: none; overflow-y: auto; }
+#notes.note-open #note-state { margin: 0; padding: 2px 6px calc(2px + env(safe-area-inset-bottom)); }
+#notes.writing .note-body { padding-bottom: 40px; }
+.note-head .icon { padding: 3px 6px; }
+@media (max-width: 760px) {
+  /* the text of an episode and its preview: a narrower margin on a phone */
+  .body { padding-left: 14px; padding-right: 14px; }
+  #preview { padding-left: 14px; padding-right: 14px; }
+}
+/* a note is a list of facts more than prose: its lines closer than an episode's */
+#note-body.note-body { line-height: 1.8; letter-spacing: 0; }
+/* a note open: its own bar (‹ 一覧, its name, its tools) is the only bar, at the top; the notes screen's bar comes back
+   with the list. No focus ring on the text, as on an episode's */
+#notes.note-open > header.bar { display: none; }
+#notes.note-open > .settings-main { padding-top: 0; }
+#notes.note-open .note-head { padding: calc(2px + env(safe-area-inset-top)) 2px 2px; border-bottom: 1px solid var(--line); }
+#notes.note-open .note-body { outline: none; }
+/* the table of contents: its top bar in one row (icons), the rows of episodes as long as they can be; releases,
+   GitHub and the rest folded under one line at the bottom */
+.toc-head { align-items: center; } .toc-head button { white-space: nowrap; }
+.toc-icons { display: flex; align-items: center; gap: 2px; } .toc-icons .icon { padding: 4px 6px; }
+.toc-add button { white-space: nowrap; padding: 7px 8px; }
+.toc-more { border-top: 1px solid var(--line); padding-top: 6px; }
+.toc-more > summary { cursor: pointer; font-size: 12px; color: var(--muted); padding: 4px 6px; }
+.toc-more .versions-row { padding-top: 6px; } .toc-more .versions-row button { white-space: nowrap; }
+.toc-more .sync { border-top: 0; }
+.toc-more #delete-work { margin-top: 8px; }
+#sync-brief.err { color: var(--error); }
+.hist-head { display: flex; align-items: center; gap: 8px; } .hist-head .back-history { padding: 4px 6px; white-space: nowrap; }
+.history-tabs button { white-space: nowrap; padding: 6px 4px; }
 
-/* the colours chosen, the list of changes not sent, a name typed in a picker */
-.theme-pick { display: flex; gap: 6px; } .theme-pick button { flex: 1; } .theme-pick button.on { border-color: var(--accent); color: var(--accent); font-weight: 600; }
-#unsent-body { padding: 10px 14px 16px; display: grid; gap: 8px; }
+/* ---- Novel Desk だけにある部品（サーバーが無いために同じにできない所。docs/server-differences.md） ---- */
+/* 始める画面: GitHub App、トークン、鍵のファイル、ホーム画面に追加のカードを縦に並べる（A1） */
+#setup.auth { align-content: center; gap: 12px; }
+.paste-form, .key-form { display: grid; gap: 12px; }
+#app-key-details summary { cursor: pointer; color: var(--muted); font-size: 14px; }
+#app-key-details[open] summary { margin-bottom: 12px; }
+.install h2 { margin: 0; font-size: 15px; } .install ol { margin: 0; padding-left: 1.4em; display: grid; gap: 4px; }
+/* トークンの期限・GitHub がトークンを断った・GitHub App のコミットの作者の知らせ（A1） */
+.token-notice { position: fixed; top: env(safe-area-inset-top); left: 0; right: 0; z-index: 15; background: var(--paper); border-bottom: 1px solid var(--error); color: var(--error); padding: 8px 16px; font-size: 13px; display: grid; gap: 6px; }
+.token-notice p { margin: 0; }
+.token-notice-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.token-notice a { color: var(--accent); }
+.author-notice { border-bottom-color: var(--line); color: var(--text); }
+.author-notice label { display: grid; gap: 2px; font-size: 12px; color: var(--muted); }
+/* トークンの入れ替え・リポジトリを作る・名前を変えるダイアログ（A1、A4） */
+.replace-form { display: grid; gap: 10px; padding: 12px 16px 16px; }
+.replace-form label { display: grid; gap: 4px; font-size: 13px; }
+/* novel.toml の読めない所（A6） */
+.problems { margin: 0 6px 8px; padding: 6px 8px; border: 1px solid var(--error); border-radius: 8px; color: var(--error); font-size: 12px; }
+.problems p { margin: 0; }
+/* この端末にまだ無い話・UTF-8 でない話（A7） */
+.episode-note { margin: 0; padding: 6px 16px; font-size: 12px; color: var(--error); border-bottom: 1px solid var(--line); }
+/* 未送信の印と、未送信の一覧（A2） */
+.unsent-tag { color: var(--accent); border: 1px solid var(--accent); border-radius: 4px; font-size: 10px; padding: 0 4px; white-space: nowrap; }
+#unsent-body, #releases-body { padding: 10px 14px 16px; display: grid; gap: 8px; }
 .unsent-item { display: flex; justify-content: space-between; align-items: center; gap: 8px; border-bottom: 1px solid var(--line); padding: 6px 0; }
 .unsent-item div { display: grid; gap: 2px; min-width: 0; } .unsent-item small { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
 .unsent-item .danger { color: var(--error); flex-shrink: 0; }
-.unsent-item.parked > div { flex: 1; }
-.parked-text { width: 100%; min-height: 6em; max-height: 30vh; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--text); padding: 8px; font: 14px/1.8 var(--mincho); resize: vertical; }
-.parked-tools { display: flex; flex-wrap: wrap; gap: 6px; }
-.picker-form { display: flex; gap: 8px; padding: 8px 14px; } .picker-form input { flex: 1; min-width: 0; }
-
-/* 押す部品は、iPhone の幅と指で押す画面では、縦横 44px 以上で押せる（NFR-USE-02。Apple のヒューマンインターフェイス
-   ガイドライン）。小さく見せている部品（入力補助のバー、画像や箱の道具、並べ替えの ↑↓）も、押せる大きさは 44px にする。
-   tests/ui/touch.spec.mjs が iPhone の幅で全部の画面を測る */
-@media (max-width: 760px), (pointer: coarse) {
-  button, a.button, select, input:not([type="checkbox"]):not([type="radio"]), .node { min-height: 44px !important; }
-  button, a.button, select { min-width: 44px !important; }
-  summary { min-height: 44px; line-height: 44px; padding-top: 0 !important; padding-bottom: 0 !important; }
-  .sync-row a, .token-notice a { display: inline-flex; align-items: center; min-height: 44px; }
-  .kbar { padding-top: 0; padding-bottom: 0; }
-  .order-tools select { max-width: 96px; }
-  .note-head { flex-wrap: wrap; }
-  /* (the table of contents, taller with these, scrolled as a whole on a phone's height) */
-  .toc { overflow-y: auto; }
-  .tree { flex: 1 0 auto; overflow-y: visible; }
+/* 本文の下の状態（A2: 端末にためて送るので、サーバー版より長い「端末に保存済み（未送信）」などを出す）: iPhone の幅で
+   ボタンの横に入らないときは 2 行にして、切らない */
+@media (max-width: 760px) {
+  #save-state { white-space: normal; line-height: 1.35; overflow-wrap: anywhere; }
 }
+/* プレビューを横にはらったとき、ブラウザーが前のページに戻らないようにする（B2: サーバー版に無い直し） */
+html { overscroll-behavior-x: none; }
+.preview { overscroll-behavior-x: none; touch-action: pan-y pinch-zoom; }

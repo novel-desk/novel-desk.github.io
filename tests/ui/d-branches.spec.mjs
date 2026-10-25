@@ -34,7 +34,11 @@ test('choosing a branch: GitHub not answering said; closed or the same branch ch
 });
 
 // FR-GH-09, NFR-USE-01
-test('merging: refused while changes are not sent; GitHub not answering said; no other branch said; closed, nothing merged', async ({ page, gh, work }) => {
+test('merging: what is not sent said first, nothing sent when not wanted; GitHub not answering said; no other branch said; closed, nothing merged', async ({
+  page,
+  gh,
+  work,
+}) => {
   await openWork(page);
   await page.getByRole('button', { name: 'マージ' }).click();
   await expect(page.locator('#toast')).toHaveText('マージ先にできるブランチがありません');
@@ -47,9 +51,18 @@ test('merging: refused while changes are not sent; GitHub not answering said; no
   await page.locator('#picker-close').click();
   await expect(page.locator('#picker')).toBeHidden();
   await page.locator('#body').fill('書きかけ\n');
+  /** @type {string[]} */
+  const said = [];
+  page.once('dialog', d => {
+    said.push(d.message());
+    void d.dismiss();
+  });
   await page.getByRole('button', { name: 'マージ' }).click();
-  await expect(page.locator('#toast')).toHaveText(/^未送信の変更があります/);
-  expect(gh.calls.filter(c => c.includes('/merges') || c.includes('/compare/'))).toEqual([]);
+  await page.locator('#picker').getByRole('button', { name: 'draft' }).click();
+  await expect.poll(() => said.length).toBe(1);
+  expect(said[0]).toContain('（まだ送っていない変更も、先に送ってから入れます）');
+  await expect(page.locator('#send')).toHaveText('送る（1）');
+  expect(gh.calls.filter(c => c.includes('/merges') || c.startsWith('PATCH'))).toEqual([]);
 });
 
 // FR-GH-09: what the merge brings read (a file that is not an episode too), and the merge given up; merged elsewhere

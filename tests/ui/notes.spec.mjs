@@ -22,8 +22,8 @@ test('the notes listed (the ones used most on top, then by folder); one written 
   await expect(page.locator('#notes-list [data-note]')).toHaveText(['プロット プロット', '世界観', 'memo.md', 'アリス']);
   await page.locator('#notes-list [data-note]', { hasText: '世界観' }).click();
   await expect(page.locator('#note-name')).toHaveText('世界観');
-  await expect(page.getByLabel('資料の本文')).toHaveValue(NOTES['notes/world.md']);
-  await page.getByLabel('資料の本文').press('Control+End');
+  await expect(page.locator('#note-body')).toHaveValue(NOTES['notes/world.md']);
+  await page.locator('#note-body').press('Control+End');
   await page.keyboard.type('海も青い。');
   await expect(page.locator('#note-state')).toHaveText('端末に保存済み（未送信）');
   await expect.poll(async () => (await stored(page, 'drafts')).map(d => d.path)).toEqual(['notes/world.md']);
@@ -46,9 +46,9 @@ test('a note made in a folder: its file name in ASCII, its heading the name', as
   await openWork(page);
   await page.getByRole('button', { name: '資料', exact: true }).click();
   page.once('dialog', d => void d.accept('Bob'));
-  await page.getByRole('button', { name: '「キャラ」に資料を作成' }).click();
+  await page.locator('[data-add-in="キャラ"]').click();
   await expect(page.locator('#note-name')).toHaveText('Bob');
-  await expect(page.getByLabel('資料の本文')).toHaveValue('# Bob\n\n');
+  await expect(page.locator('#note-body')).toHaveValue('# Bob\n\n');
   await page.getByRole('button', { name: '‹ 一覧' }).click();
   page.once('dialog', d => void d.accept('設定/魔法'));
   await page.getByRole('button', { name: '＋ 資料を追加' }).click();
@@ -78,12 +78,12 @@ test('a note renamed: its heading and its file name; the plot only its file name
   page.once('dialog', d => void d.accept('Earth'));
   await page.getByRole('button', { name: '資料の名前を変更' }).click();
   await expect(page.locator('#note-name')).toHaveText('Earth');
-  await expect(page.getByLabel('資料の本文')).toHaveValue(NOTES['notes/world.md'].replace('# 世界観', '# Earth'));
+  await expect(page.locator('#note-body')).toHaveValue(NOTES['notes/world.md'].replace('# 世界観', '# Earth'));
   await page.getByRole('button', { name: '‹ 一覧' }).click();
   await page.locator('#notes-list [data-note]', { hasText: 'プロット' }).click();
   page.once('dialog', d => void d.accept('story'));
   await page.getByRole('button', { name: '資料の名前を変更' }).click();
-  await expect(page.getByLabel('資料の本文')).toHaveValue(NOTES['notes/plot.md']);
+  await expect(page.locator('#note-body')).toHaveValue(NOTES['notes/plot.md']);
   await page.getByRole('button', { name: '‹ 一覧' }).click();
   await page.getByRole('button', { name: '‹ 原稿へ' }).click();
   await page.getByRole('button', { name: /^送る/ }).click();
@@ -124,7 +124,7 @@ test("a note's history: its versions on GitHub and this device", async ({ page, 
   await page.locator('#versions .version').nth(1).click();
   page.once('dialog', d => void d.accept());
   await page.locator('#versions').getByRole('button', { name: 'この版を復元' }).click();
-  await expect(page.getByLabel('資料の本文')).toHaveValue(NOTES['notes/world.md']);
+  await expect(page.locator('#note-body')).toHaveValue(NOTES['notes/world.md']);
   await expect(page.locator('#note-state')).toHaveText('端末に保存済み（未送信）');
 });
 
@@ -142,7 +142,7 @@ test('notes that cannot say their names or be read; both versions side by side s
     'notes/memo.md': 'メモだけ\n',
     'notes/both.md': `# 両方\n\nここ\n${CONFLICT_MARK}の版）\nあちら\n`,
   });
-  await page.getByRole('button', { name: '再読み込み' }).click();
+  await page.locator('#reload-work').click();
   await expect(page.locator('#sync-state')).toHaveText(/GitHub から読みました/);
   await page.getByRole('button', { name: '資料', exact: true }).click();
   await expect(page.locator('#notes-list [data-note]')).toHaveText(['プロット プロット', 'bad.md', '両方', 'memo.md']);
@@ -204,10 +204,10 @@ test('nothing done to a note while novel.toml cannot be changed: said; the trash
   // (a picture first: nothing else said before it)
   await page.locator('#notes-list [data-note]', { hasText: '世界観' }).click();
   const chooser = page.waitForEvent('filechooser');
-  await page.getByRole('button', { name: '資料に画像を挿入' }).click();
+  await page.locator('#note-image').click();
   await (await chooser).setFiles({ name: 'map.png', mimeType: 'image/png', buffer: /** @type {Buffer} */ (WORK_FILES['notes/images/sky.png']) });
   await expect(page.locator('#toast')).toHaveText(refused);
-  await expect(page.getByLabel('資料の本文')).toHaveValue(NOTES['notes/world.md']);
+  await expect(page.locator('#note-body')).toHaveValue(NOTES['notes/world.md']);
   await page.getByRole('button', { name: '‹ 一覧' }).click();
   page.once('dialog', d => void d.accept('新しい'));
   await page.getByRole('button', { name: '＋ 資料を追加' }).click();
@@ -238,14 +238,14 @@ test('a note chosen as the plot; a picture put in the note, not in another one l
   await openWork(page);
   await page.getByRole('button', { name: '資料', exact: true }).click();
   await page.locator('#notes-list [data-note]', { hasText: '世界観' }).click();
-  await page.getByLabel('資料の本文').press('Control+End');
+  await page.locator('#note-body').press('Control+End');
   let chooser = page.waitForEvent('filechooser');
-  await page.getByRole('button', { name: '資料に画像を挿入' }).click();
+  await page.locator('#note-image').click();
   await (await chooser).setFiles({ name: 'map.png', mimeType: 'image/png', buffer: /** @type {Buffer} */ (WORK_FILES['notes/images/sky.png']) });
-  await expect(page.getByLabel('資料の本文')).toHaveValue(/\n!\[\]\(images\/\d{8}-\d{6}-map\.jpg\)\n$/);
+  await expect(page.locator('#note-body')).toHaveValue(/\n!\[\]\(images\/\d{8}-\d{6}-map\.jpg\)\n$/);
   // chosen after the note was left
   chooser = page.waitForEvent('filechooser');
-  await page.getByRole('button', { name: '資料に画像を挿入' }).click();
+  await page.locator('#note-image').click();
   const late = await chooser;
   await page.getByRole('button', { name: '‹ 一覧' }).click();
   await late.setFiles({ name: 'late.png', mimeType: 'image/png', buffer: /** @type {Buffer} */ (WORK_FILES['notes/images/sky.png']) });
@@ -268,7 +268,7 @@ test("a note's history shows its draft; a word being converted kept once convert
   await openWork(page);
   await page.getByRole('button', { name: '資料', exact: true }).click();
   await page.locator('#notes-list [data-note]', { hasText: '世界観' }).click();
-  const area = page.getByLabel('資料の本文');
+  const area = page.locator('#note-body');
   await area.evaluate((/** @type {HTMLTextAreaElement} */ a) => {
     a.value += '変換中';
     a.dispatchEvent(new InputEvent('input', { isComposing: true }));
@@ -289,7 +289,7 @@ test.describe('a phone (a finger)', () => {
     await page.getByRole('button', { name: '目次' }).click();
     await page.getByRole('button', { name: '資料', exact: true }).click();
     await page.locator('#notes-list [data-note]', { hasText: '世界観' }).click();
-    await page.getByLabel('資料の本文').focus();
+    await page.locator('#note-body').focus();
     await page.locator('#note-kbar').getByRole('button', { name: 'プレビュー' }).click();
     await expect(page.locator('#note-preview h1')).toHaveText('世界観');
   });

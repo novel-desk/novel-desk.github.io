@@ -34,14 +34,14 @@ test('自動 on the notes screen: a note sent after a pause in writing, and when
   await page.clock.install();
   await openWork(page);
   await openNote(page, '世界観');
-  await page.getByLabel('資料の本文').fill('# 世界観\n\n海もある。\n');
+  await page.locator('#note-body').fill('# 世界観\n\n海もある。\n');
   await page.clock.fastForward(61000);
   await expect.poll(() => work.text('notes/world.md')).toBe('# 世界観\n\n海もある。\n');
   await expect(page.locator('#note-state')).toHaveText('');
   await expect.poll(() => stored(page, 'drafts')).toEqual([]);
   await expect(page.locator('#notes')).toBeVisible();
   // left from the notes screen: sent at once
-  await page.getByLabel('資料の本文').fill('# 世界観\n\n山もある。\n');
+  await page.locator('#note-body').fill('# 世界観\n\n山もある。\n');
   await leave(page);
   await expect.poll(() => work.text('notes/world.md')).toBe('# 世界観\n\n山もある。\n');
 });
@@ -57,16 +57,16 @@ test('read in on the notes screen: the note open follows GitHub, its caret kept;
   work.push(NOTES);
   await openWork(page);
   await openNote(page, '世界観');
-  await page.getByLabel('資料の本文').evaluate(a => /** @type {HTMLTextAreaElement} */ (a).setSelectionRange(4, 4));
+  await page.locator('#note-body').evaluate(a => /** @type {HTMLTextAreaElement} */ (a).setSelectionRange(4, 4));
   work.push({ 'notes/world.md': '# 世界観\n\n空は青い。ほかで足した。\n' });
   await inFront(page);
-  await expect(page.getByLabel('資料の本文')).toHaveValue('# 世界観\n\n空は青い。ほかで足した。\n');
-  expect(await page.getByLabel('資料の本文').evaluate(a => /** @type {HTMLTextAreaElement} */ (a).selectionStart)).toBe(4);
+  await expect(page.locator('#note-body')).toHaveValue('# 世界観\n\n空は青い。ほかで足した。\n');
+  expect(await page.locator('#note-body').evaluate(a => /** @type {HTMLTextAreaElement} */ (a).selectionStart)).toBe(4);
   // changed elsewhere into something not UTF-8: what is written left as it is, and said
   work.push({ 'notes/world.md': /** @type {any} */ (Buffer.from([0x82, 0xff, 0xff])) });
   await inFront(page);
   await expect(page.locator('#note-state')).toHaveText('GitHub にあるこの資料は UTF-8 ではないので、読み込めませんでした（書いている文章はそのままです）');
-  await expect(page.getByLabel('資料の本文')).toHaveValue('# 世界観\n\n空は青い。ほかで足した。\n');
+  await expect(page.locator('#note-body')).toHaveValue('# 世界観\n\n空は青い。ほかで足した。\n');
   // its heading taken away elsewhere: called by its file
   work.push({ 'notes/world.md': '空は青い。\n' });
   await inFront(page);
@@ -75,16 +75,16 @@ test('read in on the notes screen: the note open follows GitHub, its caret kept;
   await inFront(page);
   await expect(page.locator('#note-name')).toHaveText('世界観');
   // a draft: kept as it is, the other version beside it when sent
-  await page.getByLabel('資料の本文').fill('# 世界観\n\nここで書いた。\n');
+  await page.locator('#note-body').fill('# 世界観\n\nここで書いた。\n');
   work.push({ 'notes/world.md': '# 世界観\n\nほかで書いた。\n' });
   await inFront(page);
-  await expect(page.locator('#toast')).toHaveText('ほかの所での変更を読み込みました');
-  await expect(page.getByLabel('資料の本文')).toHaveValue('# 世界観\n\nここで書いた。\n');
+  await expect(page.locator('#toast')).toHaveText('ほかの端末の更新を読み込みました');
+  await expect(page.locator('#note-body')).toHaveValue('# 世界観\n\nここで書いた。\n');
   await expect(page.locator('#note-state')).toHaveText('端末に保存済み（未送信）');
   await leave(page);
   await expect.poll(() => work.text('notes/world.md')).toBe(`# 世界観\n\nここで書いた。\n\n${OTHER_DEVICE_MARK}\n\n# 世界観\n\nほかで書いた。\n`);
   // (sent: the note open shows both versions, as the branch has it)
-  await expect(page.getByLabel('資料の本文')).toHaveValue(`# 世界観\n\nここで書いた。\n\n${OTHER_DEVICE_MARK}\n\n# 世界観\n\nほかで書いた。\n`);
+  await expect(page.locator('#note-body')).toHaveValue(`# 世界観\n\nここで書いた。\n\n${OTHER_DEVICE_MARK}\n\n# 世界観\n\nほかで書いた。\n`);
   await expect(page.locator('#note-state')).toHaveText(/^両方の版が並んでいます/);
   // the list: a note made elsewhere shown
   await page.getByRole('button', { name: '‹ 一覧' }).click();
@@ -135,7 +135,7 @@ test('a token refused on the notes screen: the new token put in there; the notes
   await page.clock.install();
   await openWork(page);
   await openNote(page, '世界観');
-  await page.getByLabel('資料の本文').fill('# 世界観\n\n断られても届く。\n');
+  await page.locator('#note-body').fill('# 世界観\n\n断られても届く。\n');
   gh.tokens = ['new-test-token-not-real'];
   await page.clock.fastForward(61000);
   await expect(page.locator('#token-notice-text')).toHaveText(/^GitHub がトークンを断りました/);
@@ -146,7 +146,7 @@ test('a token refused on the notes screen: the new token put in there; the notes
   // (the work read again with the new token, behind the notes screen)
   await expect(page.locator('#sync-state')).toHaveText(/GitHub から読みました/);
   await expect(page.locator('#notes')).toBeVisible();
-  await expect(page.getByLabel('資料の本文')).toHaveValue('# 世界観\n\n断られても届く。\n');
+  await expect(page.locator('#note-body')).toHaveValue('# 世界観\n\n断られても届く。\n');
   // (a minute at a time, the reading still going on when the clock moves)
   await expect
     .poll(async () => {

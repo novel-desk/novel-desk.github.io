@@ -41,11 +41,11 @@ test('an episode put in _trash/ elsewhere while written here: not sent, not put 
   await expect(page.locator('#episode-title')).toHaveValue('はじまり');
   await expect(page.locator('#tree .node', { hasText: '駅で' })).toHaveCount(0);
   await page.getByRole('button', { name: '未送信の一覧' }).click();
-  await expect(page.locator('#unsent .parked b')).toHaveText('chapters/02_second.md');
-  await expect(page.locator('#unsent .parked-text')).toHaveValue('# 第2話 駅で\n\nここで書いた続き\n');
-  await page.getByRole('button', { name: '開いている話の末尾に入れる' }).click();
+  await expect(page.locator('#unsent .card b')).toHaveText('chapters/02_second.md');
+  await expect(page.locator('#unsent .card .version-text')).toHaveValue('# 第2話 駅で\n\nここで書いた続き\n');
+  await page.getByRole('button', { name: '開いている話の末尾に挿入' }).click();
   await expect(page.locator('#unsent')).toBeHidden();
-  const put = `${WORK_FILES['chapters/01_first.md']}\n\n――― 未送信の書きかけ（第2話 駅で）―――\n\n# 第2話 駅で\n\nここで書いた続き\n\n`;
+  const put = `${WORK_FILES['chapters/01_first.md']}\n\n――― 未送信の書きかけ（chapters/02_second.md）―――\n\n# 第2話 駅で\n\nここで書いた続き\n\n`;
   await expect(page.locator('#body')).toHaveValue(put);
   await expect.poll(() => aside(page)).toEqual([]);
   await page.getByRole('button', { name: '送る（1）' }).click();
@@ -99,7 +99,7 @@ test('numbered episodes renumbered elsewhere: written into the same one where it
   await page.locator('#body').fill('一の本文\n一の続き\n三行目\n');
   work.push({ ...numbered({ '01.md': '一の話', '02.md': '二の話' }), 'chapters/01.md': '一の本文\n一の続き\n', 'chapters/02.md': '二の本文\n' });
   await inFront(page);
-  await expect(page.locator('#toast')).toHaveText('ほかの所での変更を読み込みました');
+  await expect(page.locator('#toast')).toHaveText('ほかの端末の更新を読み込みました');
   await expect(page.locator('#episode-title')).toHaveValue('一の話');
   await expect(page.locator('#body')).toHaveValue('一の本文\n一の続き\n三行目\n');
   await expect.poll(async () => (await stored(page, 'drafts')).map(d => d.path)).toEqual(['chapters/01.md']);
@@ -183,10 +183,10 @@ test('a note renamed elsewhere, a new one under its name: written into the one r
   await openWork(page);
   await page.getByRole('button', { name: '資料', exact: true }).click();
   await page.locator('#notes-list [data-note]', { hasText: 'アリス' }).click();
-  await page.getByLabel('資料の本文').fill('# アリス\n\n剣を持つ。\n');
+  await page.locator('#note-body').fill('# アリス\n\n剣を持つ。\n');
   await page.getByRole('button', { name: '‹ 一覧' }).click();
   await page.locator('#notes-list [data-note]', { hasText: '世界観' }).click();
-  await page.getByLabel('資料の本文').fill('# 世界観\n\n海もある。\n');
+  await page.locator('#note-body').fill('# 世界観\n\n海もある。\n');
   await page.getByRole('button', { name: '‹ 一覧' }).click();
   await page.getByRole('button', { name: '‹ 原稿へ' }).click();
   work.push({
@@ -202,7 +202,7 @@ test('a note renamed elsewhere, a new one under its name: written into the one r
   expect(work.text('notes/world.md')).toBeUndefined();
   // the one put in _trash/, sent by the author: made again where it was (said, and chosen)
   await page.getByRole('button', { name: '未送信の一覧' }).click();
-  await expect(page.locator('#unsent .parked b')).toHaveText(['notes/world.md']);
+  await expect(page.locator('#unsent .card b')).toHaveText(['notes/world.md']);
   await page.locator('#unsent [data-unpark-send="0"]').click();
   await expect(page.locator('#unsent')).toBeHidden();
   await expect(page.locator('#sync-state')).toHaveText(/^送りました/);
@@ -222,17 +222,17 @@ test('an episode and a note renamed elsewhere (the heading, the file name): writ
   await page.locator('#body').fill('# 第1話 はじまり\n\n朝が来た。\nここで書いた。\n');
   await page.getByRole('button', { name: '資料', exact: true }).click();
   await page.locator('#notes-list [data-note]', { hasText: '世界観' }).click();
-  await page.getByLabel('資料の本文').fill('# 世界観\n\n空は青い。\n海もある。\n');
+  await page.locator('#note-body').fill('# 世界観\n\n空は青い。\n海もある。\n');
   work.push({
     'chapters/01_first.md': '# 第1話 夜明け\n\n朝が来た。\n',
     'notes/world.md': '# 世界観\n\n古い名前で作った別の資料。\n',
     'notes/setting.md': '# 舞台\n\n空は青い。\n',
   });
   await inFront(page);
-  await expect(page.locator('#toast')).toHaveText('ほかの所での変更を読み込みました');
+  await expect(page.locator('#toast')).toHaveText('ほかの端末の更新を読み込みました');
   // (the note open is the one renamed, written on as it was)
-  await expect(page.getByLabel('資料の本文')).toHaveValue('# 世界観\n\n空は青い。\n海もある。\n');
-  await page.getByLabel('資料の本文').fill('# 世界観\n\n空は青い。\n海もある。\n山もある。\n');
+  await expect(page.locator('#note-body')).toHaveValue('# 世界観\n\n空は青い。\n海もある。\n');
+  await page.locator('#note-body').fill('# 世界観\n\n空は青い。\n海もある。\n山もある。\n');
   await expect
     .poll(async () => (await stored(page, 'drafts')).map(d => [d.path, d.text]))
     .toContainEqual(['notes/setting.md', '# 世界観\n\n空は青い。\n海もある。\n山もある。\n']);
@@ -259,20 +259,21 @@ test('a text set aside: the work not taken off the list for it; summed up withou
   /** @type {boolean[]} */
   const answers = [];
   page.on('dialog', d => void (answers.shift() ? d.accept() : d.dismiss()));
-  answers.push(true, true);
-  await page.getByRole('button', { name: '一覧から外す' }).click();
-  await expect(page.locator('#toast')).toHaveText('送れなかったので、一覧から外しませんでした。書いたものはこの端末に残っています');
+  // (送ってから削除: not sent, so not deleted)
+  await page.getByRole('button', { name: 'この作品を削除' }).click();
+  await page.getByRole('button', { name: '送ってから削除' }).click();
+  await expect(page.locator('#toast')).toHaveText('送れなかったので、削除しませんでした。書いたものはこの端末に残っています');
   await expect(page.locator('#desk')).toBeVisible();
   // the list of works: what GitHub has, without the text set aside
-  await page.getByRole('button', { name: 'ほかの作品' }).click();
-  await expect(page.locator('#repo-list [data-repo="author/novel"]')).toContainText('2 話');
-  await page.locator('#repo-list [data-repo="author/novel"]').click();
+  await page.getByRole('button', { name: '‹ 作品' }).click();
+  await expect(page.locator('#works [data-repo="author/novel"]')).toContainText('2 話');
+  await page.locator('#works [data-repo="author/novel"]').click();
   await expect(page.locator('#episode-title')).toHaveValue('はじまり');
   // a draft where it would go back: sent first
   await page.locator('#body').fill('# 第1話 はじまり\n\n待っている\n');
   work.push({ 'chapters/02_second.md': '# 第2話 駅で（新しく）\n' });
   await inFront(page);
-  await expect(page.locator('#toast')).toHaveText('ほかの所での変更を読み込みました');
+  await expect(page.locator('#toast')).toHaveText('ほかの端末の更新を読み込みました');
   await page.locator('#tree .node', { hasText: '駅で' }).click();
   await page.locator('#body').fill('# 第2話 駅で（新しく）\n\nここでも\n');
   await page.getByRole('button', { name: '未送信の一覧' }).click();
@@ -311,7 +312,7 @@ test('the only episode put in _trash/ elsewhere: none open, the text kept; sent 
   // a file that is not UTF-8 put at its path elsewhere: not sent beside it
   work.push({ 'chapters/01_first.md': /** @type {any} */ (Buffer.from([0x82, 0xff, 0xff])) });
   await inFront(page);
-  await expect(page.locator('#toast')).toHaveText('ほかの所での変更を読み込みました');
+  await expect(page.locator('#toast')).toHaveText('ほかの端末の更新を読み込みました');
   await page.getByRole('button', { name: '未送信の一覧' }).click();
   await page.locator('#unsent [data-unpark-send="0"]').click();
   await expect(page.locator('#toast')).toHaveText(

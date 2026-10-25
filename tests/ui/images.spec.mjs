@@ -142,7 +142,7 @@ test('a GIF added as it is; one over 5 MB refused; the picker closed with nothin
   await addPicture(page, [{ name: 'big.gif', mimeType: 'image/gif', buffer: Buffer.concat([GIF, Buffer.alloc(5 * 1024 * 1024)]) }]);
   await expect(page.locator('#toast')).toHaveText('画像が大きすぎます（5 MB まで）');
   await addPicture(page, [{ name: 'dot.gif', mimeType: 'image/gif', buffer: GIF }]);
-  await expect(page.locator('#toast')).toHaveText('画像を追加しました（送るまではこの端末だけの変更です）');
+  await expect(page.locator('#toast')).toHaveText('画像を挿入しました（送るまではこの端末だけの変更です）');
   await expect(page.locator('#images-list figcaption')).toHaveText([/^\d{8}-\d{6}-dot\.gif$/, 'sky.png']);
   const kept = (await stored(page, 'drafts')).find(d => d.path.endsWith('-dot.gif'));
   expect(Buffer.from(Object.values(kept.bytes))).toEqual(GIF);
@@ -186,25 +186,21 @@ test('the list of pictures: by folder; one that cannot be read; the folder from 
   await expect(page.locator('#images-list figcaption')).toHaveText(['sky.png', 'town.gif']);
   await expect(page.locator('#images-list img').nth(1)).toHaveAttribute('src', /^blob:/);
   await expect(page.locator('#images-list img').first()).not.toHaveAttribute('src', /./);
-  await expect(page.locator('#images-where')).toHaveText('');
   // [images] dir alone
   work.push({ 'novel.toml': `${WORK_FILES['novel.toml']}\n\n[images]\ndir = "notes/maps"\n` });
   await page.getByRole('button', { name: '‹ 原稿へ' }).click();
-  await page.getByRole('button', { name: '再読み込み' }).click();
+  await page.locator('#reload-work').click();
   await expect(page.locator('#sync-state')).toHaveText(/GitHub から読みました/);
   await page.getByRole('button', { name: '資料', exact: true }).click();
   await expect(page.locator('#images-list figcaption')).toHaveText(['town.gif']);
-  await expect(page.locator('#images-where')).toHaveText('');
   // none set: the top images/
   work.push({ 'novel.toml': WORK_FILES['novel.toml'], 'images/top.png': PNG });
   await page.getByRole('button', { name: '‹ 原稿へ' }).click();
-  await page.getByRole('button', { name: '再読み込み' }).click();
+  await page.locator('#reload-work').click();
   await expect(page.locator('#sync-state')).toHaveText(/GitHub から読みました/);
   await page.getByRole('button', { name: '資料', exact: true }).click();
+  // (nothing said over them, as the server version's)
   await expect(page.locator('#images-list figcaption')).toHaveText(['top.png']);
-  await expect(page.locator('#images-where')).toHaveText(
-    '資料のフォルダが novel.toml に書かれていないので、一番上の images/ の画像を出します（[notes] dir か [images] dir で変えられます）',
-  );
 });
 
 // FR-EDIT-08, FR-EDIT-09: the name not changed (closed, empty, the same): nothing; a picture no text shows renamed and

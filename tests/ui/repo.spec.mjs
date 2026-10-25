@@ -1,16 +1,22 @@
 // The work's repository: a new work (FR-WORK-02, FR-GH-02: a private repository made with a separate token that has
 // Administration, or an empty one started), its name changed (FR-GH-10, the same separate token), followed when it
 // was renamed on GitHub, and stopped when its name is another repository now (FR-GH-12)
-import { test, expect, openRepo, openWork, stored, FakeRepo, TOKEN } from './lib/test.mjs';
+import { test, expect, keepMoreOpen, openRepo, openWork, stored, FakeRepo, TOKEN } from './lib/test.mjs';
 
 const ADMIN = 'admin-test-token-not-real';
 
-/** @param {import('@playwright/test').Page} page @param {{ title: string, repo: string, token: string }} w */
+// a new work: its title typed on the list and 作成 (as the server version's), then the repository in the dialog (left
+// open after a failure: filled in again there)
+/** @param {import('@playwright/test').Page} page @param {{ title: string, repo: string, token: string, owner?: string }} w */
 async function create(page, w) {
-  await page.getByLabel('題名', { exact: true }).fill(w.title);
+  if (!(await page.locator('#new-repo').evaluate(d => /** @type {HTMLDialogElement} */ (d).open))) {
+    await page.locator('#new-work-title').fill(w.title);
+    await page.locator('#new-work').getByRole('button', { name: '作成' }).click();
+  }
+  if (w.owner !== undefined) await page.getByLabel(/^持ち主/).fill(w.owner);
   await page.getByLabel('リポジトリ名（英数字と . _ -）').fill(w.repo);
   await page.locator('#admin-token').fill(w.token);
-  await page.getByRole('button', { name: '作成' }).click();
+  await page.locator('#create-work').click();
 }
 /** @param {import('@playwright/test').Page} page what the device keeps, all of it, as text */
 const everything = async page => JSON.stringify(await Promise.all(['vault', 'drafts', 'snapshots', 'prefs'].map(s => stored(page, s))));
@@ -19,7 +25,7 @@ const everything = async page => JSON.stringify(await Promise.all(['vault', 'dra
 test('a new work: a private repository made with the separate token, started as a work, opened; that token not kept', async ({ page, gh }) => {
   gh.adminTokens = [ADMIN];
   await openWork(page);
-  await page.getByRole('button', { name: 'ほかの作品' }).click();
+  await page.getByRole('button', { name: '‹ 作品' }).click();
   await create(page, { title: '試験の新作', repo: 'new-work', token: ADMIN });
   await expect(page.locator('#work-title')).toHaveValue('試験の新作');
   await expect(page.locator('#episode-title')).toHaveValue('はじまり');
@@ -41,7 +47,7 @@ test('a new work: a private repository made with the separate token, started as 
 // FR-WORK-02, NFR-USE-01: a token without Administration, or one GitHub refuses: which permission is needed
 test('a new work refused: the permission needed is said; a name GitHub would not take is said first', async ({ page, gh }) => {
   await openWork(page);
-  await page.getByRole('button', { name: 'ほかの作品' }).click();
+  await page.getByRole('button', { name: '‹ 作品' }).click();
   await create(page, { title: '題', repo: '小説', token: TOKEN });
   await expect(page.locator('#new-work-state')).toHaveText('リポジトリ名は、英数字と . _ - で 100 文字までにしてください');
   await create(page, { title: '題', repo: 'x', token: TOKEN });
@@ -63,7 +69,7 @@ test('made but not readable yet: said; then, and an empty repository made elsewh
   empty.id = ++gh.ids;
   gh.repos.set('author/empty', empty);
   await openWork(page);
-  await page.getByRole('button', { name: 'ほかの作品' }).click();
+  await page.getByRole('button', { name: '‹ 作品' }).click();
   // (opened, but not started yet)
   const asked = [];
   page.once('dialog', d => {
@@ -72,19 +78,21 @@ test('made but not readable yet: said; then, and an empty repository made elsewh
   });
   await openRepo(page, 'author/empty');
   await expect.poll(() => asked.length).toBe(1);
-  await page.getByRole('button', { name: 'ほかの作品' }).click();
-  await expect(page.locator('#repo-list .work', { hasText: 'author/empty' })).toContainText('空のリポジトリです（開くと作品として始められます）');
+  // (not started: not opened, the list of works again)
+  await expect(page.locator('#shelf')).toBeVisible();
+  await expect(page.locator('#works .work', { hasText: 'author/empty' })).toContainText('空のリポジトリです（開くと作品として始められます）');
   await create(page, { title: '試験の新作', repo: 'later', token: ADMIN });
-  await expect(page.locator('#new-work-state')).toHaveText(
+  await expect(page.locator('#toast')).toHaveText(
     /^author\/later（非公開）を作りました。いまのトークンではまだ読めないので、.*Repository access にこのリポジトリを足して/,
   );
+  await expect(page.locator('#new-repo')).toBeHidden();
   expect(gh.repos.get('author/later')?.empty).toBe(true);
   gh.unreadable.clear();
   // (from the list as it is: going back to the desk would open the empty repository, which asks again)
   page.once('dialog', d => d.accept());
   await page.getByRole('button', { name: /author\/later/ }).click();
   await expect(page.locator('#work-title')).toHaveValue('試験の新作');
-  await page.getByRole('button', { name: 'ほかの作品' }).click();
+  await page.getByRole('button', { name: '‹ 作品' }).click();
   page.once('dialog', d => d.accept());
   await page.getByRole('button', { name: /author\/empty/ }).click();
   await expect(page.locator('#work-title')).toHaveValue('empty');
@@ -107,7 +115,7 @@ test('the repository renamed from the app: with the separate token; the work and
   );
   await page.locator('#rename-admin-token').fill(ADMIN);
   await page.getByRole('button', { name: '名前を変更' }).last().click();
-  await expect(page.locator('#toast')).toHaveText('リポジトリ名を author/novel-renamed に変更しました');
+  await expect(page.locator('#toast')).toHaveText('author/novel-renamed に変更しました');
   await expect(page.locator('#work-repo a')).toHaveText('author/novel-renamed');
   await expect(page.locator('#body')).toHaveValue('# 第1話 はじまり\n\n名前を変える前に書いた\n');
   expect(work.fullName).toBe('author/novel-renamed');
@@ -125,7 +133,7 @@ test('renamed on GitHub: followed when read, the changes not sent with it', asyn
   await openWork(page);
   await page.locator('#body').fill('# 第1話 はじまり\n\nここで\n');
   gh.rename('author/novel', 'someone/novel-moved');
-  await page.getByRole('button', { name: '再読み込み' }).click();
+  await page.locator('#reload-work').click();
   await expect(page.locator('#toast')).toHaveText('GitHub でリポジトリが someone/novel-moved に変わっていたので、合わせました');
   await expect(page.locator('#work-repo a')).toHaveText('someone/novel-moved');
   await expect(page.locator('#body')).toHaveValue('# 第1話 はじまり\n\nここで\n');
@@ -144,24 +152,29 @@ test('another repository under the name: stopped, nothing sent; connected again 
   const other = new FakeRepo('author/novel', { 'novel.toml': 'title = "別の作品"\n', '01.md': '# 別\n' });
   other.id = ++gh.ids;
   gh.repos.set('author/novel', other);
-  await page.getByRole('button', { name: '再読み込み' }).click();
+  await page.locator('#reload-work').click();
   await expect(page.locator('#sync-state')).toHaveText(/^author\/novel は、つないだリポジトリとは別のリポジトリになっています/);
   await expect(page.locator('#send')).toBeDisabled();
   await expect(page.locator('#body')).toHaveValue('# 第1話 はじまり\n\n止まる\n');
   expect(gh.calls.filter(c => !c.startsWith('GET'))).toEqual([]);
   page.once('dialog', d => d.accept());
-  await page.getByRole('button', { name: 'つなぎ直す' }).click();
+  await page.getByRole('button', { name: 'このリポジトリに再接続' }).click();
   await expect(page.locator('#work-title')).toHaveValue('別の作品');
-  await expect(page.locator('#gh-relink')).toHaveCount(0);
+  await expect(page.locator('#gh-relink')).toBeHidden();
 });
 
 // FR-WORK-02, NFR-USE-01: what is missing said before anything is made; GitHub not reached said
-test('a new work: no title or no token said first; GitHub not reached said; nothing made', async ({ page, gh }) => {
+test('a new work: no title or no token said first; GitHub not reached said; the dialog closed; nothing made', async ({ page, gh }) => {
   gh.adminTokens = [ADMIN];
   await openWork(page);
-  await page.getByRole('button', { name: 'ほかの作品' }).click();
+  await page.getByRole('button', { name: '‹ 作品' }).click();
+  // (no title: the list's field asks for one, as the server version's; spaces only: said in the dialog)
+  await page.locator('#new-work').getByRole('button', { name: '作成' }).click();
+  await expect(page.locator('#new-repo')).toBeHidden();
   await create(page, { title: ' ', repo: 'x', token: ADMIN });
   await expect(page.locator('#new-work-state')).toHaveText('題名を入れてください');
+  await page.locator('#close-new-repo').click();
+  await expect(page.locator('#new-repo')).toBeHidden();
   await create(page, { title: '題', repo: 'x', token: ' ' });
   await expect(page.locator('#new-work-state')).toHaveText('Administration の権限を付けたトークンを入れてください（作るときだけ使い、この端末には残しません）');
   gh.down = true;
@@ -175,11 +188,10 @@ test('a new work: no title or no token said first; GitHub not reached said; noth
 test('a new work for the user named, and for an organisation; the default branch not said: main', async ({ page, gh }) => {
   gh.adminTokens = [ADMIN];
   await openWork(page);
-  await page.getByRole('button', { name: 'ほかの作品' }).click();
-  await page.getByLabel(/^持ち主/).fill('author');
-  await create(page, { title: '自分の作品', repo: 'mine', token: ADMIN });
+  await page.getByRole('button', { name: '‹ 作品' }).click();
+  await create(page, { title: '自分の作品', repo: 'mine', token: ADMIN, owner: 'author' });
   await expect(page.locator('#work-repo')).toContainText('author/mine');
-  await page.getByRole('button', { name: 'ほかの作品' }).click();
+  await page.getByRole('button', { name: '‹ 作品' }).click();
   await page.route('https://api.github.com/orgs/novel-org/repos', route =>
     route.request().method() !== 'POST'
       ? route.fallback()
@@ -191,8 +203,7 @@ test('a new work for the user named, and for an organisation; the default branch
           }),
         ),
   );
-  await page.getByLabel(/^持ち主/).fill('novel-org');
-  await create(page, { title: '組織の作品', repo: 'shared', token: ADMIN });
+  await create(page, { title: '組織の作品', repo: 'shared', token: ADMIN, owner: 'novel-org' });
   await expect(page.locator('#work-repo')).toContainText('novel-org/shared');
   expect(gh.adminCalls).toEqual(['GET /user', 'POST /user/repos', 'GET /user', 'POST /orgs/novel-org/repos']);
   expect(gh.repos.get('novel-org/shared')?.text('novel.toml')).toContain('title = "組織の作品"');
@@ -231,13 +242,14 @@ test('other tabs: renamed while another work is chosen; taken off in tabs that s
   const tabs = [];
   for (let i = 0; i < 3; i++) {
     const tab = await context.newPage();
+    await keepMoreOpen(tab);
     tab.on('dialog', d => void d.accept());
-    await tab.goto('./');
+    await tab.goto(page.url());
     await expect(tab.locator('#episode-title')).toHaveValue('はじまり');
     tabs.push(tab);
   }
   const [renaming, stale, staler] = tabs;
-  await page.getByRole('button', { name: 'ほかの作品' }).click();
+  await page.getByRole('button', { name: '‹ 作品' }).click();
   await openRepo(page, 'author/other');
   await expect(page.locator('#work-repo a')).toHaveText('author/other');
   await renaming.getByRole('button', { name: '名前を変更' }).click();
@@ -245,13 +257,14 @@ test('other tabs: renamed while another work is chosen; taken off in tabs that s
   await renaming.locator('#rename-admin-token').fill(ADMIN);
   await renaming.locator('#rename-repo').getByRole('button', { name: '名前を変更' }).click();
   await expect(renaming.locator('#work-repo a')).toHaveText('author/novel-two');
-  await stale.getByRole('button', { name: '一覧から外す' }).click();
-  await expect(stale.locator('#repos')).toBeVisible();
-  await staler.getByRole('button', { name: '一覧から外す' }).click();
-  await expect(staler.locator('#repos')).toBeVisible();
+  for (const tab of [stale, staler]) {
+    await tab.getByRole('button', { name: 'この作品を削除' }).click();
+    await tab.getByRole('button', { name: '送ってから削除' }).click();
+    await expect(tab.locator('#shelf')).toBeVisible();
+  }
   // (the list: the renamed work and the other one, the old name taken off counting for neither)
-  await page.getByRole('button', { name: 'ほかの作品' }).click();
-  await expect(page.locator('#repo-list .work small')).toHaveText([/author\/novel-two（main）/, /author\/other（main）/]);
-  await page.getByRole('button', { name: '戻る' }).click();
+  await page.getByRole('button', { name: '‹ 作品' }).click();
+  await expect(page.locator('#works .work small')).toHaveText([/author\/novel-two（main）/, /author\/other（main）/]);
+  await page.locator('#works .work', { hasText: 'author/novel-two' }).click();
   await expect(page.locator('#work-repo a')).toHaveText('author/novel-two');
 });

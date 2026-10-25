@@ -4,7 +4,7 @@
 // gone, or another file now, when it was to be sent) is shown whole, to be sent beside what is there now, put at the
 // end of the episode open, or given up
 import { kindsOf } from '../lib/commit.js';
-import { esc } from '../lib/format.js';
+import { esc, whenLong } from '../lib/format.js';
 import { $ } from './dom.js';
 import { api } from './shared.js';
 
@@ -35,7 +35,12 @@ function render() {
   $('unsent-body').innerHTML += aside
     .map(
       (d, i) =>
-        `<div class="unsent-item parked"><div><b>${esc(d.path)}</b><small>送れなかった文章（${esc(/** @type {string} */ (d.parked))}ため）</small><textarea class="parked-text" readonly aria-label="送れなかった文章">${esc(/** @type {string} */ (d.text))}</textarea><span class="parked-tools">${api.mode() === 'off' ? '' : `<button data-unpark-send="${i}">送る（GitHub の版と並べて残す）</button>`}${open ? `<button data-unpark-put="${i}">開いている話の末尾に入れる</button>` : ''}<button class="ghost danger" data-unpark-drop="${i}">捨てる</button></span></div></div>`,
+        // (as the server version's card of a draft set aside)
+        `<div class="card"><b>${esc(d.path)}</b><small class="muted">${esc(whenLong(d.at))} に保留</small>
+      <small class="muted">${esc(/** @type {string} */ (d.parked))}ため、送れませんでした</small>
+      <textarea class="version-text" readonly>${esc(/** @type {string} */ (d.text))}</textarea>
+      <div class="gh-actions">${api.mode() === 'off' ? '' : `<button data-unpark-send="${i}">送信（GitHub の版と並べて残す）</button>`}${open ? `<button data-unpark-put="${i}">開いている話の末尾に挿入</button>` : ''}
+      <button class="ghost" data-unpark-drop="${i}">破棄</button></div></div>`,
     )
     .join('');
 }
@@ -61,7 +66,7 @@ function redraw() {
 /** @param {'send' | 'put' | 'drop'} how @param {number} i */
 async function unpark(how, i) {
   const d = aside[i];
-  if (how === 'drop' && !confirm(`「${d.path}」に書いて送れなかった文章を捨てますか？（この端末の履歴に残ります）`)) return;
+  if (how === 'drop' && !confirm('この書きかけを破棄しますか？（この端末の履歴に残ります）')) return;
   if (how === 'put') dialog().close();
   await api.unpark(d, how);
   if (how !== 'put') redraw();

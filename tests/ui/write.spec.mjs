@@ -106,9 +106,9 @@ test('another episode and another work keep their own drafts', async ({ page, gh
   await expect(page.locator('#body')).toHaveValue(WORK_FILES['chapters/02_second.md']);
   await page.locator('#tree .node', { hasText: 'third' }).click();
   await expect(page.locator('#body')).toHaveValue('書き直した');
-  await page.getByRole('button', { name: 'ほかの作品' }).click();
+  await page.getByRole('button', { name: '‹ 作品' }).click();
   await openRepo(page, 'author/other');
-  await expect(page.locator('#tree')).toContainText('話がありません');
+  await expect(page.locator('#save-state')).toHaveText('話がありません。「＋ 話を追加」で追加してください');
   await expect(page.locator('#send')).toBeDisabled();
 });
 
@@ -164,14 +164,13 @@ test.describe('an iPhone (its Safari, touch)', () => {
     await expect(page.locator('meta[name="viewport"]')).toHaveAttribute('content', /,maximum-scale=1$/);
     expect(await page.locator('#body').evaluate(b => getComputedStyle(b).fontSize)).toBe('14px');
   });
-  // FR-SAVE-07: what the foot says of the episode (each of the three) read whole beside its buttons: not cut, not
-  // higher than the buttons
+  // FR-SAVE-07: what the foot says of the episode (each of the three) read whole beside its buttons: not cut (in two
+  // lines when it does not go in one)
   test('what the foot says of the episode is never cut', async ({ page, gh }) => {
     await openWork(page);
     const said = await page.evaluate(async () => {
       const { saveState } = await import('./lib/sync.js');
       const state = /** @type {HTMLElement} */ (document.getElementById('save-state'));
-      const button = /** @type {HTMLElement} */ (document.getElementById('open-history'));
       return [
         { draft: false, failed: false, onGitHub: true },
         { draft: true, failed: false, onGitHub: true },
@@ -181,7 +180,7 @@ test.describe('an iPhone (its Safari, touch)', () => {
         return {
           text: state.textContent,
           wide: state.scrollWidth > state.clientWidth,
-          tall: state.scrollHeight > state.clientHeight || state.offsetHeight > button.offsetHeight,
+          tall: state.scrollHeight > state.clientHeight,
         };
       });
     });
@@ -214,9 +213,9 @@ test('a picture: no episode open, nothing asked; another episode opened while ch
   await page.locator('#tree .node', { hasText: '駅で' }).click();
   await expect(page.locator('#body')).toHaveValue(WORK_FILES['chapters/02_second.md']);
   await expect(page.locator('#send')).toBeDisabled();
-  await page.getByRole('button', { name: 'ほかの作品' }).click();
+  await page.getByRole('button', { name: '‹ 作品' }).click();
   await openRepo(page, 'author/other');
-  await expect(page.locator('#tree')).toContainText('話がありません');
+  await expect(page.locator('#save-state')).toHaveText('話がありません。「＋ 話を追加」で追加してください');
   let asked = false;
   page.once('filechooser', () => (asked = true));
   await page.getByRole('button', { name: '画像を挿入' }).click();
@@ -284,7 +283,7 @@ test('written elsewhere read in while the work’s title is typed: what is typed
   await page.locator('#work-title').fill('打ちかけの題');
   work.push({ 'chapters/02_second.md': '# 第2話 駅で\n\nほかで\n' });
   await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
-  await expect(page.locator('#toast')).toHaveText('ほかの所での変更を読み込みました');
+  await expect(page.locator('#toast')).toHaveText('ほかの端末の更新を読み込みました');
   await expect(page.locator('#work-title')).toHaveValue('打ちかけの題');
   await expect(page.locator('#work-title')).toBeFocused();
 });

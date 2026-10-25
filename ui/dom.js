@@ -4,7 +4,7 @@
 /** @param {string} id @returns {El} */
 export const $ = id => /** @type {El} */ (document.getElementById(id));
 
-const SCREENS = ['loading', 'setup', 'app-install', 'unlock', 'repos', 'desk', 'notes', 'plot', 'characters', 'record'];
+const SCREENS = ['loading', 'setup', 'app-install', 'unlock', 'shelf', 'desk', 'settings', 'notes', 'plot', 'characters', 'record'];
 // one screen at a time
 /** @param {string} id */
 export function show(id) {
@@ -18,5 +18,5 @@ export function toast(text) {
   t.textContent = text;
   t.classList.add('show');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => t.classList.remove('show'), 4000);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 2200);
 }

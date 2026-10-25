@@ -19,16 +19,25 @@ let opened = null;
 
 async function makeRelease() {
   const w = api.work();
-  if (api.drafts().size || api.view().config !== w.config) return toast('未送信の変更があります。「送る」で送ってから、リリースを作成してください');
   if (w.offline) return toast('オフラインです。つながってからリリースを作成してください');
-  const given = prompt('リリース名（例: 第一稿、新人賞応募版）\nいまの原稿（GitHub にある版）にタグを付け、GitHub のリリースにも残します');
+  const given = prompt('リリース名（例: 第一稿、新人賞応募版）\nいまの原稿にタグを付け、GitHub のリリースにも残します');
   const label = given === null ? null : releaseLabel(given);
   if (!label) return;
+  // what is not sent yet goes first (as the server version's: pushed, then tagged)
+  if (api.unsent()) {
+    await api.send();
+    if (api.unsent()) return toast('送れなかったので、リリースを作成しませんでした。書いたものはこの端末に残っています');
+  }
   try {
     const [list, names] = await Promise.all([gh.releases(w.repo), gh.tags(w.repo)]);
     const tag = nextTag([...names, ...list.map((/** @type {{ tag_name: string }} */ r) => r.tag_name)]);
     const eps = api.episodes();
-    await gh.newRelease(w.repo, { tag, commit: w.commit, name: label, body: `${label}（${eps.length} 話、${eps.reduce((s, e) => s + e.chars, 0)} 字）` });
+    await gh.newRelease(w.repo, {
+      tag,
+      commit: api.work().commit,
+      name: label,
+      body: `${label}（${eps.length} 話、${eps.reduce((s, e) => s + e.chars, 0)} 字）`,
+    });
     toast(`リリース「${label}」（${tag}）を作成しました`);
   } catch (err) {
     toast(`リリースを作成できませんでした: ${err.message}`);
@@ -37,10 +46,18 @@ async function makeRelease() {
 async function showReleases() {
   opened = null;
   $('releases-title').textContent = 'リリース一覧';
-  body().innerHTML = '<p class="muted small">読み込み中…</p>';
+  body().innerHTML = '<p class="muted">読み込み中…</p>';
   if (!dialog().open) dialog().showModal();
   try {
-    const list = releasesOf(await gh.releases(api.work().repo));
+    const repo = api.work().repo;
+    const [made, names] = await Promise.all([gh.releases(repo), gh.tags(repo)]);
+    // the tags v and a number with no release: dated by their commits
+    const released = new Set(made.map((/** @type {{ tag_name: string }} */ r) => r.tag_name));
+    const bare = names.filter(t => /^v\d+$/.test(t) && !released.has(t));
+    const tags = await Promise.all(
+      bare.map(async name => ({ name, date: new Date((await gh.commitOf(repo, await gh.tagCommit(repo, name))).date).toISOString() })),
+    );
+    const list = releasesOf(made, tags);
     body().innerHTML = list.length
       ? list
           .map(
@@ -48,7 +65,7 @@ async function showReleases() {
               `<button class="version" data-tag="${esc(r.tag)}" data-label="${esc(r.label)}"><b>${esc(r.label)}</b><small>${esc(r.tag)} ・ ${esc(new Date(r.date).toLocaleString('ja-JP'))}</small></button>`,
           )
           .join('')
-      : '<p class="muted small">まだリリースはありません。「リリースを作成」で、いまの原稿を残せます。</p>';
+      : '<p class="muted">まだリリースはありません。「リリースを作成」で、いまの原稿を残せます。</p>';
   } catch (err) {
     body().innerHTML = `<p class="error">${esc(err.message)}</p>`;
   }
@@ -58,7 +75,7 @@ async function showReleases() {
 async function showRelease(tag, label) {
   const w = api.work();
   $('releases-title').textContent = label;
-  body().innerHTML = '<p class="muted small">読み込み中…</p>';
+  body().innerHTML = '<p class="muted">読み込み中…</p>';
   try {
     const { tree } = await gh.commitOf(w.repo, await gh.tagCommit(w.repo, tag));
     const { blobs } = filesOf((await gh.treeFiles(w.repo, tree)).tree);
@@ -94,7 +111,7 @@ async function showRelease(tag, label) {
         )
         .join('');
   } catch (err) {
-    body().innerHTML = `<button class="ghost back-releases">‹ リリース一覧</button><p class="error">${esc(err.message)}</p>`;
+    body().innerHTML = `<p class="error">${esc(err.message)}</p>`;
   }
 }
 /** @param {number} i */
@@ -113,10 +130,7 @@ async function restore(i) {
   const r = /** @type {NonNullable<typeof opened>} */ (opened);
   const e = r.episodes[i];
   const here = /** @type {import('./shared.js').Episode} */ (api.episodes().find(x => x.path === e.path));
-  if (
-    !confirm(`今の「${here.title}」を、リリース「${r.label}」の内容に復元しますか？（今の内容も、この端末の履歴に残ります。送るまではこの端末だけの変更です）`)
-  )
-    return;
+  if (!confirm(`今の「${here.title}」を、リリース「${r.label}」の内容に復元しますか？（今の内容も履歴に残ります。送るまではこの端末だけの変更です）`)) return;
   const now = (await api.texts([e.path]))[e.path];
   if (now !== null) await api.snapshot(e.path, now, true);
   api.keepText(e.path, e.text);

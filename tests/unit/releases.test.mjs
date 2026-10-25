@@ -22,6 +22,20 @@ test('releasesOf: the releases of a tag v and a number, the newest first, their 
     { tag: 'v2', label: 'v2', date: '2026-10-02T00:00:00Z' },
     { tag: 'v1', label: '第一稿', date: '2026-10-01T00:00:00Z' },
   ]);
+  // the tags v and a number without a release, by their tags (as the server version lists them)
+  expect(
+    releasesOf(
+      [{ tag_name: 'v1', name: '第一稿', created_at: '2026-10-01T00:00:00Z' }],
+      [
+        { name: 'v1', date: '2026-09-30T00:00:00Z' },
+        { name: 'v3', date: '2026-10-05T00:00:00Z' },
+        { name: 'keep', date: '2026-10-06T00:00:00Z' },
+      ],
+    ),
+  ).toEqual([
+    { tag: 'v3', label: 'v3', date: '2026-10-05T00:00:00Z' },
+    { tag: 'v1', label: '第一稿', date: '2026-10-01T00:00:00Z' },
+  ]);
 });
 test('pathOrder: part by part, numbers as numbers; a folder before what is in it', () => {
   expect(['ms/10_b.md', 'ms/2_a/01.md', 'ms/2_a', 'ms/1.md'].sort(pathOrder)).toEqual(['ms/1.md', 'ms/2_a', 'ms/2_a/01.md', 'ms/10_b.md']);

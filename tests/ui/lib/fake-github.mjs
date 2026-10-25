@@ -140,8 +140,14 @@ export class FakeRepo {
     const files = [...new Set([...Object.keys(from), ...Object.keys(to)])]
       .filter(p => from[p]?.sha !== to[p]?.sha)
       .sort()
-      .map(p => ({ filename: p, status: !from[p] ? 'added' : !to[p] ? 'removed' : 'modified', additions: 1, deletions: from[p] && to[p] ? 1 : 0 }));
-    return { status: commits.length ? 'ahead' : 'identical', ahead_by: commits.length, commits, files };
+      .map(p => ({
+        filename: p,
+        status: !from[p] ? 'added' : !to[p] ? 'removed' : 'modified',
+        additions: 1,
+        deletions: from[p] && to[p] ? 1 : 0,
+        ...(to[p] && { sha: to[p].sha }),
+      }));
+    return { status: commits.length ? 'ahead' : 'identical', ahead_by: commits.length, commits, files, merge_base_commit: { sha: this.meet(b, h) } };
   }
   /** @param {string} c @returns {string[]} every commit it comes from, itself first */
   ancestors(c) {

@@ -3,7 +3,7 @@
 // as a change not sent. A box of the plot or a person of the characters is written here by itself (its lines only).
 // From the server version's public/ui/notes.js
 import { trashStamp, cleanTitle } from '../lib/episodes.js';
-import { esc } from '../lib/format.js';
+import { esc, whenLong } from '../lib/format.js';
 import { picturePaths, relPath, renderMd } from '../lib/markdown.js';
 import { CONFLICT_MARK } from '../lib/merge.js';
 import { groupNotes } from '../lib/notelist.js';
@@ -65,7 +65,7 @@ export async function openNotes() {
         .map(({ folder, rows }) =>
           folder === ''
             ? rows.map(row).join('')
-            : `<div class="notes-folder"><span>${esc(folder)}</span><button class="ghost" data-add-in="${esc(folder)}" title="このフォルダに資料を作成" aria-label="「${esc(folder)}」に資料を作成">＋</button></div><div class="notes-in">${rows.map(row).join('')}</div>`,
+            : `<div class="notes-folder"><span>${esc(folder)}</span><button class="ghost" data-add-in="${esc(folder)}" title="このフォルダに資料を作成">＋</button></div><div class="notes-in">${rows.map(row).join('')}</div>`,
         )
         .join('')
     : '<p class="muted small">まだ資料がありません。「＋ 資料を追加」で作成できます。</p>';
@@ -131,6 +131,9 @@ export async function readInNotes() {
     $('note-whole').hidden = true;
     $('note-name').textContent = noteHeading(text) ?? /** @type {string} */ (path.split('/').pop());
     setKeepingCaret(area(), text);
+    // (the preview open drawn again, as the server version's)
+    if (!$('note-preview').hidden) $('note-preview').innerHTML = await previewHtml();
+    toast('ほかの端末の更新を読み込みました');
   }
   showState();
 }
@@ -211,7 +214,8 @@ async function addNote(folder = '') {
       ? `「${folder}」に作る資料の名前（ファイル名は英数字になります。例: alice）`
       : '資料の名前（ファイル名は英数字になります。例: characters、world、plot）。フォルダに入れるときは「フォルダ/名前」（例: キャラ/alice）',
   );
-  if (!given?.trim()) return;
+  if (!given) return;
+  if (!given.trim()) return void toast('名前を入れてください');
   const at = given.lastIndexOf('/');
   const [inFolder, name] = folder ? [folder, given] : [given.slice(0, Math.max(0, at)), given.slice(at + 1)];
   try {
@@ -240,7 +244,7 @@ async function renameOpen() {
     const plan = renameNote(l, api.files(), path, name.trim(), cleanTitle(name.trim()), noteText(), byName);
     if (await api.apply(plan)) {
       toast('資料の名前を変更しました（送るまではこの端末だけの変更です）');
-      await openNote(plan.path, back);
+      await openNote(plan.path);
     }
   } catch (err) {
     toast(err.message);
@@ -262,20 +266,22 @@ async function historyOfOpen() {
     repo: w.repo,
     branch: w.branch,
     path,
-    title: /** @type {string} */ ($('note-name').textContent),
+    title: noteHeading(noteText()) ?? /** @type {string} */ (path.split('/').pop()),
+    what: '資料',
     draft: d?.text !== undefined ? { text: d.text, at: d.at } : null,
     snapshots: await api.snapshots(path),
     remote: Boolean(w.blobs[path]),
     now: noteText,
     // (the history is a modal dialog: the note stays open until it is closed)
-    restore: async text => {
+    restore: async (text, at) => {
+      const title = noteHeading(noteText()) ?? /** @type {string} */ (path.split('/').pop());
       await api.snapshot(path, noteText(), true);
       noteSection = null;
-      $('note-whole').hidden = true;
       setKeepingCaret(area(), text);
       api.keepText(path, text);
-      showState();
-      toast('資料を復元しました（送るまではこの端末だけの変更です）');
+      // (opened again, as the server version's: its name and 「‹ 一覧」)
+      await openNote(path);
+      toast(`「${title}」を ${whenLong(at)} の版に復元しました（送るまではこの端末だけの変更です）`);
     },
   });
 }
@@ -326,8 +332,10 @@ export function wireNotes() {
     pickImage(async (file, bytes) => {
       // (another note, or none, open by the time the picture was chosen: not put anywhere)
       if (notePath !== path) return;
-      if (await api.apply({ moves: [], writes: [{ path: file, bytes }], edits: [], path: file }, undefined, true))
+      if (await api.apply({ moves: [], writes: [{ path: file, bytes }], edits: [], path: file }, undefined, true)) {
         insertAt(area(), `\n![](${relPath(path, file)})\n`);
+        toast('画像を挿入しました（送るまではこの端末だけの変更です）');
+      }
     });
   });
   inputBar($('note-kbar'), area(), $('notes'), () => void togglePreview());

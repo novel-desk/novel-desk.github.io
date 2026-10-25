@@ -14,6 +14,7 @@
     "test:mutation": "stryker run",
     "test:mutation:save": "stryker run stryker.save.config.mjs",
     "check:trace": "NW_NO_WEBKIT=1 playwright test trace && node tools/trace_check.mjs",
+    "check:server": "node tools/server_diff.mjs",
     "check:all": "bash tools/check_all.sh"
   },
   "devDependencies": {

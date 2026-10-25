@@ -147,9 +147,10 @@ async function createWork(open, relist) {
     await store.put('prefs', `new-title:${made.full_name}`, title);
     await keepWork({ full_name: made.full_name, default_branch: made.default_branch, visibility: made.visibility });
     if (!(await gh.repoMeta(made.full_name))) {
-      say(
+      $('new-work-title').value = '';
+      newDialog().close();
+      toast(
         `${made.full_name}（非公開）を作りました。いまのトークンではまだ読めないので、GitHub のトークンの一覧でいまのトークンを開き（Edit）、Repository access にこのリポジトリを足してから、一覧から開いてください。開くと作品を始めます`,
-        false,
       );
       await relist();
       return;
@@ -157,7 +158,7 @@ async function createWork(open, relist) {
     await startWork(made.full_name, made.default_branch, title);
     $('new-work-title').value = $('new-work-repo').value = $('new-work-owner').value = '';
     say('', false);
-    toast(`作品「${title}」を作りました（${made.full_name}、非公開）`);
+    newDialog().close();
     await open({ full_name: made.full_name, default_branch: made.default_branch, visibility: made.visibility });
   } catch (err) {
     say(/** @type {Error} */ (err).message, true);
@@ -166,6 +167,7 @@ async function createWork(open, relist) {
   }
 }
 
+const newDialog = () => /** @type {HTMLDialogElement} */ (/** @type {unknown} */ ($('new-repo')));
 const renameDialog = () => /** @type {HTMLDialogElement} */ (/** @type {unknown} */ ($('rename-repo')));
 /** @typedef {{ repo: () => Repo, settled: () => Promise<void>, reopen: (r: Repo) => Promise<void> }} Desk the desk's */
 // リポジトリの名前を変更 (FR-GH-10): renamed on GitHub (with the token that has Administration), then what this device
@@ -194,7 +196,7 @@ async function renameRepo(desk) {
     await moveRepo(r.full_name, meta.full_name);
     await store.put('prefs', `id:${meta.full_name}`, meta.id);
     renameDialog().close();
-    toast(`リポジトリ名を ${meta.full_name} に変更しました`);
+    toast(`${meta.full_name} に変更しました`);
     await desk.reopen({ full_name: meta.full_name, default_branch: meta.default_branch, visibility: meta.visibility });
   } catch (err) {
     say(/** @type {Error} */ (err).message);
@@ -208,12 +210,18 @@ async function renameRepo(desk) {
  * @param {Desk} on
  */
 export function wireRepo(shelf, on) {
+  // 新しい作品: the title typed on the list (as the server version's), then the repository to make, in a dialog
   $('new-work').addEventListener('submit', e => {
+    e.preventDefault();
+    $('new-work-state').textContent = '';
+    newDialog().showModal();
+  });
+  $('new-repo-form').addEventListener('submit', e => {
     e.preventDefault();
     void createWork(shelf.open, shelf.relist);
   });
-  $('work-repo').addEventListener('click', e => {
-    if (!(/** @type {HTMLElement} */ (e.target).closest('#gh-rename'))) return;
+  $('close-new-repo').addEventListener('click', () => newDialog().close());
+  $('gh-rename').addEventListener('click', () => {
     $('rename-repo-name').value = on.repo().full_name.split('/')[1];
     $('rename-repo-error').textContent = '';
     renameDialog().showModal();

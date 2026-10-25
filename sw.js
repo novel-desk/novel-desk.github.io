@@ -1,6 +1,6 @@
 // オフラインでも開けるように、アプリの画面のファイルだけを控える。いつもはネットワークを先に使い、届かないときだけ控えを出す。
 // GitHub の API への要求には手を出さない（作品の文章とトークンは、画面が IndexedDB に置く）
-const CACHE = 'novel-writer-js-v17';
+const CACHE = 'novel-writer-js-v18';
 // this worker (self, with the types of a service worker for the type check)
 const sw = /** @type {ServiceWorkerGlobalScope} */ (/** @type {unknown} */ (self));
 // every file of the screens (a test checks it against the files of the app)
@@ -8,6 +8,7 @@ const FILES = [
   './',
   'index.html',
   'app.js',
+  'boot.js',
   'style.css',
   'manifest.webmanifest',
   'icon.svg',
@@ -87,7 +88,8 @@ sw.addEventListener('activate', e => {
 });
 sw.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
-  url.search = '';
+  // (the page's address with a work in it, #owner/name: the page itself)
+  url.search = url.hash = '';
   if (e.request.method !== 'GET' || !urls.has(url.href)) return;
   e.respondWith(
     (async () => {

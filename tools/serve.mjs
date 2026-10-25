@@ -1,6 +1,6 @@
 // The app served from this folder, as GitHub Pages serves it (the screen tests and `npm run serve`): files only, on
 // localhost (WebAuthn takes localhost as a secure place; an IP address cannot be a passkey's rp.id).
-// NW_COVERAGE=1 (the screen tests): the app's scripts (app.js, sw.js, lib/, ui/) are served instrumented by istanbul,
+// NW_COVERAGE=1 (the screen tests): the app's scripts (app.js, boot.js, sw.js, lib/, ui/) are served instrumented by istanbul,
 // their counts in globalThis.__coverage__ (tests/ui/lib/coverage.mjs)
 import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
@@ -11,7 +11,7 @@ const PORT = Number(process.env.PORT || 4173);
 const COVERAGE = !!process.env.NW_COVERAGE;
 /** @type {Map<string, Buffer>} the instrumented scripts, made once for a run */
 const instrumented = new Map();
-const SCRIPT = /^\/(app\.js|sw\.js|(lib|ui)\/[^/]+\.js)$/;
+const SCRIPT = /^\/(app\.js|boot\.js|sw\.js|(lib|ui)\/[^/]+\.js)$/;
 /** @type {Record<string, string>} */
 const TYPES = {
   '.html': 'text/html; charset=utf-8',

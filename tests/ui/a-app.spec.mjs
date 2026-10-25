@@ -1,7 +1,7 @@
-// The app's page itself: the colour and the screen's size on the list of works (FR-APP-01, FR-APP-05) where the
+// The app's page itself: the colour and the screen's size on 設定 (FR-APP-01, FR-APP-05) where the
 // browser keeps nothing for it, a browser without a service worker or one that will not take it (FR-APP-02), and this
 // device's store that cannot be opened or is full (NFR-USE-01)
-import { test, expect, noPasskey, openWork } from './lib/test.mjs';
+import { test, expect, noPasskey, openWork, toSettings } from './lib/test.mjs';
 
 // FR-APP-01: a browser that lets the page keep nothing (localStorage refused): the colour 自動, and one chosen still
 // shown; a tap between the buttons changes nothing
@@ -14,23 +14,24 @@ test('the colour where the browser keeps nothing for the page: 自動, and one c
     }),
   );
   await openWork(page);
-  await page.getByRole('button', { name: 'ほかの作品' }).click();
+  await toSettings(page);
   await expect(page.locator('[data-theme-pick=""]')).toHaveClass(/on/);
   await page.locator('[data-theme-pick="dark"]').click();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   await page.locator('#theme-pick').dispatchEvent('click');
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   // (a tap on the list between its works: nothing opened)
-  await page.locator('#repo-list .work').first().waitFor();
-  await page.locator('#repo-list').dispatchEvent('click');
-  await expect(page.locator('#repos')).toBeVisible();
+  await page.getByRole('button', { name: '‹ 戻る' }).click();
+  await page.locator('#works .work').first().waitFor();
+  await page.locator('#works').dispatchEvent('click');
+  await expect(page.locator('#shelf')).toBeVisible();
 });
 
 // FR-APP-05: opened as the app on the home screen: said so with the screen's size
 test('the screen as the app on the home screen: said so', async ({ page, gh }) => {
   await page.addInitScript(() => Object.defineProperty(navigator, 'standalone', { value: true, configurable: true }));
   await openWork(page);
-  await page.getByRole('button', { name: 'ほかの作品' }).click();
+  await toSettings(page);
   await expect(page.locator('#screen-info')).toHaveText(/（ホーム画面のアプリ）$/);
 });
 

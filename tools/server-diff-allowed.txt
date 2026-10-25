@@ -1,0 +1,80 @@
+# サーバー版（~/novel-writer）と比べる相手の commit。サーバー版を直して合わせたら、ここを進める
+commit 4874314
+#
+# 理由のある違い: docs/server-differences.md の番号と、tools/server_diff.mjs が出す鍵（node tools/server_diff.mjs --list）
+#
+# A1. 始め方（GitHub App・トークン・パスキー）
+A1 html - #auth
+A1 html + #loading
+A1 html + #setup
+A1 html + #app-install
+A1 html + #unlock
+A1 html + #author-notice
+A1 html + #token-notice
+A1 html + #token-replace
+A1 html - #admin
+A1 html - #settings > main.settings-main > section.card:3 > div.gh-actions
+A1 css + #setup.auth
+A1 css + .paste-form
+A1 css + .key-form
+A1 css + #app-key-details summary
+A1 css + #app-key-details[open] summary
+A1 css + .install h2
+A1 css + .install ol
+A1 css + .token-notice
+A1 css + .token-notice p
+A1 css + .token-notice-row
+A1 css + .token-notice a
+A1 css + .author-notice
+A1 css + .author-notice label
+# A2. 端末にためて「送る」でまとめて送る
+A2 html + #open-unsent
+A2 html + #unsent
+A2 html #delete-ask > div.picker-list > button.primary[data-delete="push"] text
+A2 html #delete-ask > div.picker-list > button[data-delete="keep"] text
+A2 css + .unsent-tag
+A2 css + #unsent-body
+A2 css + .unsent-item
+A2 css + .unsent-item div
+A2 css + .unsent-item small
+A2 css + .unsent-item .danger
+A2 css + @media (max-width: 760px) #save-state
+# A3. GitHub から直接読む
+A3 html #reload-work [title]
+A3 html #reload-desk [title]
+# A4. リポジトリを作る・名前を変える
+A4 html + #new-repo
+A4 html + #rename-repo
+A4 css + .replace-form
+A4 css + .replace-form label
+# A5. 作品の一覧はこの端末ごと（GitHub の欄は HTML に最初から置く）
+A5 html + #sync > div.sync-row:1
+A5 html + #sync-state
+A5 html + #gh-relink
+A5 html + #sync > div.sync-row:2
+A5 html #delete-work [title]
+# A6. novel.toml を端末で読む
+A6 html + #layout-problems
+A6 css + .problems
+A6 css + .problems p
+# A7. この端末にまだ無い話・UTF-8 でない話
+A7 html + #episode-note
+A7 css + .episode-note
+# A8. ページに書いたスクリプトを実行しない（CSP）
+A8 html - html > head > script:1
+A8 html - html > head > script:2
+A8 html - html > body > script
+A8 html + html > head > script[src="boot.js"]
+A8 html + html > head > meta[http-equiv="Content-Security-Policy"]
+A8 html + html > head > meta[name="referrer"]
+# A10. 履歴・リリース・未送信の一覧のダイアログ
+A10 html + #releases
+A10 css + #releases-body
+# B1. 作者に決めてほしいもの: アプリの名前
+B1 html html > head > title text
+B1 html html > head > meta[name="apple-mobile-web-app-title"] [content]
+B1 html #shelf > header.bar > strong.brand text
+# B2. サーバー版に無い直し: プレビューを横にはらったときに前のページに戻らない
+B2 css html {overscroll-behavior-x}
+B2 css .preview {overscroll-behavior-x}
+B2 css .preview {touch-action}

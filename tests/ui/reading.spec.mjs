@@ -24,9 +24,9 @@ test.describe('a phone (a finger)', () => {
     await page.keyboard.press('End');
     await bar.getByRole('button', { name: '……' }).click();
     await bar.getByRole('button', { name: '――' }).click();
-    await bar.getByRole('button', { name: '全角スペース' }).click();
+    await bar.getByTitle('全角スペース').click();
     await expect(area).toHaveValue('「はい」……――　');
-    await bar.getByRole('button', { name: 'ルビ' }).click();
+    await bar.locator('[data-ruby]').click();
     await expect(area).toHaveValue('「はい」……――　｜《》');
     await page.keyboard.type('漢字');
     await expect(area).toHaveValue('「はい」……――　｜漢字《》');
@@ -39,7 +39,7 @@ test.describe('a phone (a finger)', () => {
     await bar.getByRole('button', { name: 'やり直す' }).click();
     await expect(area).toHaveValue('「『はい』」……――　｜漢字《》');
     await area.evaluate(a => /** @type {HTMLTextAreaElement} */ (a).setSelectionRange(2, 4));
-    await bar.getByRole('button', { name: 'ルビ' }).click();
+    await bar.locator('[data-ruby]').click();
     await expect(area).toHaveValue('「『｜はい《》』」……――　｜漢字《》');
     // the text box kept the focus throughout; the preview from the bar puts the keyboard away
     await expect(area).toBeFocused();
@@ -268,12 +268,12 @@ test('the place read: an empty heading at the top; the text shorter when read ag
   expect(await page.locator('#body').evaluate(a => a.scrollTop)).toBe(0);
   const long = Array.from({ length: 200 }, (_, i) => `${i}行目の文。`).join('\n');
   work.push({ 'chapters/01_first.md': `# 第1話 はじまり\n\n${long}\n` });
-  await page.getByRole('button', { name: '再読み込み' }).click();
+  await page.locator('#reload-work').click();
   await expect(page.locator('#body')).toHaveValue(/199行目/);
   await page.getByRole('button', { name: 'プレビュー' }).click();
   await page.locator('#preview').evaluate(p => (p.scrollTop = p.scrollHeight));
   work.push({ 'chapters/01_first.md': '# 第1話 はじまり\n\n短くした。\n' });
-  await page.getByRole('button', { name: '再読み込み' }).click();
+  await page.locator('#reload-work').click();
   await expect(page.locator('#preview')).toContainText('短くした。');
   await expect(page.locator('#preview')).toBeVisible();
   expect(await page.locator('#preview').evaluate(p => p.scrollTop)).toBe(0);

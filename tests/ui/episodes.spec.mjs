@@ -183,7 +183,7 @@ test('renamed here and changed elsewhere: not sent, said; read again, the rename
     /^ほかの所で chapters\/01_first\.md が変わっていたので、送りませんでした。「再読み込み」で読み直してください/,
   );
   expect(work.head().parents).toEqual([before]);
-  await page.getByRole('button', { name: '再読み込み' }).click();
+  await page.locator('#reload-work').click();
   await expect(page.locator('#sync-state')).toHaveText(/名前の変更・削除・並べ替えを取り消しました。書いた文章は残っています/);
   await expect(page.locator('#tree .node .t')).toHaveText(['first', 'second', 'part', 'third']);
   await expect(page.locator('#episode-title')).toHaveValue('first');
@@ -226,7 +226,7 @@ test('the rows’ 最終更新: the one changed elsewhere says its time; asked o
   await page.reload();
   await expect(page.locator('#episode-title')).toHaveValue('はじまり');
   gh.calls.length = 0;
-  await page.getByRole('button', { name: '再読み込み' }).click();
+  await page.locator('#reload-work').click();
   await expect(page.locator('#sync-state')).toHaveText(/GitHub から読みました/);
   await expect(times.nth(1)).toHaveText(/^10\/1 \d+:02$/);
   expect(gh.calls.filter(c => c.includes('path='))).toEqual([]);
@@ -301,7 +301,7 @@ test('reordered past the end, or in a work ordered by 2-09.md: nothing moves, th
     'chapters/1-02.md': '# 二\n',
   });
   await page.getByRole('button', { name: '完了' }).click();
-  await page.getByRole('button', { name: '再読み込み' }).click();
+  await page.locator('#reload-work').click();
   await expect(page.locator('#sync-state')).toHaveText(/GitHub から読みました/);
   await page.getByRole('button', { name: '並べ替え' }).click();
   await page.locator('#tree [data-path="chapters/1-01.md"] [data-move="1"]').click();
@@ -349,7 +349,8 @@ test('the titles typed: Enter ends them; the work’s title emptied or as it was
   await page.keyboard.type('X');
   await page.keyboard.press('Backspace');
   await page.keyboard.press('Enter');
-  await expect(page.locator('#work-title')).not.toBeFocused();
+  // (Enter keeps the field focused, as the server version's: the change is kept all the same)
+  await expect(page.locator('#work-title')).toBeFocused();
   await expect(page.locator('#send')).toBeDisabled();
   await page.locator('#work-title').fill('');
   await page.locator('#work-title').press('Enter');
@@ -415,9 +416,9 @@ test('chapters with no episode reordered, none open; the reorder given up, none 
 // FR-TOC-06: the last episode put in the trash: none open; the history of no episode asks nothing
 test('the only episode put in the trash: none open afterwards; the history with no episode open shows nothing', async ({ page, gh }) => {
   await openWork(page);
-  await page.getByRole('button', { name: 'ほかの作品' }).click();
+  await page.getByRole('button', { name: '‹ 作品' }).click();
   await openRepo(page, 'author/other');
-  await expect(page.locator('#tree')).toContainText('話がありません');
+  await expect(page.locator('#save-state')).toHaveText('話がありません。「＋ 話を追加」で追加してください');
   await page.getByRole('button', { name: 'この話の履歴' }).click();
   await expect(page.locator('#versions')).toBeHidden();
   await page.getByRole('button', { name: '＋ 話を追加' }).click();
@@ -425,7 +426,7 @@ test('the only episode put in the trash: none open afterwards; the history with 
   page.once('dialog', d => void d.accept());
   await page.getByRole('button', { name: 'この話を削除' }).click();
   await expect(page.locator('#toast')).toHaveText('削除しました（_trash/ に移動。送るまではこの端末だけの変更です）');
-  await expect(page.locator('#tree')).toContainText('話がありません');
+  await expect(page.locator('#save-state')).toHaveText('話がありません。「＋ 話を追加」で追加してください');
   await expect(page.locator('#episode-title')).toHaveValue('');
 });
 
@@ -476,11 +477,11 @@ test('a rename with its key in [titles]: read again, shown with its text; change
   await page.locator('#episode-title').fill('始まり');
   await page.locator('#episode-title').press('Enter');
   await expect(page.locator('#tree .node.active')).toHaveAttribute('data-path', 'chapters/01_始まり.md');
-  await page.getByRole('button', { name: '再読み込み' }).click();
+  await page.locator('#reload-work').click();
   await expect(page.locator('#sync-state')).toHaveText(/GitHub から読みました/);
   await expect(page.locator('#body')).toHaveValue(WORK_FILES['chapters/01_first.md']);
   work.push({ 'chapters/01_first.md': 'ほかで\n' });
-  await page.getByRole('button', { name: '再読み込み' }).click();
+  await page.locator('#reload-work').click();
   await expect(page.locator('#sync-state')).toHaveText(/名前の変更・削除・並べ替えを取り消しました/);
   await expect(page.locator('#tree .node.episode').first()).toHaveAttribute('data-path', 'chapters/01_first.md');
   await expect(page.locator('#send')).toBeDisabled();

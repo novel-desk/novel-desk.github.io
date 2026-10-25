@@ -14,6 +14,6 @@ test('sw.js FILES: the page, its scripts and modules, the style, the manifest an
       .replace(/,\s*\]/, ']'),
   );
   const modules = ['lib', 'ui'].flatMap(dir => readdirSync(join(ROOT, dir)).map(f => `${dir}/${f}`));
-  const top = ['index.html', 'app.js', 'style.css', 'manifest.webmanifest', 'icon.svg', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png'];
+  const top = ['index.html', 'app.js', 'boot.js', 'style.css', 'manifest.webmanifest', 'icon.svg', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png'];
   expect([...files].sort()).toEqual(['./', ...top, ...modules].sort());
 });

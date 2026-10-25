@@ -29,7 +29,8 @@ async function keep(repo, path) {
   kept.set(repo, path);
   await (path === null ? store.del('prefs', sideKey(repo)) : store.put('prefs', sideKey(repo), path));
 }
-function hide() {
+// (the desk left, or another work opened: as the server version's leaveSideNote)
+export function hide() {
   draws++;
   shown = null;
   $('side-note').hidden = true;
@@ -92,7 +93,8 @@ export async function renderSideNote() {
   // (what is shown, once it is: a drawing given up for a later one has shown nothing)
   shown = { repo: w.repo, path, text };
   $('side-note-in').innerHTML =
-    noteHead(noteHeading(text) ?? /** @type {string} */ (path.split('/').pop())) +
+    // (its path in the notes folder, as the server version's)
+    noteHead(path.replace(new RegExp(`^${api.view().layout.notes.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/`), '')) +
     (api.drafts().has(path) ? '<p class="muted small">この端末に、まだ送っていない書きかけがあります（ここにはその内容を出しています）。</p>' : '') +
     `<div class="preview side-note-body">${renderMd(text, path, p => urls[p])}</div>`;
   /** @type {HTMLElement} */ ($('side-note').querySelector('.side-note-body')).scrollTop = top;

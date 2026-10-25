@@ -16,7 +16,7 @@ test("GitHub's versions listed; one compared with the one before, with now, read
   await expect(page.locator('#versions-title')).toHaveText('「はじまり」の履歴');
   // this device's versions first: none yet
   await expect(dlg.locator('.history-tabs button.on')).toHaveText('ローカル履歴（0）');
-  await expect(dlg.getByText('まだローカルの履歴はありません。この端末で書いていると、10 分おきに自動で残ります。')).toBeVisible();
+  await expect(dlg.getByText('まだローカルの履歴はありません。書いていると、10 分おきに自動で残ります。')).toBeVisible();
   // the commits that changed this episode only, the newest first
   await dlg.getByRole('button', { name: 'GitHub 履歴（3）' }).click();
   await expect(dlg.locator('.version')).toHaveCount(3);
@@ -74,7 +74,7 @@ test('an episode not on GitHub yet: only this device has versions', async ({ pag
   await page.getByRole('button', { name: 'この話の履歴' }).click();
   await expect(page.locator('#versions .version .tag')).toHaveText(['未送信']);
   await page.locator('#versions').getByRole('button', { name: 'GitHub 履歴（0）' }).click();
-  await expect(page.locator('#versions').getByText('GitHub にはまだ履歴がありません（まだ送っていません）。')).toBeVisible();
+  await expect(page.locator('#versions').getByText('GitHub にこの話の履歴はありません（まだ送っていません）。')).toBeVisible();
   expect(gh.calls.some(c => c.includes('/commits?') && c.includes('04.md'))).toBe(false);
   expect(WORK_FILES['chapters/01_first.md']).toBeTruthy();
 });
@@ -105,7 +105,10 @@ test('a version not in UTF-8: said, back to the list; a version read shows its l
   await dlg.getByRole('button', { name: 'GitHub 履歴（4）' }).click();
   await dlg.locator('.version').nth(2).click();
   await expect(dlg.locator('.error')).toHaveText('この版は文字コードが UTF-8 ではないため開けません');
-  await dlg.getByRole('button', { name: '‹ 履歴' }).click();
+  // (the error only, as the server version's: closed, and opened again)
+  await dlg.getByRole('button', { name: '閉じる' }).click();
+  await page.getByRole('button', { name: 'この話の履歴' }).click();
+  await dlg.getByRole('button', { name: 'GitHub 履歴（4）' }).click();
   // the newest, the same as now
   await dlg.locator('.version').nth(0).click();
   await expect(dlg.getByText('この版から今の本文（12 字）までの変更：ありません')).toBeHidden();

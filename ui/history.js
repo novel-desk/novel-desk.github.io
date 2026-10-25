@@ -13,7 +13,8 @@ import * as store from './db.js';
  * Whose history: the work's repository and branch, the file, its title, its draft (not sent), the versions kept on
  * this device, whether GitHub has it, the text in the box now, and how a version is put back
  * @typedef {{ repo: string, branch: string, path: string, title: string, draft: { text: string, at: number } | null,
- *   snapshots: import('../lib/history.js').Snapshot[], remote: boolean, now: () => string, restore: (text: string) => Promise<void> }} HistoryOf
+ *   snapshots: import('../lib/history.js').Snapshot[], remote: boolean, now: () => string, restore: (text: string, at: number) => Promise<void>,
+ *   what: string }} HistoryOf `what`: 話 or 資料
  */
 /** @type {HistoryOf | null} */
 let of = null;
@@ -34,7 +35,7 @@ export async function showHistory(who) {
   of = who;
   const dlg = dialog();
   $('versions-title').textContent = `「${who.title}」の履歴`;
-  body().innerHTML = '<p class="muted small">読み込んでいます…</p>';
+  body().innerHTML = '<p class="muted">読み込み中…</p>';
   // (opened from a button outside the dialog, which is modal: never open already)
   dlg.showModal();
   let commits = [];
@@ -67,10 +68,10 @@ function renderList() {
           )
           .join('')
       : tab === 'local'
-        ? '<p class="muted small">まだローカルの履歴はありません。この端末で書いていると、10 分おきに自動で残ります。</p>'
+        ? '<p class="muted small">まだローカルの履歴はありません。書いていると、10 分おきに自動で残ります。</p>'
         : failed
           ? ''
-          : '<p class="muted small">GitHub にはまだ履歴がありません（まだ送っていません）。</p>');
+          : `<p class="muted small">GitHub にこの${esc(/** @type {HistoryOf} */ (of).what)}の履歴はありません（まだ送っていません）。</p>`);
 }
 // a version's text: kept with it, or read from GitHub (the blob kept on the device by its sha)
 /** @param {import('../lib/history.js').Version} v */
@@ -89,12 +90,12 @@ async function showVersion(i) {
   const who = /** @type {HistoryOf} */ (of);
   const v = versions[i],
     before = versions[i + 1];
-  body().innerHTML = '<p class="muted small">読み込んでいます…</p>';
+  body().innerHTML = '<p class="muted">読み込み中…</p>';
   let text, was;
   try {
     [text, was] = await Promise.all([textOfVersion(v), before ? textOfVersion(before) : null]);
   } catch (err) {
-    body().innerHTML = `<button class="ghost back-history">‹ 履歴</button><p class="error">${esc(err.message)}</p>`;
+    body().innerHTML = `<p class="error">${esc(err.message)}</p>`;
     return;
   }
   if (of !== who) return;
@@ -114,7 +115,7 @@ async function showVersion(i) {
     `<p class="muted small">この版から今の本文（${n(charsOf(now))} 字）までの変更：${nowPlaces ? `${nowPlaces} か所` : 'ありません'}</p>` +
     shown(nowHtml, nowPlaces);
   body().innerHTML = `<div class="hist-head"><button class="ghost back-history">‹ 履歴</button>
-    <span class="muted small">${n(charsOf(text))} 字 ・ ${v.kind === 'github' ? `GitHub ・ ${esc(v.subject)}` : v.kind === 'snapshot' ? 'この端末に自動で残した版' : 'まだ送っていない版'}</span></div>
+    <span class="muted small">${n(charsOf(text))} 字 ・ ${v.kind === 'github' ? 'GitHub' : v.kind === 'snapshot' ? '自動のスナップショット' : 'まだ送っていない版'}</span></div>
     <div class="history-tabs">${[
       ['before', '前と比べる'],
       ['now', '今と比べる'],
@@ -140,11 +141,11 @@ async function restore(i) {
   const v = versions[i];
   if (
     !confirm(
-      `今の「${who.title}」を、この版（${whenLong(v.at)}）の内容に復元しますか？\n今の本文も、この端末の履歴に残ります。復元した本文は「送る」で GitHub に送ります。`,
+      `今の「${who.title}」を、この版（${whenLong(v.at)}）の内容に復元しますか？\n今の本文も、ローカル履歴に残ります。復元した本文は「送る」で GitHub に送ります。`,
     )
   )
     return;
-  await who.restore(/** @type {string} */ (v.text));
+  await who.restore(/** @type {string} */ (v.text), v.at);
   dialog().close();
 }
 

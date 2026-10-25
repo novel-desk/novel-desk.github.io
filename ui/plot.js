@@ -6,7 +6,7 @@
 import * as plans from '../lib/episodes.js';
 import { esc, n } from '../lib/format.js';
 import { relOf } from '../lib/layout.js';
-import { renderMd } from '../lib/markdown.js';
+import { picturePaths, renderMd } from '../lib/markdown.js';
 import { newNote, notesList } from '../lib/notes.js';
 import { boxFor, chapterFor, episodesFor, findCard, NEW_PLOT, parsePlot, plain, writePlot } from '../lib/plot.js';
 import { $, show, toast } from './dom.js';
@@ -50,6 +50,8 @@ const linkable = () => {
 };
 function renderPlot() {
   const { plot } = /** @type {NonNullable<typeof plotNote>} */ (plotNote);
+  // (the line over the boxes, empty: put away while they are shown, as the server version's)
+  $('plot-where').hidden = true;
   const links = api.view().layout.links;
   const episodes = linkable();
   /** @type {(kind: string, at: string | number, count: number, i: number) => string} */
@@ -84,6 +86,8 @@ const parseSpec = spec => /** @type {['g' | 'c', number, number]} */ (spec.split
 // a box written by itself, in the note's editor (「‹ 箱」 back here)
 /** @param {string} spec */
 async function editBox(spec) {
+  // a double tap can come as both a dblclick and two taps: open it once (as the server version's)
+  if ($('plot').hidden) return;
   const [kind, gi, ci] = parseSpec(spec);
   const note = /** @type {NonNullable<typeof plotNote>} */ (plotNote);
   const want = kind === 'g' ? note.plot.groups[gi].head : note.plot.groups[gi].cards[ci].head;
@@ -268,13 +272,19 @@ export async function renderPlotPanel() {
   const episode = /** @type {ReturnType<typeof linkable>[number]} */ (linkable().find(e => e.path === path));
   const box = boxFor(p.plot, episode, api.view().layout.links);
   const found = findCard(p.plot, box);
+  // (its pictures shown, as the server version's)
+  /** @type {Record<string, string>} */
+  const urls = {};
+  const body = found ? found.c.body.join('\n') : '';
+  for (const pic of picturePaths(body, p.path)) urls[pic] = await api.pictureUrl(pic);
   panel.innerHTML = found
-    ? `<div class="plot-panel-head"><b>${esc(found.c.head)}</b><span class="grow"></span><button class="ghost small" data-plot-pick>中箱を変更</button><button class="ghost small" data-plot-open>プロット</button></div><div class="preview plot-panel-body">${renderMd(found.c.body.join('\n'), p.path, () => '')}</div>`
+    ? `<div class="plot-panel-head"><b>${esc(found.c.head)}</b><span class="grow"></span><button class="ghost small" data-plot-pick>中箱を変更</button><button class="ghost small" data-plot-open>プロット</button></div><div class="preview plot-panel-body">${renderMd(body, p.path, pic => urls[pic])}</div>`
     : `<div class="plot-panel-head"><span class="muted small">${box ? `中箱「${esc(box)}」が見つかりません` : 'この話に対応するプロットの中箱はありません'}</span><span class="grow"></span><button class="ghost small" data-plot-pick>中箱を選択</button></div>`;
 }
 // (its button is on the panel, which shows it only with the plot, for the episode open)
 async function pickBox() {
   const path = api.current();
+  // (its button is on the panel only with the plot)
   const p = /** @type {NonNullable<typeof plotNote>} */ (await loadPlot());
   const heads = p.plot.groups.flatMap(g => g.cards.map(c => c.head));
   const episode = linkable().find(e => e.path === path);

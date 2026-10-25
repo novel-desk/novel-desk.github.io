@@ -103,16 +103,16 @@ test('a box written by itself: its lines only; 全体 shows the whole note; back
   await page.getByRole('button', { name: 'プロット', exact: true }).click();
   await page.locator('.pcard', { hasText: '第2話 駅で' }).getByRole('button', { name: '編集' }).click();
   await expect(page.locator('#note-name')).toHaveText('第2話 駅で');
-  await expect(page.getByLabel('資料の本文')).toHaveValue('## 第2話 駅で\n電車。\n');
-  await page.getByLabel('資料の本文').press('Control+End');
+  await expect(page.locator('#note-body')).toHaveValue('## 第2話 駅で\n電車。\n');
+  await page.locator('#note-body').press('Control+End');
   await page.keyboard.type('乗り遅れる。');
   await page.getByRole('button', { name: '全体' }).click();
-  await expect(page.getByLabel('資料の本文')).toHaveValue(PLOT.replace('電車。\n\n', '電車。\n乗り遅れる。\n'));
+  await expect(page.locator('#note-body')).toHaveValue(PLOT.replace('電車。\n\n', '電車。\n乗り遅れる。\n'));
   await page.getByRole('button', { name: '‹ 箱' }).click();
   await expect(page.locator('.pcard', { hasText: '第2話 駅で' }).locator('.pcard-sum')).toHaveText('電車。\n乗り遅れる。');
   // a double click on a box opens it too
   await page.locator('.pcard', { hasText: '第3話 坂の上' }).locator('.pcard-sum').dblclick();
-  await expect(page.getByLabel('資料の本文')).toHaveValue('## 第3話 坂の上\n坂。');
+  await expect(page.locator('#note-body')).toHaveValue('## 第3話 坂の上\n坂。');
 });
 
 // FR-PLOT-05, FR-PLOT-04
@@ -278,7 +278,7 @@ test('a double click: on a 大箱 opens it for writing; on a button or outside t
   await expect(page.locator('#plot')).toBeVisible();
   await page.locator('.pgroup[data-g="1"] > .pcard-sum').dblclick();
   await expect(page.locator('#note-name')).toHaveText('起');
-  await expect(page.getByLabel('資料の本文')).toHaveValue(/^# 起\n起の説明 1。/);
+  await expect(page.locator('#note-body')).toHaveValue(/^# 起\n起の説明 1。/);
 });
 
 test.describe('a touch screen', () => {
@@ -359,7 +359,7 @@ test('the plot not made or chosen, an episode not made or linked: said; the pick
   await expect(page.locator('#toast')).toHaveText('資料のフォルダが決まっていません。novel.toml の [notes] dir に書いてください');
   await page.getByRole('button', { name: '‹ 原稿へ' }).click();
   work.push({ 'novel.toml': TOML.replace('\n', '\r\n'), 'notes/story.md': '# 大箱1：起\n## 中箱1-1：朝\n' });
-  await page.getByRole('button', { name: '再読み込み' }).click();
+  await page.locator('#reload-work').click();
   await expect(page.locator('#sync-state')).toHaveText(/GitHub から読みました/);
   await page.getByRole('button', { name: 'プロット', exact: true }).click();
   await page.getByRole('button', { name: 'プロットを作成' }).click();
@@ -375,7 +375,7 @@ test('the plot not made or chosen, an episode not made or linked: said; the pick
   // the plot found by its name: an episode from it, and a link, not made either
   await page.getByRole('button', { name: '‹ 原稿へ' }).click();
   work.push({ 'notes/story.md': null, 'notes/plot.md': '# 大箱1：part\n## 中箱1-1：朝\n' });
-  await page.getByRole('button', { name: '再読み込み' }).click();
+  await page.locator('#reload-work').click();
   await expect(page.locator('#sync-state')).toHaveText(/GitHub から読みました/);
   await page.getByRole('button', { name: 'プロット', exact: true }).click();
   await page.locator('.pcard', { hasText: '朝' }).getByRole('button', { name: '新しい話を作成' }).click();
@@ -402,7 +402,7 @@ test("the open episode's 中箱: none, chosen, taken away, gone; the plot opened
     'novel.toml': `${TOML}\n[plot.links]\n"02_second.md" = "消えた箱"\n`,
     'notes/plot.md': '# プロット\n\n# 大箱1：起\n## 中箱1-1：朝\n朝の場面。\n![空](images/sky.png)\n',
   });
-  await page.getByRole('button', { name: '再読み込み' }).click();
+  await page.locator('#reload-work').click();
   await expect(page.locator('#sync-state')).toHaveText(/GitHub から読みました/);
   await page.getByRole('button', { name: 'この話のプロット' }).click();
   const panel = page.locator('#plot-panel');

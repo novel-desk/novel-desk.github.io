@@ -27,6 +27,7 @@
  * @property {() => Promise<void>} reload the work read from GitHub again
  * @property {() => boolean} busy reading or sending
  * @property {() => number} unsent how many files the changes not sent change
+ * @property {() => Promise<void>} send the changes not sent sent now (as 送る)
  * @property {() => ReturnType<typeof import('../lib/changes.js').unsentList>} unsentItems the changes not sent, as listed
  * @property {(item: import('../lib/changes.js').Unsent) => Promise<void>} discard a change not sent given up
  * @property {() => string} otherBranch the branch the changes not sent were written on, when it is not the one open ('' none)

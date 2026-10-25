@@ -16,6 +16,7 @@ export default [
   },
   { files: ['app.js', 'lib/**/*.js', 'ui/**/*.js'], languageOptions: { globals: globals.browser } },
   { files: ['sw.js'], languageOptions: { globals: globals.serviceworker, sourceType: 'script' } },
+  { files: ['boot.js'], languageOptions: { globals: globals.browser, sourceType: 'script' } },
   { files: ['tests/**/*.mjs', 'tools/**/*.mjs', '*.mjs'], languageOptions: { globals: { ...globals.node, ...globals.browser } } },
   // (a Playwright fixture names what it needs in its first argument, used or not)
   { files: ['tests/ui/**'], rules: { 'no-unused-vars': ['error', { args: 'none' }] } },

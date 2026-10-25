@@ -140,8 +140,12 @@ export const branches = async repo => (await getJson(`/repos/${repoPath(repo)}/b
 /** @param {string} repo @param {string} name @param {string} commit */
 export const newBranch = (repo, name, commit) => send('POST', `/repos/${repoPath(repo)}/git/refs`, { ref: `refs/heads/${name}`, sha: commit });
 // what `head` has that `base` has not: its commits and the files they change
-/** @param {string} repo @param {string} base @param {string} head @returns {Promise<{ commits: any[], files: any[] }>} */
+/** @param {string} repo @param {string} base @param {string} head @returns {Promise<{ commits: any[], files: any[], merge_base_commit: { sha: string } }>} */
 export const compare = (repo, base, head) => getJson(`/repos/${repoPath(repo)}/compare/${refPath(base)}...${refPath(head)}`);
+// the blob of a file at a commit (the Contents API)
+/** @param {string} repo @param {string} path @param {string} ref @returns {Promise<string>} */
+export const shaAt = async (repo, path, ref) =>
+  (await getJson(`/repos/${repoPath(repo)}/contents/${path.split('/').map(encodeURIComponent).join('/')}?ref=${encodeURIComponent(ref)}`)).sha;
 // `head` merged into `base` on GitHub: the merge commit, or null when base had it all (a conflict: GitHubError 409)
 /** @param {string} repo @param {string} base @param {string} head @param {string} message @returns {Promise<string | null>} */
 export async function merge(repo, base, head, message) {

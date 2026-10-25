@@ -193,11 +193,15 @@ export function inputBar(bar, area, page, view) {
   });
 }
 
-// the preview button's two faces: an open book while writing, a pen while reading (drawn in the page: index.html has
-// both, one hidden)
+// the preview button's two faces (as the server version's public/ui/textbox.js)
+const ICON_EYE =
+    /* プレビュー: an open book */ '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg>',
+  ICON_PEN =
+    '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4z"/><path d="m13.5 6.5 4 4"/></svg>';
+// the preview button: an open book while writing, a pen while reading
 /** @param {El} btn @param {boolean} reading */
 export function setPreviewButton(btn, reading) {
-  for (const face of /** @type {NodeListOf<HTMLElement>} */ (btn.querySelectorAll('[data-face]'))) face.hidden = (face.dataset.face === 'pen') !== reading;
+  btn.innerHTML = reading ? ICON_PEN : ICON_EYE;
   btn.title = reading ? '編集に戻る' : 'プレビュー';
   btn.setAttribute('aria-label', btn.title);
   btn.classList.toggle('on', reading);

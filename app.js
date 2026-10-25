@@ -1,24 +1,23 @@
 // The app: the token (put in once, opened with a passkey each time), the repository chosen, and the desk. No server:
 // the page talks to GitHub's API only, and keeps what it needs on this device
 import { dayAfter, endOf, expiryNotice } from './lib/expiry.js';
-import { installHint, isIos, switchNow, viewportOf } from './lib/install.js';
+import { installHint, isIos, switchNow } from './lib/install.js';
 import { $, show, toast } from './ui/dom.js';
 import * as store from './ui/db.js';
 import * as desk from './ui/desk.js';
 import * as gh from './ui/github.js';
 import * as vault from './ui/vault.js';
 import { api } from './ui/shared.js';
-import { showWorks, wireWorks } from './ui/works.js';
+import { importBox, showWorks, wireWorks } from './ui/works.js';
 import { appOf, importKey, madeApp, startManifest } from './ui/appkey.js';
 import { authorOf, HOUR, installUrl, returnOf, sameOwner, startedHere } from './lib/appkey.js';
-import { forgetDevice, keepWork } from './ui/repo.js';
+import { forgetDevice, keepWork, worksHere } from './ui/repo.js';
 
-// First of all (NFR-USE-02): on iOS, no zooming in on tapping the text. Set here, not in index.html as the server version
-// does: the page's CSP runs no script written in the page. In time: nothing to type in is shown before this runs
-{
-  const meta = /** @type {HTMLMetaElement} */ (document.querySelector('meta[name="viewport"]'));
-  meta.content = viewportOf(meta.content, navigator);
-}
+// started: every module came and linked (boot.js reloads the page once when they do not)
+/** @type {any} */ (window).nwStarted = true;
+try {
+  sessionStorage.removeItem('nw-reloaded');
+} catch {}
 
 /** @typedef {import('./ui/desk.js').Repo} Repo */
 /** @typedef {import('./ui/vault.js').AppVault} AppVault */
@@ -120,7 +119,7 @@ async function checkLogin(who, what) {
   if (left && who && !sameOwner(owner, who)) {
     if (
       !confirm(
-        `この端末には、前のユーザーが GitHub に送っていない書きかけが ${left} 件残っています（中身は出しません）。消してから進みますか？（「キャンセル」なら、${what}を保管しません）`,
+        `この端末に、前にログインしていた人の未送信の書きかけが ${left} 件あります。削除して続けますか？（中身は表示しません。キャンセルすると、${what}を保管しません）`,
       )
     )
       throw new Error(`前のユーザーの書きかけを残すため、${what}を保管しませんでした。前のユーザーがトークンを入れ直すと送れます`);
@@ -130,18 +129,15 @@ async function checkLogin(who, what) {
 }
 // The token forgotten (NFR-SEC-16): with it, what the device keeps of the works (the works last read, the blobs, the
 // settings, the versions kept); the drafts not sent too, when the author says so
+// As the server version's: asked only when something is not sent. Unlike it, the drafts can be kept (logging out is
+// how a GitHub App's key made again is put in: the drafts go with the new one)
 async function forgetToken() {
-  if (
-    !confirm(
-      'ログアウトします。この端末からトークンと、この端末に残した作品の控え（オフライン用の版、読んだファイル、履歴、設定）を消します。GitHub の作品はそのままです。よろしいですか',
-    )
-  )
-    return;
+  await desk.settled();
   const left = (await store.all('drafts')).length;
   const dropDrafts =
     left > 0 &&
     confirm(
-      `GitHub に送っていない書きかけが ${left} 件あります。この端末から消しますか？（「キャンセル」なら書きかけだけ残します。同じ GitHub のユーザーのトークンを入れ直すと送れます）`,
+      `未送信の書きかけが ${left} 件あります。ログアウトするとき、この端末から削除しますか？（「キャンセル」なら書きかけだけ残します。同じ GitHub のユーザーのトークンか GitHub App で始め直すと送れます）`,
     );
   await vault.forget();
   await vault.forgetApp();
@@ -178,13 +174,26 @@ function screenInfo() {
   const home = matchMedia('(display-mode: standalone)').matches || /** @type {any} */ (navigator).standalone === true;
   return `この端末の画面: ${innerWidth}×${innerHeight}、倍率 ${devicePixelRatio}、上の余白 ${parseFloat(paddingTop)}、下の余白 ${parseFloat(paddingBottom)}（${home ? 'ホーム画面のアプリ' : 'ブラウザ'}）`;
 }
+// 作品の一覧 (the server version's shelf): no work in the address
 async function chooseRepo() {
-  show('repos');
-  $('screen-info').textContent = screenInfo();
-  $('vault-kind').textContent = KINDS[kind];
-  $('repos-back').hidden = !(await store.get('prefs', 'repo'));
+  await desk.settled();
+  desk.leave();
+  show('shelf');
+  history.replaceState(null, '', location.pathname);
   await showWorks();
   switchSoon();
+}
+// 設定 (as the server version's): the screen's colors, the account, GitHub (how the token or the App is kept)
+async function openSettings() {
+  await desk.settled();
+  desk.leave();
+  show('settings');
+  $('screen-info').textContent = screenInfo();
+  $('gh-help').textContent = KINDS[kind];
+  $('gh-state').textContent = using === 'app' ? 'GitHub App で連携しています' : 'トークンで連携しています';
+  // (GitHub not saying it: nothing said)
+  const who = using === 'app' ? await whoseApp(/** @type {import('./ui/github.js').App} */ (appInUse)) : await gh.getJson('/user').catch(() => null);
+  $('me').textContent = who ? `GitHub の ${who.login}` : '';
 }
 
 // --- the token's expiry, said from 14 days before (GitHub does not let the page read it: the author says it), and a
@@ -260,10 +269,11 @@ async function withToken(token) {
   await checkExpiry();
   await openFirst();
 }
-// the work chosen before, or the list of works
+// the work in the address (#owner/name, as the server version's #作品: the page loaded again opens it again), else
+// the list of works
 async function openFirst() {
-  /** @type {Repo | undefined} */
-  const r = await store.get('prefs', 'repo');
+  const name = decodeURIComponent(location.hash.slice(1));
+  const r = name ? (await worksHere()).find(x => x.full_name === name) : undefined;
   if (!r) return chooseRepo();
   void proposeAuthor(r.full_name);
   await desk.open(r);
@@ -418,7 +428,7 @@ async function installed(leave) {
   await store.del('prefs', 'app-installing');
   if (repos.length === 1) return openRepo({ full_name: repos[0].full_name, default_branch: repos[0].default_branch, visibility: repos[0].visibility });
   await chooseRepo();
-  $('open-other').click();
+  importBox().open = true;
 }
 // the app shown again: an App installed meanwhile, or a key kept meanwhile by another page of this app
 async function recheck() {
@@ -506,18 +516,10 @@ $('copy-bridge').addEventListener('click', () =>
 );
 document.addEventListener('visibilitychange', () => void recheck());
 $('open-token').addEventListener('click', () => void openToken());
-$('forget-token').addEventListener('click', () => void forgetToken());
+$('logout').addEventListener('click', () => void forgetToken());
 $('forget-token-unlock').addEventListener('click', () => void forgetToken());
-$('repos-back').addEventListener('click', async () => void desk.open(await store.get('prefs', 'repo')));
-$('repo-list').addEventListener('click', e => {
-  const b = /** @type {HTMLElement} */ (e.target).closest('[data-repo]');
-  if (b instanceof HTMLElement)
-    void openRepo({
-      full_name: /** @type {string} */ (b.dataset.repo),
-      default_branch: /** @type {string} */ (b.dataset.branch),
-      visibility: /** @type {string} */ (b.dataset.visibility),
-    });
-});
+$('open-settings').addEventListener('click', () => void openSettings());
+$('close-settings').addEventListener('click', () => void chooseRepo());
 wireWorks({ open: openRepo });
 desk.wire({ changeRepo: () => void chooseRepo(), open: openRepo, relist: chooseRepo });
 $('token-replace-form').addEventListener('submit', e => void replaceToken(/** @type {SubmitEvent} */ (e)));
@@ -565,6 +567,9 @@ function setTheme(t) {
     if (t) localStorage.setItem('theme', t);
     else localStorage.removeItem('theme');
   } catch {}
+  // the browser's bar follows: one color for both, or back to the device's (as the server version's)
+  for (const m of /** @type {NodeListOf<HTMLMetaElement>} */ (document.querySelectorAll('meta[name="theme-color"]')))
+    m.content = t === 'dark' ? '#16171a' : t === 'light' ? '#f2eee6' : m.media.includes('dark') ? '#16171a' : '#f2eee6';
   for (const b of /** @type {NodeListOf<HTMLElement>} */ (document.querySelectorAll('[data-theme-pick]'))) b.classList.toggle('on', b.dataset.themePick === t);
 }
 try {

@@ -1,7 +1,7 @@
 // GitHub App を作って始める (FR-GH-01, NFR-SEC-05, NFR-SEC-10, NFR-SEC-11, NFR-SEC-16): one button posts the App's
 // manifest to GitHub; the fake GitHub makes the App (a key made for the test, never a real one), comes back with the
 // code and the state, and, on the page of installing it, installs it and comes back again
-import { test, expect, noPasskey, persistAsked, stored, FakeRepo, watchPersist } from './lib/test.mjs';
+import { test, expect, keepMoreOpen, noPasskey, openImport, openRepo, persistAsked, stored, toSettings, FakeRepo, watchPersist } from './lib/test.mjs';
 import { manifestOf } from '../../lib/appkey.js';
 
 const AUTHOR = { name: '試験の作者', email: 'author@example.invalid' };
@@ -80,6 +80,7 @@ test('one button: the manifest and its state posted; the key kept, not extractab
   baseURL,
 }) => {
   await noPasskey(page);
+  await keepMoreOpen(page);
   await watchPersist(page);
   await page.goto('./');
   // (NFR-SEC-08: the one form the page may send goes to github.com; the rest of the policy as strict as before)
@@ -99,7 +100,8 @@ test('one button: the manifest and its state posted; the key kept, not extractab
   expect(conversions(gh)).toEqual(['POST /app-manifests/testcode100000000/conversions']);
   const slug = manifest.name.toLowerCase().replace(/ /g, '-');
   expect(gh.installPages).toEqual([`/apps/${slug}/installations/new`]);
-  expect(page.url()).toBe(baseURL);
+  // (nothing of GitHub's left in the address: the work opened in it, as the server version's #作品)
+  expect(page.url()).toBe(`${baseURL}#${encodeURIComponent('author/novel')}`);
   // (the key kept: the browser asked to keep this device's store for good, on the page that kept it)
   expect(await persistAsked(page)).toBe(1);
   // the key: cannot be taken out; nothing of the private key's text, nor the client secret, kept anywhere
@@ -143,10 +145,11 @@ test('one button: the manifest and its state posted; the key kept, not extractab
 // kept unless the drafts are deleted
 test('the App made again by the same account: the drafts its own, sent; made on another account: asked, not kept', async ({ page, gh, work }) => {
   await noPasskey(page);
+  await keepMoreOpen(page);
   await page.goto('./');
   /** @type {string[]} */
   const asked = [];
-  const answers = [true, false];
+  const answers = [false];
   page.on('dialog', d => {
     asked.push(d.message());
     void (answers.shift() ? d.accept() : d.dismiss());
@@ -155,15 +158,17 @@ test('the App made again by the same account: the drafts its own, sent; made on 
   await expect(page.locator('#episode-title')).toHaveValue('はじまり');
   await page.locator('#body').fill('# 第1話 はじまり\n\nApp を作り直す前の書きかけ\n');
   await expect.poll(async () => (await stored(page, 'drafts')).length).toBe(1);
-  await page.getByRole('button', { name: 'ほかの作品' }).click();
+  // (the author's notice over the top put away first)
+  await page.getByRole('button', { name: 'これでよい' }).click();
+  await toSettings(page);
   await page.getByRole('button', { name: 'ログアウト' }).click();
   await expect(page.locator('#setup')).toBeVisible();
-  expect(asked).toHaveLength(2);
+  expect(asked).toHaveLength(1);
   // made again: another App (another Client ID), on the same account
   await makeApp(page);
   await expect.poll(() => gh.installPages.length).toBe(2);
   await expect(page.locator('#body')).toHaveValue('# 第1話 はじまり\n\nApp を作り直す前の書きかけ\n');
-  expect(asked).toHaveLength(2);
+  expect(asked).toHaveLength(1);
   expect((await keptApp(page))?.appId).toBe('Iv23testclient2');
   await page.getByRole('button', { name: 'これでよい' }).click();
   await page.getByRole('button', { name: '送る（1）' }).click();
@@ -172,15 +177,15 @@ test('the App made again by the same account: the drafts its own, sent; made on 
   // another account's App where drafts are left: asked; not deleted, not kept
   await page.locator('#body').fill('# 第1話 はじまり\n\n残す書きかけ\n');
   await expect.poll(async () => (await stored(page, 'drafts')).length).toBe(1);
-  answers.push(true, false);
-  await page.getByRole('button', { name: 'ほかの作品' }).click();
+  answers.push(false);
+  await toSettings(page);
   await page.getByRole('button', { name: 'ログアウト' }).click();
   await expect(page.locator('#setup')).toBeVisible();
   gh.makeOwner = 'someone';
   answers.push(false);
   await makeApp(page);
   await expect(page.locator('#app-make-error')).toHaveText(/前のユーザーの書きかけを残すため、この GitHub Appを保管しませんでした/);
-  expect(asked.at(-1)).toMatch(/^この端末には、前のユーザーが GitHub に送っていない書きかけが 1 件残っています/);
+  expect(asked.at(-1)).toMatch(/^この端末に、前にログインしていた人の未送信の書きかけが 1 件あります/);
   expect(await keptApp(page)).toBeNull();
   expect((await stored(page, 'drafts')).map(d => d.text)).toEqual(['# 第1話 はじまり\n\n残す書きかけ\n']);
 });
@@ -280,15 +285,19 @@ test('not installed yet: the screen with GitHub’s page; installed meanwhile on
   gh.repos.set('someone/tools', tools);
   /** @type {NonNullable<typeof gh.app>} */ (gh.app).installations.push({ id: 8, account: 'author', repos: ['author/novel', 'someone/tools'] });
   await inFront(page);
-  await expect(page.locator('#picker-list button')).toHaveText(['author/novel', 'someone/tools']);
-  await page.locator('#picker-list button', { hasText: 'someone/tools' }).click();
-  await expect(page.locator('#sync-state')).toHaveText(/^このリポジトリには GitHub App が入っていません/);
+  await expect(page.locator('#shelf details.import')).toHaveAttribute('open', '');
+  await openImport(page);
+  await expect
+    .poll(() => page.locator('#repo-options option').evaluateAll(o => o.map(x => /** @type {HTMLOptionElement} */ (x).value)))
+    .toEqual(['author/novel', 'someone/tools']);
+  await openRepo(page, 'someone/tools');
+  await expect(page.locator('#toast')).toHaveText(/^作品を開けませんでした: このリポジトリには GitHub App が入っていません/);
   await expect(page.locator('#author-notice')).toBeHidden();
   expect((await keptApp(page))?.author).toBeNull();
   // the author's own: proposed
-  await page.getByRole('button', { name: 'ほかの作品' }).click();
-  await page.getByRole('button', { name: 'リポジトリを開く' }).click();
-  await page.locator('#picker-list button', { hasText: 'author/novel' }).click();
+  // (the list of works still shown)
+  // (opened from the import)
+  await openRepo(page, 'author/novel');
   await expect(page.locator('#author-notice')).toBeVisible();
   expect((await keptApp(page))?.author).toEqual(AUTHOR);
 });
@@ -330,7 +339,7 @@ test('a code GitHub does not take: said; its state used up', async ({ page, gh }
 
 // FR-GH-01: the App kept by another page of the app (the same storage): this one, shown again, goes on with it
 // (gh: the fake GitHub; without it, the pages would reach the real one)
-test('kept by another page of the app: this one, shown again, opens the work', async ({ page, context, gh }) => {
+test('kept by another page of the app: this one, shown again, shows the list of works with it', async ({ page, context, gh }) => {
   await noPasskey(page);
   await page.goto('./');
   await expect(page.locator('#setup')).toBeVisible();
@@ -340,7 +349,8 @@ test('kept by another page of the app: this one, shown again, opens the work', a
   await makeApp(other);
   await expect(other.locator('#episode-title')).toHaveValue('はじまり');
   await inFront(page);
-  await expect(page.locator('#episode-title')).toHaveValue('はじまり');
+  // (no work in this page's address: the list, as the server version's start)
+  await expect(page.locator('#works .work', { hasText: 'author/novel' })).toBeVisible();
 });
 
 test.describe('with a passkey', () => {

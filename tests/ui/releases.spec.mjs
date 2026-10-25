@@ -3,18 +3,18 @@
 import { test, expect, openWork, WORK_FILES } from './lib/test.mjs';
 
 // FR-REL-01
-test('a release made: the next tag at the commit read, its name, and what it holds; refused while changes are not sent', async ({ page, gh, work }) => {
+test('a release made: what is not sent sent first; the next tag at the commit sent, its name, and what it holds', async ({ page, gh, work }) => {
   work.tags.v1 = work.refs.main;
   await openWork(page);
   await page.locator('#body').fill('書きかけ\n');
-  await page.locator('.toc-more summary').click();
-  await page.getByRole('button', { name: 'リリースを作成' }).click();
-  await expect(page.locator('#toast')).toHaveText('未送信の変更があります。「送る」で送ってから、リリースを作成してください');
-  await page.getByRole('button', { name: '送る（1）' }).click();
-  await expect(page.locator('#sync-state')).toHaveText(/^送りました（/);
+  // (as the server version's: what is not sent goes first, then the tag)
   page.once('dialog', d => void d.accept(' 第一稿 '));
   await page.getByRole('button', { name: 'リリースを作成' }).click();
   await expect(page.locator('#toast')).toHaveText('リリース「第一稿」（v2）を作成しました');
+  await expect(page.locator('#sync-state')).toHaveText(/^送りました（/);
+  expect(work.text('chapters/01_first.md')).toBe('書きかけ\n');
+  // (the release of what was sent)
+  expect(work.releases.length).toBe(1);
   expect(work.releases).toEqual([{ id: 1, tag_name: 'v2', name: '第一稿', body: '第一稿（3 話、28 字）', created_at: expect.any(String) }]);
   expect(work.tags.v2).toBe(work.refs.main);
 });
@@ -25,7 +25,7 @@ test("the releases listed, one's episodes read, one put back as a change not sen
   work.releases.push({ id: 1, tag_name: 'v1', name: '第一稿', body: '', created_at: '2026-10-02T00:00:00Z' });
   work.push({ 'chapters/02_second.md': '# 第2話 駅で\n\n書き直した。\n' });
   await openWork(page);
-  await page.locator('.toc-more summary').click();
+  // (リリース・GitHub・その他 open: openWork)
   await page.getByRole('button', { name: 'リリース一覧' }).click();
   const dlg = page.locator('#releases');
   await dlg.getByRole('button', { name: /第一稿/ }).click();
@@ -47,7 +47,7 @@ test("the releases listed, one's episodes read, one put back as a change not sen
 
 test('no release yet: said', async ({ page, gh }) => {
   await openWork(page);
-  await page.locator('.toc-more summary').click();
+  // (リリース・GitHub・その他 open: openWork)
   await page.getByRole('button', { name: 'リリース一覧' }).click();
   await expect(page.locator('#releases-body')).toHaveText('まだリリースはありません。「リリースを作成」で、いまの原稿を残せます。');
 });
@@ -57,7 +57,7 @@ test('a release not made: offline, said; no name given; GitHub refusing, said', 
   work.tags.v1 = work.refs.main;
   work.releases.push({ id: 1, tag_name: 'v1', name: '第一稿', body: '', created_at: '2026-10-02T00:00:00Z' });
   await openWork(page);
-  await page.locator('.toc-more summary').click();
+  // (リリース・GitHub・その他 open: openWork)
   page.once('dialog', d => void d.dismiss());
   await page.getByRole('button', { name: 'リリースを作成' }).click();
   page.once('dialog', d => void d.accept('   '));
@@ -74,7 +74,7 @@ test('a release not made: offline, said; no name given; GitHub refusing, said', 
   await expect(page.locator('#toast')).toHaveText('リリース「第二稿」（v2）を作成しました');
   // read again offline
   gh.down = true;
-  await page.getByRole('button', { name: '再読み込み' }).click();
+  await page.locator('#reload-work').click();
   await expect(page.locator('#sync-state')).toHaveText(/つながりません|オフライン/);
   await page.getByRole('button', { name: 'リリースを作成' }).click();
   await expect(page.locator('#toast')).toHaveText('オフラインです。つながってからリリースを作成してください');
@@ -90,7 +90,7 @@ test('a release from before novel.toml; an episode not here now; put back over o
   work.push({ 'chapters/01_first.md': /** @type {any} */ (Buffer.from([0x82, 0xff, 0xff])) });
   // (its heading not read: named by its file)
   await openWork(page, 'first');
-  await page.locator('.toc-more summary').click();
+  // (リリース・GitHub・その他 open: openWork)
   await page.getByRole('button', { name: 'リリース一覧' }).click();
   const dlg = page.locator('#releases');
   await dlg.getByRole('button', { name: /旧稿/ }).click();
@@ -118,7 +118,7 @@ test('the releases or a release not read: said; closed', async ({ page, gh, work
   work.tags.v1 = work.refs.main;
   work.releases.push({ id: 1, tag_name: 'v1', name: '第一稿', body: '', created_at: '2026-10-02T00:00:00Z' });
   await openWork(page);
-  await page.locator('.toc-more summary').click();
+  // (リリース・GitHub・その他 open: openWork)
   gh.fail = (method, path) => (path.endsWith('/releases') ? 500 : undefined);
   await page.getByRole('button', { name: 'リリース一覧' }).click();
   const dlg = page.locator('#releases');
@@ -129,5 +129,6 @@ test('the releases or a release not read: said; closed', async ({ page, gh, work
   await page.getByRole('button', { name: 'リリース一覧' }).click();
   await dlg.getByRole('button', { name: /第一稿/ }).click();
   await expect(dlg.locator('.error')).toHaveText(/test failure$/);
-  await expect(dlg.getByRole('button', { name: '‹ リリース一覧' })).toBeVisible();
+  // (the error only, as the server version's: the dialog closed to go back)
+  await expect(dlg.getByRole('button', { name: '‹ リリース一覧' })).toHaveCount(0);
 });

@@ -29,7 +29,7 @@ import { openPlot, renderPlotPanel, wirePlot } from './plot.js';
 import { openCharacters, wireCharacters } from './characters.js';
 import { noteToday, wireRecord } from './record.js';
 import { wireReleases } from './releases.js';
-import { renderSideNote, wireSideNote } from './sidenote.js';
+import { hide as hideSideNote, renderSideNote, wireSideNote } from './sidenote.js';
 import { snapshotted } from '../lib/history.js';
 import { previewPlace, reading, showPreviewAt, stopReading, togglePreview, wireReading } from './reading.js';
 import { wireBranches } from './branches.js';
@@ -54,6 +54,8 @@ let view = null;
 // the episode open ('' = none)
 let current = '';
 let busy = false;
+// a work being opened (open(): until it is read the first time)
+let opening = false;
 /** @type {Set<string>} the files whose changes a send failed to deliver (FR-SAVE-07), until one goes */
 let failed = new Set();
 /** @type {import('../lib/works.js').RepoMeta | null} another repository under the work's name (FR-GH-12): not sent to */
@@ -75,6 +77,16 @@ function syncState(text, kind = '') {
   const s = $('sync-state');
   s.textContent = text;
   s.className = `sync-state ${kind}`;
+  // an error opens the folded リリース・GitHub・その他 (as the server version's)
+  if (kind === 'err') /** @type {HTMLDetailsElement} */ (/** @type {unknown} */ ($('toc-more'))).open = true;
+  brief();
+}
+// the state in a word on the folded line (as the server version's 「・push 済み」)
+function brief() {
+  const b = $('sync-brief');
+  const bad = $('sync-state').classList.contains('err') || failed.size > 0;
+  b.className = bad ? 'small err' : 'muted small';
+  b.textContent = !work || mode === 'off' ? '' : bad ? '・送信失敗' : unsent() ? '・未送信' : '・送信済み';
 }
 const hasConflict = (/** @type {string} */ text) => text.includes(CONFLICT_MARK);
 const shown = () => /** @type {import('../lib/view.js').View} */ (view);
@@ -166,18 +178,19 @@ function renderToc() {
   /** @param {import('../lib/layout.js').TocEpisode} e @param {string} [inChapter] */
   const episode = (e, inChapter) => {
     const text = textOf(e.path) ?? '';
-    const tags = (drafts.has(e.path) ? '<span class="unsent-tag">未送信</span>' : '') + (hasConflict(text) ? '<span class="conflict">両方の版</span>' : '');
+    const tags =
+      (drafts.has(e.path) ? '<span class="unsent-tag">未送信</span>' : '') +
+      (hasConflict(text) ? '<span class="conflict" title="両方の版が並んでいます。「――― ここから」の行を整理してください">競合</span>' : '');
     return `<div class="node episode${e.path === current ? ' active' : ''}" role="button" tabindex="0" data-path="${esc(e.path)}" data-node="${esc(e.path)}" draggable="${ordering}"><span class="t">${esc(titleAt(e.rel))}</span>${tags}<span class="u"></span><span class="c">${n(charsOf(text))}</span>${tools('episode', e.path, inChapter)}</div>`;
   };
   const chars = (/** @type {import('../lib/layout.js').TocEpisode[]} */ list) => list.reduce((sum, e) => sum + charsOf(textOf(e.path) ?? ''), 0);
-  $('tree').innerHTML =
-    v.toc
-      .map(it =>
-        it.type === 'episode'
-          ? episode(it)
-          : `<div class="node chapter" role="button" tabindex="0" data-fold="${esc(it.path)}" data-node="${esc(it.path)}" draggable="${ordering}"><span class="fold">${closed.has(it.path) ? '▸' : '▾'}</span><span class="t">${esc(titleAt(it.rel))}</span><span class="c">${n(chars(it.episodes))}</span>${tools('chapter', it.path)}</div><div class="chapter-body${closed.has(it.path) && !it.episodes.some(e => e.path === current) ? ' closed' : ''}">${it.episodes.map(e => episode(e, it.path)).join('')}</div>`,
-      )
-      .join('') || '<p class="muted small">話がありません。「＋ 話を追加」で追加できます。</p>';
+  $('tree').innerHTML = v.toc
+    .map(it =>
+      it.type === 'episode'
+        ? episode(it)
+        : `<div class="node chapter" role="button" tabindex="0" data-fold="${esc(it.path)}" data-node="${esc(it.path)}" draggable="${ordering}"><span class="fold">${closed.has(it.path) ? '▸' : '▾'}</span><span class="t">${esc(titleAt(it.rel))}</span><span class="c">${n(chars(it.episodes))}</span>${tools('chapter', it.path)}</div><div class="chapter-body${closed.has(it.path) && !it.episodes.some(e => e.path === current) ? ' closed' : ''}">${it.episodes.map(e => episode(e, it.path)).join('')}</div>`,
+    )
+    .join('');
   $('toc').classList.toggle('reorder', ordering);
   $('toggle-reorder').textContent = ordering ? '完了' : '並べ替え';
   $('work-chars').textContent = n(chars(episodes()));
@@ -186,15 +199,19 @@ function renderToc() {
   $('work-branch').textContent = w.branch;
   // the repository, its page on GitHub, and whether it is public (FR-GH-11)
   $('work-repo').innerHTML =
-    `<a href="https://github.com/${esc(w.repo)}/tree/${esc(encodeURIComponent(w.branch))}" target="_blank" rel="noopener noreferrer">${esc(w.repo)}</a>${visibilityTag(/** @type {Repo} */ (repo))}` +
-    `<button class="link" id="gh-rename" title="GitHub のリポジトリの名前を変更">名前を変更</button>${stopped ? '<button class="link" id="gh-relink" title="いまの名前のリポジトリにつなぎ直す">つなぎ直す</button>' : ''}`;
+    `<a href="https://github.com/${esc(w.repo)}/tree/${esc(encodeURIComponent(w.branch))}" target="_blank" rel="noopener">${esc(w.repo)}</a>${visibilityTag(/** @type {Repo} */ (repo))}`;
+  $('gh-relink').hidden = !stopped;
   $('open-unsent').hidden = unsent() === 0 && !parked.length;
+  showParked();
   if (document.activeElement !== $('work-title')) $('work-title').value = v.layout.title || w.repo.split('/')[1];
-  $('send').disabled = busy || unsent() === 0 || mode === 'off' || Boolean(stopped);
-  $('send').textContent = unsent() ? `送る（${unsent()}）` : '送る';
-  $('reload').disabled = busy || mode === 'off';
+  // 送る and マージ: not shown when the work is not synced (as the server version's push and マージ); 「…」 while it sends
+  $('send').hidden = $('gh-merge').hidden = mode === 'off';
+  // (nothing to send: not pressed. It looks the same as the server version's push either way)
+  $('send').disabled = busy || unsent() === 0 || Boolean(stopped);
+  $('send').textContent = busy ? '…' : unsent() ? `送る（${unsent()}）` : '送る';
   $('sync-mode').value = mode;
-  for (const id of ['add-episode', 'add-chapter', 'toggle-reorder', 'trash-episode']) $(id).disabled = busy || (id === 'trash-episode' && !current);
+  brief();
+  for (const id of ['add-episode', 'add-chapter', 'toggle-reorder', 'trash-episode']) $(id).disabled = busy;
   for (const id of WORK_TOOLS) $(id).disabled = false;
   $('prev-episode').disabled = !neighbor(-1);
   $('next-episode').disabled = !neighbor(1);
@@ -217,14 +234,16 @@ function showCounts() {
   const text = $('body').value;
   $('episode-chars').textContent = current ? n(charsOf(text)) : '0';
   const w = work;
-  $('save-state').textContent = saveState({
-    draft: drafts.has(current),
-    failed: failed.has(current),
-    onGitHub: Boolean(current && w && !w.offline && mode !== 'off' && w.blobs[current]),
-  });
-  const note = $('episode-note');
-  note.hidden = !hasConflict(text);
-  note.textContent = '両方の版が並んでいます。「――― ここから」の行を探して整理してください';
+  // (both versions side by side: said there instead, as the server version's)
+  $('save-state').textContent = hasConflict(text)
+    ? '両方の版が並んでいます。「――― ここから」の行を探して整理してください'
+    : current
+      ? saveState({
+          draft: drafts.has(current),
+          failed: failed.has(current),
+          onGitHub: Boolean(w && !w.offline && mode !== 'off' && w.blobs[current]),
+        })
+      : '';
 }
 /** @param {string} path @param {string} sha */
 const changedKey = (path, sha) => `${path}\n${sha}`;
@@ -306,15 +325,12 @@ async function openEpisode(path, shut = true) {
   area.disabled = text === null;
   area.scrollTop = 0;
   $('episode-title').value = titleAt(e.rel);
-  $('episode-title').disabled = false;
-  $('toggle-preview').disabled = text === null;
   stopReading();
   showCounts();
-  if (text === null) {
-    const note = $('episode-note');
-    note.hidden = false;
-    note.textContent = w.offline ? 'この話はまだこの端末に読み込まれていません（つながってから開いてください）' : '文字コードが UTF-8 ではないため開けません';
-  }
+  const note = $('episode-note');
+  note.hidden = text !== null;
+  note.textContent =
+    text !== null ? '' : w.offline ? 'この話はまだこの端末に読み込まれていません（つながってから開いてください）' : '文字コードが UTF-8 ではないため開けません';
   if (shut) $('desk').classList.remove('toc-open');
   renderToc();
   showUpdated();
@@ -329,12 +345,13 @@ function openNone() {
   $('body').value = '';
   /** @type {HTMLTextAreaElement} */ ($('body')).disabled = true;
   $('episode-title').value = '';
-  $('episode-title').disabled = true;
-  $('toggle-preview').disabled = true;
   $('episode-updated').textContent = '';
+  $('episode-note').hidden = true;
   stopReading();
   showCounts();
   renderToc();
+  // (as the server version's: said in the foot)
+  $('save-state').textContent = '話がありません。「＋ 話を追加」で追加してください';
   void renderPlotPanel();
   void renderSideNote();
 }
@@ -413,18 +430,19 @@ async function openHistory() {
     branch: w.branch,
     path,
     title: titleAt(e.rel),
+    what: '話',
     draft: d?.text !== undefined ? { text: d.text, at: d.at } : null,
     snapshots: await snapshots(path),
     remote: Boolean(w.blobs[path]),
     now: () => $('body').value,
-    restore: async text => {
+    restore: async (text, at) => {
       if (current !== path) return;
       await snapshot(path, $('body').value, true);
       setKeepingCaret(/** @type {HTMLTextAreaElement} */ ($('body')), text);
       // (the text put back is shown: the preview was of the text before)
       stopReading();
       typed('Type');
-      toast(`「${titleAt(e.rel)}」を復元しました（送るまではこの端末だけの変更です）`);
+      toast(`「${titleAt(e.rel)}」を ${whenLong(at)} の版に復元しました（送るまではこの端末だけの変更です）`);
     },
   });
 }
@@ -475,8 +493,12 @@ async function apply(plan, open, stay = false) {
   }
   const moved = plan.moves.find(m => m[0] === current)?.[1];
   const next = open ?? (moved && findEpisode(moved) ? moved : findEpisode(current) ? current : '');
+  // the episode open is still the one open (it or others renamed, moved, added): the preview open stays, where it was
+  // read (as the server version's renderToc)
+  const place = reading() && (next === current || next === moved) ? previewPlace() : null;
   if (next) await openEpisode(next);
   else openNone();
+  if (place) await showPreviewAt(place);
   return true;
 }
 // a plan made, or why it cannot be (said in a toast)
@@ -521,7 +543,9 @@ async function trashEpisode() {
   const e = findEpisode(current);
   if (
     !e ||
-    !confirm(`「${titleAt(e.rel)}」を削除しますか？（作品の _trash/ フォルダに移動します。完全には消えません。GitHub に送るのは「送る」を押したときです）`)
+    !confirm(
+      `「${$('episode-title').value}」を削除しますか？（作品の _trash/ フォルダに移動します。完全には消えません。GitHub に送るのは「送る」を押したときです）`,
+    )
   )
     return;
   const i = episodes().indexOf(e);
@@ -529,8 +553,7 @@ async function trashEpisode() {
   const rest = episodes().filter(x => x !== e);
   const next = rest[Math.max(0, i - 1)];
   // (no key of novel.toml to set that it could not take: the trash only takes away the titles novel.toml has)
-  await apply(plan, next?.path ?? '');
-  toast('削除しました（_trash/ に移動。送るまではこの端末だけの変更です）');
+  if (await apply(plan, next?.path ?? '')) toast('削除しました（_trash/ に移動。送るまではこの端末だけの変更です）');
 }
 /** @param {import('../lib/episodes.js').OrderItem[] | null} want */
 async function sendOrder(want) {
@@ -540,7 +563,9 @@ async function sendOrder(want) {
 }
 async function renameWork() {
   const title = $('work-title').value.trim();
-  if (!title || title === shown().layout.title) return renderToc();
+  // (nothing to keep: the title shown again, the field still focused, as the server version's)
+  if (!title || title === shown().layout.title)
+    return void ($('work-title').value = shown().layout.title || /** @type {NonNullable<typeof work>} */ (work).repo.split('/')[1]);
   await apply({ moves: [], writes: [], edits: [{ key: ['title'], value: title }], path: '' });
 }
 
@@ -598,7 +623,7 @@ function insertImage() {
   pickImage(async (file, put) => {
     if (current !== path) return;
     // (no key of novel.toml to set: kept)
-    await apply({ moves: [], writes: [{ path: file, bytes: put }], edits: [], path: file }, undefined, true);
+    if (!(await apply({ moves: [], writes: [{ path: file, bytes: put }], edits: [], path: file }, undefined, true))) return;
     insertAt(/** @type {HTMLTextAreaElement} */ ($('body')), `\n![](${relPath(path, file)})\n`);
     toast('画像を挿入しました（送るまではこの端末だけの変更です）');
   });
@@ -683,8 +708,20 @@ function park(list, why) {
     `「${list.map(parkedName).join('」「')}」は、${why}ので、書いた文章を送らずにこの端末に残しました。「未送信の一覧」で、送る・本文に入れる・捨てるを選べます`,
     'err',
   );
-  toast('送れなかった書きかけを、この端末に残しました（未送信の一覧）');
   renderToc();
+}
+// 未送信の書きかけ: a button over the screen while texts are set aside, opening the list (as the server version's)
+function showParked() {
+  let bar = document.getElementById('parked-bar');
+  if (!parked.length || !onWork()) return bar?.remove();
+  if (!bar) {
+    bar = document.createElement('button');
+    bar.id = 'parked-bar';
+    bar.className = 'unsent';
+    document.body.append(bar);
+    bar.addEventListener('click', () => $('open-unsent').click());
+  }
+  bar.textContent = `未送信の書きかけが ${parked.length} 件あります`;
 }
 // A text set aside, as the author chooses: 'send' (put back where it was written, beside what is there now, and sent),
 // 'put' (at the end of the episode open, as typed), 'drop' (given up; kept in the history)
@@ -704,7 +741,7 @@ async function unpark(d, how) {
   if (how === 'put') {
     const area = /** @type {HTMLTextAreaElement} */ ($('body'));
     area.setSelectionRange(area.value.length, area.value.length);
-    return insertAt(area, `\n\n――― 未送信の書きかけ（${parkedName(d)}）―――\n\n${d.text}\n`);
+    return insertAt(area, `\n\n――― 未送信の書きかけ（${d.path}）―――\n\n${d.text}\n`);
   }
   const w = /** @type {NonNullable<typeof work>} */ (work);
   const text = /** @type {string} */ (d.text);
@@ -713,6 +750,7 @@ async function unpark(d, how) {
   keep(next);
   renderWork();
   await sendDrafts();
+  toast(unsent() ? '送信できませんでした。書いたものはこの端末に残っています' : '送信しました。GitHub の版と並べて残しています');
 }
 // the texts read from another encoding than UTF-8 (FR-WORK-03), episodes and notes: kept as drafts, made UTF-8, so
 // that the next send puts them on GitHub as UTF-8 (the server version does it when the work is taken in)
@@ -733,7 +771,7 @@ async function reload() {
   const r = /** @type {Repo} */ (repo);
   const place = current && reading() ? { path: current, at: previewPlace() } : null;
   busy = true;
-  syncState('読み込んでいます…');
+  syncState('読み込み中…');
   /** @type {string} the branch asked for that GitHub no longer has ('' when none) */
   let gone = '';
   /** @type {{ m: import('../lib/works.js').RepoMeta | null }} the repository found renamed or moved on GitHub */
@@ -773,7 +811,8 @@ async function reload() {
     if (err instanceof GitHubError && err.status === 409) {
       busy = false;
       if (await offerStart(r)) await reload();
-    }
+      else if (opening) leaveFailed(err);
+    } else if (opening) leaveFailed(err);
     return;
   } finally {
     busy = false;
@@ -811,6 +850,12 @@ async function reload() {
   await refreshScreens();
   sendSoon();
 }
+// a work that could not be opened (not read at all): said, and the list of works shown again (as the server version's)
+/** @param {Error} err */
+function leaveFailed(err) {
+  toast(`作品を開けませんでした: ${err.message}`);
+  changeRepo();
+}
 /** @param {string} name */
 const stopSaid = name =>
   `${name} は、つないだリポジトリとは別のリポジトリになっています（GitHub で名前が変わったか、消された後に同じ名前で作られたかもしれません）。送らずに止めています。GitHub で確かめてから「つなぎ直す」を押してください`;
@@ -831,26 +876,53 @@ async function offerStart(r) {
 async function relinkRepo() {
   const r = /** @type {Repo} */ (repo);
   const other = stopped;
-  if (!other || !confirm(`${r.full_name}（いまの GitHub のリポジトリ）を、この作品のリポジトリとしてつなぎ直しますか？ 次に送ると、このリポジトリに送ります`))
-    return;
+  if (!other || !confirm(`GitHub の ${r.full_name} は、以前接続していたリポジトリとは別のものです。この作品を、こちらに再接続して送信しますか`)) return;
   await relink(r.full_name, other.id);
   stopped = null;
+  toast(`${r.full_name} に再接続しました`);
   await reload();
+  if (unsent() && mode !== 'off') await sendDrafts();
 }
-// 作品の削除 (FR-WORK-05): the work taken off the list; the repository on GitHub stays. What was not sent yet is
-// sent first, or given up, as the author chooses
+// 作品の削除 (FR-WORK-05): the work taken off the list, and what this device keeps of it; the repository on GitHub
+// stays. As the server version's: a synced work asks in one dialog whether what was not sent goes first (送ってから削除),
+// is given up (送らずに削除), or nothing is done (やめる); a work not synced asks once
+/** @param {string} title @param {string} repoName @returns {Promise<string>} 'push', 'keep' or '' (stop) */
+function askDelete(title, repoName) {
+  return new Promise(resolve => {
+    const dlg = /** @type {HTMLDialogElement} */ (/** @type {unknown} */ ($('delete-ask')));
+    $('delete-ask-title').textContent = `作品「${title}」を削除します`;
+    $('delete-ask-help').textContent =
+      `GitHub のリポジトリ（${repoName}）はそのままです。まだ送っていない変更をどうしますか？` +
+      '送らずに削除すると、その変更は GitHub に送られず、この端末からも消えます。';
+    let done = false;
+    /** @type {(v: string) => void} */
+    const finish = v => {
+      if (done) return;
+      done = true;
+      dlg.close();
+      resolve(v);
+    };
+    for (const b of /** @type {NodeListOf<HTMLElement>} */ (dlg.querySelectorAll('[data-delete]'))) b.onclick = () => finish(b.dataset.delete || '');
+    dlg.onclose = () => finish('');
+    dlg.showModal();
+  });
+}
 async function deleteWork() {
   const r = /** @type {Repo} */ (repo);
   const title = $('work-title').value;
-  if (!confirm(`「${title}」を作品の一覧から外しますか？（GitHub のリポジトリ ${r.full_name} は消しません。この端末に残した控え・履歴・設定は消します）`))
-    return;
-  const left = unsent() + parked.length;
-  if (left) {
-    if (confirm(`GitHub に送っていない変更が ${left} 件あります。先に送りますか？（「キャンセル」なら、送らずに捨てるかを聞きます）`)) {
+  if (mode !== 'off') {
+    const choice = await askDelete(title, r.full_name);
+    if (!choice) return;
+    if (choice === 'push' && (unsent() || parked.length)) {
       await sendDrafts();
-      if (unsent() || parked.length) return void toast('送れなかったので、一覧から外しませんでした。書いたものはこの端末に残っています');
-    } else if (!confirm(`送っていない変更 ${left} 件を捨てて、一覧から外しますか？（取り消せません）`)) return;
-  }
+      if (unsent() || parked.length) return void toast('送れなかったので、削除しませんでした。書いたものはこの端末に残っています');
+    }
+  } else if (
+    !confirm(
+      `作品「${title}」を削除しますか？\n同期をオフにしているため、送らずに削除します。GitHub のリポジトリ（${r.full_name}）はそのままで、この端末に残した控えと書きかけは消えます`,
+    )
+  )
+    return;
   clearTimeout(autoTimer);
   sight?.disconnect();
   await writing;
@@ -859,7 +931,7 @@ async function deleteWork() {
   drafts = new Map();
   parked = [];
   edits = [];
-  toast(`「${title}」を一覧から外しました（GitHub のリポジトリはそのままです。「一覧から外した作品」から戻せます）`);
+  toast('作品を削除しました');
   changeRepo();
 }
 // the changes typed, written to the device (before the page is loaded again: FR-APP-02)
@@ -884,6 +956,12 @@ const otherBranchSaid = branch =>
 /** @param {string} repoName @param {string} branch */
 async function forgetBranch(repoName, branch) {
   if ((await store.get('prefs', `branch:${repoName}`)) === branch) await store.del('prefs', `branch:${repoName}`);
+}
+// the desk left for the list of works or the settings (as the server version's: the panel beside the text closed, the
+// button of the texts set aside gone)
+export function leave() {
+  hideSideNote();
+  document.getElementById('parked-bar')?.remove();
 }
 // the screens of the work open: the desk, and the ones over it (資料, プロット, キャラ, 記録)
 const WORK_SCREENS = ['desk', 'notes', 'plot', 'characters', 'record'];
@@ -926,7 +1004,7 @@ async function readIn() {
   renderWork();
   await showOpen();
   // (what was set aside is said instead)
-  if (!set) toast('ほかの所での変更を読み込みました');
+  if (!set) toast('ほかの端末の更新を読み込みました');
   await refreshScreens();
   await trace('ReadIn');
 }
@@ -983,7 +1061,8 @@ async function sendNow() {
   if (!stopped && sendsItself({ mode, unsent: unsent(), offline: w.offline, busy, elsewhere })) await sendDrafts();
   else if (elsewhere && mode === 'auto') syncState(otherBranchSaid(otherBranch()), 'err');
 }
-async function sendDrafts() {
+/** @param {boolean} [pressed] 送る pressed (said in a toast when done, as the server version's push) */
+async function sendDrafts(pressed = false) {
   if (stopped) return;
   const w = /** @type {NonNullable<typeof work>} */ (work);
   // (written on another branch: sent to the one open only when the author says so)
@@ -1046,10 +1125,13 @@ async function sendDrafts() {
     await refreshScreens();
     showCounts();
     showUpdated();
+    thenWrite(() => store.del('prefs', `failed:${w.repo}`));
+    if (pressed) toast('送りました');
     await trace('Sent');
   } catch (err) {
     void traceFailed(err);
     failed = new Set(drafts.keys());
+    thenWrite(() => store.put('prefs', `failed:${w.repo}`, true));
     showCounts();
     syncState(
       err instanceof Overlapped
@@ -1069,16 +1151,28 @@ async function sendDrafts() {
 
 /** @param {Repo} r */
 export async function open(r) {
+  opening = true;
+  if (repo?.full_name !== r.full_name) hideSideNote();
   repo = r;
   work = null;
   stopped = null;
   current = '';
-  ordering = false;
+  failed = new Set();
   show('desk');
+  // the work in the address (as the server version's #作品): the page loaded again opens it again
+  history.replaceState(null, '', `#${encodeURIComponent(r.full_name)}`);
   $('body').value = '';
   /** @type {HTMLTextAreaElement} */ ($('body')).disabled = true;
   $('episode-title').value = '';
   $('tree').innerHTML = '';
+  // (the work before's state gone while this one loads)
+  $('work-repo').innerHTML = '';
+  $('sync-state').textContent = '';
+  $('sync-brief').textContent = '';
+  $('episode-chars').textContent = '0';
+  $('episode-updated').textContent = '';
+  $('episode-note').hidden = true;
+  $('save-state').textContent = '読み込み中…';
   // (the operations wait until the work is read: renderToc)
   for (const id of ['add-episode', 'add-chapter', 'toggle-reorder', 'trash-episode', ...WORK_TOOLS]) $(id).disabled = true;
   $('work-title').value = r.full_name.split('/')[1];
@@ -1091,7 +1185,11 @@ export async function open(r) {
   changed = new Map(Object.entries((await store.get('prefs', `changed:${r.full_name}`)) ?? {}));
   // (the mode kept on the device, else the one the drafts were written with: lib/sync.js keptMode)
   mode = keptMode(await store.get('prefs', `sync:${r.full_name}`), [...drafts.values()]);
-  await reload();
+  try {
+    await reload();
+  } finally {
+    opening = false;
+  }
 }
 
 // --- the table of contents' rows: opened, folded, moved
@@ -1159,6 +1257,7 @@ async function setMode(value) {
   keep(new Map([...drafts].map(([path, d]) => [path, { ...d, sync: mode }])));
   renderToc();
   readState(now());
+  toast('同期の設定を変更しました');
   sendSoon();
 }
 
@@ -1196,12 +1295,13 @@ export function wire(on) {
     void sendOrder(plans.moveToChapter(plans.orderOf(shown().toc), /** @type {string} */ (s.dataset.path), s.value));
   });
   wireDrag();
-  $('send').addEventListener('click', () => void sendDrafts());
-  $('reload').addEventListener('click', () => void reload());
-  $('change-repo').addEventListener('click', on.changeRepo);
+  $('send').addEventListener('click', () => void sendDrafts(true));
+  // 再読み込み: over the table of contents and over the text (the table of contents is closed on a phone)
+  for (const id of ['reload-work', 'reload-desk']) $(id).addEventListener('click', () => void (busy || opening ? null : reload()));
+  $('to-shelf').addEventListener('click', on.changeRepo);
   changeRepo = on.changeRepo;
   $('delete-work').addEventListener('click', () => void deleteWork());
-  $('menu').addEventListener('click', () => $('desk').classList.toggle('toc-open'));
+  $('open-toc').addEventListener('click', () => $('desk').classList.add('toc-open'));
   $('scrim').addEventListener('click', () => $('desk').classList.remove('toc-open'));
   $('add-episode').addEventListener('click', () => void addEpisode());
   $('add-chapter').addEventListener('click', () => void addChapter());
@@ -1218,9 +1318,6 @@ export function wire(on) {
     }
   });
   $('work-title').addEventListener('change', () => void renameWork());
-  $('work-title').addEventListener('keydown', e => {
-    if (e.key === 'Enter') $('work-title').blur();
-  });
   inputBar($('kbar'), area, $('desk'), () => void togglePreview());
   wireReading({ neighbor, open: openEpisode, draw });
   wireHistory();
@@ -1250,6 +1347,7 @@ export function wire(on) {
     reload,
     busy: () => busy,
     unsent,
+    send: () => sendDrafts(),
     unsentItems: () => unsentList(drafts, edits),
     otherBranch,
     parked: () => parked,
@@ -1273,9 +1371,7 @@ export function wire(on) {
     else void readIn();
   });
   addEventListener('online', () => sendSoon(1000));
-  $('work-repo').addEventListener('click', e => {
-    if (/** @type {HTMLElement} */ (e.target).closest('#gh-relink')) void relinkRepo();
-  });
+  $('gh-relink').addEventListener('click', () => void relinkRepo());
   $('sync-mode').addEventListener('change', () => void setMode($('sync-mode').value));
   wireNotes();
   wirePlot();

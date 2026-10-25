@@ -13,8 +13,8 @@ test('the people as cards (a deeper heading inside its person); one written by i
   await expect(page.locator('#characters-board .pcard-head b')).toHaveText(['黒崎零', 'カミヤ']);
   await expect(page.locator('#characters-board .pcard-sum').nth(1)).toHaveText('相棒。\n過去\n昔のこと。');
   await page.locator('.pcard', { hasText: 'カミヤ' }).getByRole('button', { name: '編集' }).click();
-  await expect(page.getByLabel('資料の本文')).toHaveValue('## カミヤ\n相棒。\n### 過去\n昔のこと。\n');
-  await page.getByLabel('資料の本文').press('Control+End');
+  await expect(page.locator('#note-body')).toHaveValue('## カミヤ\n相棒。\n### 過去\n昔のこと。\n');
+  await page.locator('#note-body').press('Control+End');
   await page.keyboard.type('今のこと。');
   await page.getByRole('button', { name: '‹ キャラ' }).click();
   await expect(page.locator('#characters-board')).toContainText('この端末に、まだ送っていない書きかけがあります');
@@ -85,8 +85,8 @@ test('found among notes that cannot say their names; nobody yet; a long card ope
   await expect(page.locator('#characters-board .pcard-head b')).toHaveText(['カミヤ', '黒崎零']);
   // a long description: shown in part, opened and closed
   await page.locator('.pcard', { hasText: 'カミヤ' }).getByRole('button', { name: '編集' }).click();
-  await page.getByLabel('資料の本文').press('Control+End');
-  await page.getByLabel('資料の本文').pressSequentially(`\n${long}`);
+  await page.locator('#note-body').press('Control+End');
+  await page.locator('#note-body').pressSequentially(`\n${long}`);
   await page.getByRole('button', { name: '‹ キャラ' }).click();
   await page.getByRole('button', { name: '続きを表示' }).click();
   await expect(page.locator('.pcard-sum.open')).toHaveCount(1);
@@ -105,7 +105,7 @@ test('a characters note not made: no notes folder said; nothing made while novel
   await expect(page.locator('#toast')).toHaveText('資料のフォルダが決まっていません。novel.toml の [notes] dir に書いてください');
   await page.getByRole('button', { name: '‹ 原稿へ' }).click();
   work.push({ 'novel.toml': TOML.replace('\n', '\r\n') });
-  await page.getByRole('button', { name: '再読み込み' }).click();
+  await page.locator('#reload-work').click();
   await expect(page.locator('#sync-state')).toHaveText(/GitHub から読みました/);
   await page.getByRole('button', { name: 'キャラ', exact: true }).click();
   await page.getByRole('button', { name: 'キャラクターの資料を作成' }).click();

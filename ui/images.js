@@ -41,6 +41,8 @@ async function picked() {
   if (!file || !then) return;
   try {
     if (!file.type.startsWith('image/')) throw new Error('画像（JPEG、PNG、WebP、GIF）を選んでください');
+    // (as the server version's 「縮小してアップロードしています…」: made small here, kept on the device)
+    toast('画像を縮小しています…');
     const blob = await shrink(file).catch(() => {
       throw new Error('画像を読めませんでした。JPEG、PNG、WebP、GIF の画像を選んでください');
     });
@@ -62,10 +64,6 @@ let again;
 // the pictures drawn on 資料, by folder (in more than one folder, each under its path, so two of the same name are told apart)
 export async function renderImages() {
   const l = api.view().layout;
-  $('images-where').textContent =
-    l.notes || l.images
-      ? ''
-      : '資料のフォルダが novel.toml に書かれていないので、一番上の images/ の画像を出します（[notes] dir か [images] dir で変えられます）';
   const images = notesList(l, api.files()).filter(f => f.kind === 'image');
   listed = images.map(f => f.path);
   /** @type {Map<string, typeof images>} */
@@ -127,7 +125,7 @@ export function wireImages(redraw) {
   $('image-file').addEventListener('change', () => void picked());
   $('add-image').addEventListener('click', () =>
     pickImage(async (path, bytes) => {
-      if (await api.apply({ moves: [], writes: [{ path, bytes }], edits: [], path })) toast('画像を追加しました（送るまではこの端末だけの変更です）');
+      if (await api.apply({ moves: [], writes: [{ path, bytes }], edits: [], path })) toast('画像を挿入しました（送るまではこの端末だけの変更です）');
       again();
     }),
   );

@@ -124,17 +124,43 @@ export const today = () => {
 /** @param {import('@playwright/test').Page} page @param {string | null} [first] the title of the first episode (null: none) */
 export async function openWork(page, first = 'はじまり') {
   await noPasskey(page);
+  await keepMoreOpen(page);
   await page.goto('./');
   await page.getByLabel('トークン', { exact: true }).fill(TOKEN);
   await page.getByRole('button', { name: 'パスキーで保管する' }).click();
   await openRepo(page, 'author/novel');
   if (first !== null) await expect(page.locator('#episode-title')).toHaveValue(first);
 }
-// A repository not on the list opened from 「リポジトリを開く」 (FR-WORK-03), on the list of works
+// 設定 (as the server version's: from the list of works), from the desk or the list
+/** @param {import('@playwright/test').Page} page */
+export async function toSettings(page) {
+  if (await page.locator('#desk').isVisible()) await page.locator('#to-shelf').click();
+  await page.getByRole('button', { name: '設定', exact: true }).click();
+}
+// 「GitHub リポジトリをインポート」 opened, and its field taken up (the names offered read then)
+/** @param {import('@playwright/test').Page} page */
+export async function openImport(page) {
+  const details = page.locator('#shelf details.import');
+  if (!(await details.evaluate(d => /** @type {HTMLDetailsElement} */ (d).open))) await page.locator('#shelf details.import > summary').click();
+  await page.locator('#import-repo').focus();
+}
+// 「リリース・GitHub・その他」 open on every load of the page (as the author opens it to send and read again by hand: the
+// sync's buttons are in it, as the server version's)
+/** @param {import('@playwright/test').Page} page */
+export const keepMoreOpen = page =>
+  page.addInitScript(() =>
+    addEventListener('DOMContentLoaded', () => {
+      const d = /** @type {HTMLDetailsElement | null} */ (document.getElementById('toc-more'));
+      if (d) d.open = true;
+    }),
+  );
+// A repository not on the list opened from 「GitHub リポジトリをインポート」 (FR-WORK-03), on the list of works
 /** @param {import('@playwright/test').Page} page @param {string} name 「owner/name」 */
 export async function openRepo(page, name) {
-  await page.getByRole('button', { name: 'リポジトリを開く' }).click();
-  await page.locator('#picker-list button', { hasText: name }).click();
+  const details = page.locator('#shelf details.import');
+  if (!(await details.evaluate(d => /** @type {HTMLDetailsElement} */ (d).open))) await page.locator('#shelf details.import > summary').click();
+  await page.locator('#import-repo').fill(name);
+  await page.getByRole('button', { name: 'インポート', exact: true }).click();
 }
 // what IndexedDB keeps in a store
 /** @param {import('@playwright/test').Page} page @param {string} store */

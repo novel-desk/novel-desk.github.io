@@ -15,7 +15,7 @@ test('an error that is not JSON: its status said', async ({ page, gh }) => {
       ? route.fulfill({ status: 502, headers: { 'Access-Control-Allow-Origin': '*' }, body: '<html>Bad Gateway</html>' })
       : route.fallback(),
   );
-  await page.getByRole('button', { name: '再読み込み' }).click();
+  await page.locator('#reload-work').click();
   await expect(page.locator('#sync-state')).toHaveText('GitHub がエラーを返しました（502）');
 });
 
@@ -64,7 +64,7 @@ test('a release on an annotated tag: followed to its commit', async ({ page, gh,
     route.request().method() === 'GET' ? json(route, { object: { type: 'commit', sha: work.tags.v1 } }) : route.fallback(),
   );
   await openWork(page);
-  await page.locator('.toc-more summary').click();
+  // (リリース・GitHub・その他 open: openWork)
   await page.getByRole('button', { name: 'リリース一覧' }).click();
   const dlg = page.locator('#releases');
   await dlg.getByRole('button', { name: /第一稿/ }).click();

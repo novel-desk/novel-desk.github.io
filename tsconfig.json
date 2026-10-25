@@ -12,5 +12,5 @@
     "moduleResolution": "bundler",
     "lib": ["es2023", "dom", "dom.iterable"]
   },
-  "include": ["app.js", "ui/*.js", "lib/*.js"]
+  "include": ["app.js", "boot.js", "ui/*.js", "lib/*.js"]
 }

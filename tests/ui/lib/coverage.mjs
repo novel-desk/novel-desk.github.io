@@ -16,8 +16,8 @@ const modulesIn = dir =>
     .filter(f => f.endsWith('.js'))
     .sort()
     .map(f => `${dir}/${f}`);
-// the app's scripts: the page's (app.js), the service worker, the functions without the page (lib/) and the screens (ui/)
-export const SCRIPTS = ['app.js', 'sw.js', ...modulesIn('lib'), ...modulesIn('ui')];
+// the app's scripts: the page's (app.js, and boot.js before it), the service worker, the functions without the page (lib/) and the screens (ui/)
+export const SCRIPTS = ['app.js', 'boot.js', 'sw.js', ...modulesIn('lib'), ...modulesIn('ui')];
 
 // The counts of a page that goes away (a reload, a new version of the app) are kept in its localStorage (a binding
 // called while the page unloads does not reach the test): added up there, and taken with the page that comes after it

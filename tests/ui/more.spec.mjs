@@ -2,7 +2,7 @@
 // branches chosen, made and merged (FR-GH-09), the preview kept over a reload (FR-TOC-08), what was written elsewhere
 // read in while open (FR-SAVE-08), the changes not sent listed and given up (FR-SAVE-09), the colours (FR-APP-01) and
 // the screen's size (FR-APP-05)
-import { test, expect, openWork, stored, FakeRepo, WORK_FILES } from './lib/test.mjs';
+import { test, expect, openRepo, openWork, stored, toSettings, FakeRepo, WORK_FILES } from './lib/test.mjs';
 
 const BY_NAME = WORK_FILES['novel.toml'].replace('title = "heading"\n', '');
 
@@ -30,7 +30,7 @@ test('an episode in Shift-JIS: opened as text, kept as a draft in UTF-8, sent as
 });
 
 // FR-GH-09
-test('a branch chosen, a new one made from the version read; refused while changes are not sent', async ({ page, gh, work }) => {
+test('a branch chosen, a new one made from the version read; what is not sent sent first, then switched', async ({ page, gh, work }) => {
   work.refs.draft = work.refs.main;
   work.push({ 'chapters/01_first.md': '# 第1話 はじまり\n\n下書きの枝。\n' }, 'draft');
   await openWork(page);
@@ -41,13 +41,19 @@ test('a branch chosen, a new one made from the version read; refused while chang
   // kept on this device
   await page.reload();
   await expect(page.locator('#body')).toHaveValue('# 第1話 はじまり\n\n下書きの枝。\n');
+  // what is not sent goes to its branch first, then the branch changes (as the server version's: pushed, then switched)
   await page.locator('#body').fill('書きかけ\n');
   await page.getByRole('button', { name: /⎇ draft/ }).click();
-  await expect(page.locator('#toast')).toHaveText(/^未送信の変更があります/);
-  await page.getByRole('button', { name: '送る（1）' }).click();
-  await expect(page.locator('#sync-state')).toHaveText(/^送りました（/);
+  await expect(page.locator('#picker-help')).toHaveText(
+    '選択するとそのブランチに切り替えます。存在しない名前を入力すると、新しく作成します。まだ送っていない変更がある時は、送ってから切り替えます。',
+  );
+  await page.locator('#picker').getByRole('button', { name: 'main' }).click();
+  await expect(page.getByRole('button', { name: /⎇ main/ })).toBeVisible();
   expect(work.text('chapters/01_first.md', 'draft')).toBe('書きかけ\n');
   expect(work.text('chapters/01_first.md')).toBe(WORK_FILES['chapters/01_first.md']);
+  await page.getByRole('button', { name: /⎇ main/ }).click();
+  await page.locator('#picker').getByRole('button', { name: 'draft' }).click();
+  await expect(page.locator('#body')).toHaveValue('書きかけ\n');
   await page.getByRole('button', { name: /⎇ draft/ }).click();
   await page.locator('#picker-input').fill('第2稿');
   await page.locator('#picker').getByRole('button', { name: '決定' }).click();
@@ -72,9 +78,13 @@ test('a branch merged into another on GitHub: what it brings said first; a confl
     void d.accept();
   });
   await page.getByRole('button', { name: 'マージ' }).click();
+  // (the field has main in it, as the server version's: Enter takes it)
+  await expect(page.locator('#picker-input')).toHaveValue('main');
+  await expect(page.locator('#picker-help')).toHaveText('マージは GitHub 上で行います。現在のブランチは変わりません。');
   await page.locator('#picker').getByRole('button', { name: 'main' }).click();
   await expect(page.locator('#toast')).toHaveText('draft を main にマージしました');
-  expect(said[0]).toMatch(/^draft → main\ncommit 1 件:\n・\d{4}-\d{2}-\d{2} ほかの端末で\n話の変化:\n・駅で 1 行足し、1 行消す\n\nマージしますか？$/);
+  expect(said[0]).toMatch(/^draft → main\ncommit 1 件:\n・\d{2}\/\d{2} \d{2}:\d{2} ほかの端末で\n話の変化:\n・駅で ＋0 字\n\nマージしますか？$/);
+  expect(work.head().message).toBe('draft を main にマージ（Novel Desk から）');
   expect(work.text('chapters/02_second.md')).toBe('# 第2話 駅で\n\n枝で書いた。\n');
   expect(work.head().parents.length).toBe(2);
   // nothing more to bring
@@ -87,7 +97,9 @@ test('a branch merged into another on GitHub: what it brings said first; a confl
   page.once('dialog', d => void d.accept());
   await page.getByRole('button', { name: 'マージ' }).click();
   await page.locator('#picker').getByRole('button', { name: 'main' }).click();
-  await expect(page.locator('#toast')).toHaveText(/^マージできませんでした: 両方のブランチで同じファイルが変わっています/);
+  await expect(page.locator('#toast')).toHaveText(
+    'main と draft が競合しているため、自動ではマージできません。GitHub か Working Copy で競合を解消してください',
+  );
 });
 
 // FR-GH-09: the branch chosen on this device deleted on GitHub (after a merge, say): the one novel.toml names opened
@@ -116,16 +128,31 @@ test('novel.toml names a branch GitHub does not have: the default branch opened,
   await expect(page.getByRole('button', { name: /⎇ main/ })).toBeVisible();
   await expect(page.locator('#toast')).toHaveText('draft/old は GitHub にもう無いので、main を開きました');
 });
-// FR-GH-09: the work not read (GitHub failing): choosing or merging a branch says so instead of doing nothing
-test('the work not read: choosing or merging a branch says to read it first', async ({ page, gh, work }) => {
-  gh.fail = (method, path) => (path.includes('/git/ref/') ? 500 : undefined);
-  await openWork(page, null);
-  await expect(page.locator('#sync-state')).toHaveClass(/err/);
+// FR-GH-09: the work not read yet (being opened): choosing or merging a branch says so instead of doing nothing; one that
+// cannot be read: not opened (the list of works again, said, as the server version's)
+test('the work not read: choosing or merging a branch says to read it first; not read at all, not opened', async ({ page, gh, work }) => {
+  await openWork(page);
+  /** @type {() => void} */
+  let release = () => {};
+  const gate = new Promise(r => (release = () => r(undefined)));
+  await page.route('https://api.github.com/repos/author/novel/git/trees/**', async route => {
+    await gate;
+    await route.fallback();
+  });
+  await page.reload();
+  await expect(page.locator('#save-state')).toHaveText('読み込み中…');
   await page.locator('#gh-branch').click();
   await expect(page.locator('#toast')).toHaveText(/^作品を読み込めていません/);
   await page.locator('#toast').evaluate(t => (t.textContent = ''));
   await page.locator('#gh-merge').click();
   await expect(page.locator('#toast')).toHaveText(/^作品を読み込めていません/);
+  release();
+  await expect(page.locator('#episode-title')).toHaveValue('はじまり');
+  await page.unroute('https://api.github.com/repos/author/novel/git/trees/**');
+  gh.fail = (method, path) => (path.includes('/git/ref/') ? 500 : undefined);
+  await page.reload();
+  await expect(page.locator('#shelf')).toBeVisible();
+  await expect(page.locator('#toast')).toHaveText(/^作品を開けませんでした: /);
 });
 
 // FR-TOC-08
@@ -136,7 +163,7 @@ test('read again from the preview: the preview stays, where it was read', async 
   await page.getByRole('button', { name: 'プレビュー' }).click();
   await page.locator('#preview').evaluate(p => (p.scrollTop = 1500));
   const before = await page.locator('#preview').evaluate(p => p.scrollTop);
-  await page.getByRole('button', { name: '再読み込み' }).click();
+  await page.locator('#reload-work').click();
   await expect(page.locator('#sync-state')).toHaveText(/GitHub から読みました/);
   await expect(page.locator('#preview')).toBeVisible();
   await expect.poll(() => page.locator('#preview').evaluate(p => p.scrollTop)).toBeGreaterThan(before - 60);
@@ -150,7 +177,7 @@ test('written elsewhere while open: read in when the app is back in front; the c
   await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
   await expect(page.locator('#body')).toHaveValue('# 第1話 はじまり\n\n朝が来た。ほかで足した。\n');
   expect(await page.locator('#body').evaluate(a => /** @type {HTMLTextAreaElement} */ (a).selectionStart)).toBe(3);
-  await expect(page.locator('#toast')).toHaveText('ほかの所での変更を読み込みました');
+  await expect(page.locator('#toast')).toHaveText('ほかの端末の更新を読み込みました');
   await page.locator('#body').fill('ここで書いた\n');
   work.push({ 'chapters/01_first.md': '# 第1話 はじまり\n\nまたほかで。\n' });
   await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
@@ -190,14 +217,14 @@ test('the changes not sent listed: an operation given up (the text written in it
 // FR-APP-01, FR-APP-05
 test('the colours chosen and kept on this device; the screen said', async ({ page, gh }) => {
   await openWork(page);
-  await page.getByRole('button', { name: 'ほかの作品' }).click();
+  await toSettings(page);
   await expect(page.locator('#screen-info')).toHaveText(/^この端末の画面: \d+×\d+、倍率 [\d.]+、上の余白 0、下の余白 0（ブラウザ）$/);
   await page.getByRole('button', { name: '黒' }).click();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   expect(await page.evaluate(() => getComputedStyle(document.body).backgroundColor)).toBe('rgb(22, 23, 26)');
   await page.reload();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
-  await page.getByRole('button', { name: 'ほかの作品' }).click();
+  await toSettings(page);
   await expect(page.getByRole('button', { name: '黒' })).toHaveClass(/on/);
   await page.getByRole('button', { name: '白' }).click();
   expect(await page.evaluate(() => getComputedStyle(document.body).backgroundColor)).toBe('rgb(242, 238, 230)');
@@ -230,7 +257,7 @@ test('the changes not sent listed: a chapter added with its title; given up as a
   await page.getByRole('button', { name: '閉じる' }).click();
   // a work named by its files: a rename given up while its episode is open
   work.push({ 'novel.toml': BY_NAME });
-  await page.getByRole('button', { name: '再読み込み' }).click();
+  await page.locator('#reload-work').click();
   await expect(page.locator('#sync-state')).toHaveText(/GitHub から読みました/);
   await page.getByRole('button', { name: '未送信の一覧' }).click();
   page.once('dialog', d => void d.accept());
@@ -284,7 +311,7 @@ test('written elsewhere while open: the open episode deleted, the first opened, 
   // another episode changed: the open one left as it is
   work.push({ 'chapters/01_first.md': '# 第1話 はじまり\n\nほかで\n' });
   await inFront(page);
-  await expect(page.locator('#toast')).toHaveText('ほかの所での変更を読み込みました');
+  await expect(page.locator('#toast')).toHaveText('ほかの端末の更新を読み込みました');
   await expect(page.locator('#body')).toHaveValue(WORK_FILES['chapters/02_second.md']);
   // the open one changed while its preview is open: drawn again
   await page.getByRole('button', { name: 'プレビュー' }).click();
@@ -300,7 +327,7 @@ test('written elsewhere while open: the open episode deleted, the first opened, 
   // every episode deleted: none open
   work.push({ 'chapters/01_first.md': null, 'chapters/03_part/01_third.md': null });
   await inFront(page);
-  await expect(page.locator('#tree')).toContainText('話がありません');
+  await expect(page.locator('#save-state')).toHaveText('話がありません。「＋ 話を追加」で追加してください');
   await expect(page.locator('#episode-title')).toHaveValue('');
 });
 
@@ -324,17 +351,21 @@ test('read in while open, 再読み込み pressed meanwhile: the reading in give
   await inFront(page);
   await came;
   work.push({ 'chapters/02_second.md': '# 第2話 駅で\n\n二度目\n' });
-  await page.getByRole('button', { name: '再読み込み' }).click();
+  await page.locator('#reload-work').click();
   release();
   await expect(page.locator('#sync-state')).toHaveText(/GitHub から読みました/);
   await page.locator('#tree .node', { hasText: '駅で' }).click();
   await expect(page.locator('#body')).toHaveValue('# 第2話 駅で\n\n二度目\n');
-  await expect(page.locator('#toast')).not.toHaveText('ほかの所での変更を読み込みました');
+  await expect(page.locator('#toast')).not.toHaveText('ほかの端末の更新を読み込みました');
 });
 
 // FR-GH-12, FR-WORK-05: another repository under the work's name, and no copy of the work on this device: said, nothing
 // read or sent; taking the work off the list cannot send what was not sent there: said, nothing taken off
-test('another repository under the name, no copy on this device: stopped; taken off the list, not sent there, said', async ({ page, gh, work }) => {
+test('another repository under the name, no copy on this device: stopped, not opened (the list of works again), nothing sent there, said', async ({
+  page,
+  gh,
+  work,
+}) => {
   await openWork(page);
   await page.locator('#body').fill('# 第1話 はじまり\n\n止まる\n');
   gh.rename('author/novel', 'author/gone');
@@ -354,16 +385,8 @@ test('another repository under the name, no copy on this device: stopped; taken 
       }),
   );
   await page.reload();
-  await expect(page.locator('#sync-state')).toHaveText(/^author\/novel は、つないだリポジトリとは別のリポジトリになっています/);
-  /** @type {string[]} */
-  const asked = [];
-  page.on('dialog', d => {
-    asked.push(d.message());
-    void d.accept();
-  });
-  await page.getByRole('button', { name: '一覧から外す' }).click();
-  await expect(page.locator('#toast')).toHaveText('送れなかったので、一覧から外しませんでした。書いたものはこの端末に残っています');
-  expect(asked.length).toBe(2);
+  await expect(page.locator('#shelf')).toBeVisible();
+  await expect(page.locator('#toast')).toHaveText(/^作品を開けませんでした: author\/novel は、つないだリポジトリとは別のリポジトリになっています/);
   expect(gh.calls.filter(c => !c.startsWith('GET'))).toEqual([]);
   expect((await stored(page, 'drafts')).map(d => d.text)).toEqual(['# 第1話 はじまり\n\n止まる\n']);
 });
@@ -376,25 +399,24 @@ test('つなぎ直す not confirmed: still stopped, nothing sent', async ({ page
   const other = new FakeRepo('author/novel', { 'novel.toml': 'title = "別の作品"\n', '01.md': '# 別\n' });
   other.id = ++gh.ids;
   gh.repos.set('author/novel', other);
-  await page.getByRole('button', { name: '再読み込み' }).click();
+  await page.locator('#reload-work').click();
   await expect(page.locator('#gh-relink')).toBeVisible();
   page.once('dialog', d => void d.dismiss());
-  await page.getByRole('button', { name: 'つなぎ直す' }).click();
+  await page.getByRole('button', { name: 'このリポジトリに再接続' }).click();
   await expect(page.locator('#gh-relink')).toBeVisible();
   await expect(page.locator('#work-title')).toHaveValue('試験の作品');
 });
 
-// FR-WORK-05: taking a work off the list not confirmed, or what was not sent neither sent nor given up: nothing changes
-test('taking a work off the list not confirmed, or the changes neither sent nor given up: the work stays as it is', async ({ page, gh, work }) => {
+// FR-WORK-05: deleting a work stopped (やめる, or the dialog closed by Escape): nothing changes
+test('deleting a work stopped, by やめる or Escape: the work stays as it is', async ({ page, gh, work }) => {
   await openWork(page);
-  page.once('dialog', d => void d.dismiss());
-  await page.getByRole('button', { name: '一覧から外す' }).click();
+  await page.getByRole('button', { name: 'この作品を削除' }).click();
+  await page.getByRole('button', { name: 'やめる' }).click();
   await expect(page.locator('#desk')).toBeVisible();
   await page.locator('#body').fill('# 第1話 はじまり\n\n残す\n');
-  const answers = [true, false, false];
-  page.on('dialog', d => void (answers.shift() ? d.accept() : d.dismiss()));
-  await page.getByRole('button', { name: '一覧から外す' }).click();
-  await expect.poll(() => answers.length).toBe(0);
+  await page.getByRole('button', { name: 'この作品を削除' }).click();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#delete-ask')).toBeHidden();
   await expect(page.locator('#desk')).toBeVisible();
   await expect(page.locator('#send')).toHaveText('送る（1）');
   expect(gh.calls.filter(c => !c.startsWith('GET'))).toEqual([]);
@@ -422,10 +444,10 @@ test('a note in Shift-JIS: made UTF-8 on the device, sent as UTF-8', async ({ pa
     .locator('#notes button', { hasText: /settei|古い/ })
     .first()
     .click();
-  await expect(page.getByLabel('資料の本文')).toHaveValue('# 第4話 古い\n\nあいう漢字\n');
+  await expect(page.locator('#note-body')).toHaveValue('# 第4話 古い\n\nあいう漢字\n');
   await page.getByRole('button', { name: '‹ 一覧' }).click();
   await page.getByRole('button', { name: '‹ 原稿へ' }).click();
-  await page.getByRole('button', { name: '再読み込み' }).click();
+  await page.locator('#reload-work').click();
   await expect(page.locator('#send')).toHaveText('送る（1）');
   await page.getByRole('button', { name: '送る（1）' }).click();
   await expect(page.locator('#sync-state')).toHaveText(/^送りました（/);
@@ -449,11 +471,11 @@ test('the chosen branch: GitHub failing on it, said; its files gone since it was
   await page.locator('#picker').getByRole('button', { name: 'draft' }).click();
   await expect(page.locator('#body')).toHaveValue('# 第1話 はじまり\n\n枝で\n');
   gh.fail = (method, path) => (path.endsWith('/git/ref/heads/draft') ? 500 : undefined);
-  await page.getByRole('button', { name: '再読み込み' }).click();
+  await page.locator('#reload-work').click();
   await expect(page.locator('#sync-state')).toHaveText(/test failure/);
   const tree = /** @type {{ tree: string }} */ (work.commits.get(work.refs.draft)).tree;
   gh.fail = (method, path) => (path.endsWith(`/git/trees/${tree}`) ? 404 : undefined);
-  await page.getByRole('button', { name: '再読み込み' }).click();
+  await page.locator('#reload-work').click();
   await expect(page.locator('#toast')).toHaveText('draft は GitHub にもう無いので、main を開きました');
   await expect(page.getByRole('button', { name: /⎇ main/ })).toBeVisible();
 });
@@ -471,25 +493,20 @@ test('read in while open: the new version not given, nothing changes; the open e
   await page.locator('#body').fill('ここで書いた\n');
   work.push({ 'chapters/01_first.md': '# 第1話 はじまり\n\nほかでも\n' });
   await inFront(page);
-  await expect(page.locator('#toast')).toHaveText('ほかの所での変更を読み込みました');
+  await expect(page.locator('#toast')).toHaveText('ほかの端末の更新を読み込みました');
   await expect(page.locator('#body')).toHaveValue('ここで書いた\n');
   await page.locator('#tree .node', { hasText: '駅で' }).click();
   await expect(page.locator('#body')).toHaveValue('# 第2話 駅で\n\nほかで\n');
 });
 
-// FR-WORK-05: a work with nothing left to send taken off the list: no more asked
-test('a work with nothing left to send taken off the list: asked once, taken off', async ({ page, gh }) => {
+// FR-WORK-05: a work with nothing left to send deleted: asked once (the same dialog, as the server version's), deleted
+test('a work with nothing left to send deleted: asked once, deleted', async ({ page, gh }) => {
   await openWork(page);
-  /** @type {string[]} */
-  const asked = [];
-  page.on('dialog', d => {
-    asked.push(d.message());
-    void d.accept();
-  });
-  await page.getByRole('button', { name: '一覧から外す' }).click();
-  await expect(page.locator('#repos')).toBeVisible();
-  expect(asked.length).toBe(1);
-  await expect(page.locator('#toast')).toHaveText(/^「試験の作品」を一覧から外しました/);
+  await page.getByRole('button', { name: 'この作品を削除' }).click();
+  await page.getByRole('button', { name: '送ってから削除' }).click();
+  await expect(page.locator('#shelf')).toBeVisible();
+  await expect(page.locator('#toast')).toHaveText('作品を削除しました');
+  expect(gh.calls.filter(c => !c.startsWith('GET'))).toEqual([]);
 });
 
 // FR-GH-02, NFR-USE-01: an empty repository that cannot be started as a work (GitHub refusing the files): said
@@ -499,11 +516,13 @@ test('an empty repository GitHub will not let start as a work: said', async ({ p
   gh.repos.set('author/empty', empty);
   await openWork(page);
   gh.fail = method => (method === 'PUT' ? 403 : undefined);
-  await page.getByRole('button', { name: 'ほかの作品' }).click();
+  await page.getByRole('button', { name: '‹ 作品' }).click();
   page.once('dialog', d => void d.accept());
-  await page.getByRole('button', { name: 'リポジトリを開く' }).click();
-  await page.locator('#picker-list button', { hasText: 'author/empty' }).click();
+  await openRepo(page, 'author/empty');
   await expect(page.locator('#sync-state')).toHaveText(/^作品を始められませんでした: /);
+  // (not opened: the list of works again, said)
+  await expect(page.locator('#shelf')).toBeVisible();
+  await expect(page.locator('#toast')).toHaveText(/^作品を開けませんでした: /);
   expect(empty.empty).toBe(true);
 });
 
@@ -575,9 +594,10 @@ test.describe('a PC’s width', () => {
     const side = page.locator('#side-note');
     await page.getByRole('button', { name: '資料を横に出す' }).click();
     await side.locator('[data-side-note]', { hasText: '世界' }).click();
-    await expect(side.locator('.plot-panel-head b')).toHaveText('世界');
+    // (its path in the notes folder over it, as the server version's)
+    await expect(side.locator('.plot-panel-head b')).toHaveText('world.md');
     work.push({ 'notes/world.md': null });
-    await page.getByRole('button', { name: '再読み込み' }).click();
+    await page.locator('#reload-work').click();
     await expect(side).toContainText('この資料は読めません（無くなったか、この端末にまだ読み込まれていません）。');
   });
 });

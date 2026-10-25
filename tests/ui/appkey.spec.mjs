@@ -6,8 +6,11 @@ import {
   test,
   expect,
   noPasskey,
+  keepMoreOpen,
+  openImport,
   openRepo,
   openWork,
+  toSettings,
   passkeyNames,
   persistAsked,
   stored,
@@ -30,6 +33,7 @@ function makeApp(gh, repos = ['author/novel', 'author/other']) {
 // the App's key put in on the first screen
 /** @param {import('@playwright/test').Page} page @param {string} pem @param {{ id?: string, name?: string }} [o] */
 async function putKey(page, pem, { id = APP_ID, name = 'novel-desk.private-key.pem' } = {}) {
+  await keepMoreOpen(page);
   await page.goto('./');
   await page.getByText('鍵のファイルがあるとき').click();
   await page.locator('#app-id').fill(id);
@@ -77,7 +81,9 @@ test('started with the App’s private key: kept so that it cannot be taken out;
   await expect(page.locator('#toast')).toHaveText('パスキーに対応していないため、パスキーなしで保管しました');
   // (the browser asked once to keep this device's store for good)
   expect(await persistAsked(page)).toBe(1);
-  await expect(page.locator('#vault-kind')).toHaveText(/GitHub App の秘密鍵は、この端末の取り出せない鍵.*パスキーは使いません/);
+  await toSettings(page);
+  await expect(page.locator('#gh-help')).toHaveText(/GitHub App の秘密鍵は、この端末の取り出せない鍵.*パスキーは使いません/);
+  await page.getByRole('button', { name: '‹ 戻る' }).click();
   expect(await keptKey(page)).toEqual({ extractable: false, usages: ['sign'], out: 'InvalidAccessError', author: AUTHOR, appId: APP_ID });
   // the file's content kept nowhere
   const body = pem.split('\n')[5];
@@ -85,9 +91,11 @@ test('started with the App’s private key: kept so that it cannot be taken out;
   expect(all).not.toContain(body);
   await expect(page.locator('#app-id')).toHaveValue('');
   // the repositories it is installed on (every page), offered by name
-  await page.getByRole('button', { name: 'リポジトリを開く' }).click();
-  await expect(page.locator('#picker-list button')).toHaveText(['author/novel', 'author/other']);
-  await page.locator('#picker-list button', { hasText: 'author/novel' }).click();
+  await openImport(page);
+  await expect
+    .poll(() => page.locator('#repo-options option').evaluateAll(o => o.map(x => /** @type {HTMLOptionElement} */ (x).value)))
+    .toEqual(['author/novel', 'author/other']);
+  await openRepo(page, 'author/novel');
   await expect(page.locator('#episode-title')).toHaveValue('はじまり');
   await page.locator('#body').fill('# 第1話 はじまり\n\nApp で書いた\n');
   await page.getByRole('button', { name: '送る（1）' }).click();
@@ -101,7 +109,7 @@ test('started with the App’s private key: kept so that it cannot be taken out;
   await expect(page.locator('#episode-title')).toHaveValue('はじまり');
   // logged out: the key gone with the token's place
   page.once('dialog', d => void d.accept());
-  await page.getByRole('button', { name: 'ほかの作品' }).click();
+  await toSettings(page);
   await page.getByRole('button', { name: 'ログアウト' }).click();
   await expect(page.locator('#setup')).toBeVisible();
   expect(await keptKey(page)).toBeNull();
@@ -116,16 +124,16 @@ test('the installation’s token: asked for again before it ends and when refuse
   gh.appTokenLife = 4 * 60000;
   await noPasskey(page);
   await putKey(page, pem);
-  await page.getByRole('button', { name: 'リポジトリを開く' }).click();
-  await page.locator('#picker-list button', { hasText: 'author/novel' }).click();
+  await openRepo(page, 'author/novel');
+  // (opened from the import)
   await expect(page.locator('#episode-title')).toHaveValue('はじまり');
   const before = tokensAsked(gh);
-  await page.getByRole('button', { name: '再読み込み' }).click();
+  await page.locator('#reload-work').click();
   await expect(page.locator('#sync-state')).toHaveText(/GitHub から読みました/);
   expect(tokensAsked(gh)).toBeGreaterThan(before);
   // an hour each; revoked on GitHub: refused once, asked for again, and the work read as before
   gh.appTokenLife = 3600000;
-  await page.getByRole('button', { name: '再読み込み' }).click();
+  await page.locator('#reload-work').click();
   await expect(page.locator('#sync-state')).toHaveText(/GitHub から読みました/);
   gh.appTokens.clear();
   const asked = tokensAsked(gh);
@@ -137,7 +145,7 @@ test('the installation’s token: asked for again before it ends and when refuse
   // tokens GitHub refuses at once (the App's key deleted, say): said, without the token's way
   gh.appTokenLife = 0;
   gh.appTokens.clear();
-  await page.getByRole('button', { name: '再読み込み' }).click();
+  await page.locator('#reload-work').click();
   await expect(page.locator('#token-notice-text')).toHaveText(/^GitHub が GitHub App のトークンを断りました.*秘密鍵を作り直し、ログアウトしてから/);
   await expect(page.locator('#token-notice-token')).toBeHidden();
 });
@@ -160,9 +168,10 @@ test('not a key, a wrong App ID, installed nowhere, a repository it is not on: s
   gh.repos.set('someone/tools', tools);
   /** @type {NonNullable<typeof gh.app>} */ (gh.app).installations[0].repos = ['author/novel', 'someone/tools'];
   await putKey(page, pem);
-  await page.getByRole('button', { name: 'リポジトリを開く' }).click();
-  await page.locator('#picker-list button', { hasText: 'someone/tools' }).click();
-  await expect(page.locator('#sync-state')).toHaveText(/^このリポジトリには GitHub App が入っていません/);
+  await openRepo(page, 'someone/tools');
+  // (opened from the import)
+  // (not opened: the list of works again, said, as the server version's)
+  await expect(page.locator('#toast')).toHaveText(/^作品を開けませんでした: このリポジトリには GitHub App が入っていません/);
 });
 
 // NFR-SEC-16: the drafts a token's user left on this device: an App of the same account (by the account's number) is
@@ -178,26 +187,26 @@ test('drafts left by a token’s user: the same account’s App, its own; anothe
   // (logged out, the drafts kept; then asked whether to delete them: no)
   /** @type {string[]} */
   const asked = [];
-  const answers = [true, false, false];
+  const answers = [false, false];
   page.on('dialog', d => {
     asked.push(d.message());
     void (answers.shift() ? d.accept() : d.dismiss());
   });
-  await page.getByRole('button', { name: 'ほかの作品' }).click();
+  await toSettings(page);
   await page.getByRole('button', { name: 'ログアウト' }).click();
   await expect(page.locator('#setup')).toBeVisible();
   const pem = makeApp(gh);
   /** @type {NonNullable<typeof gh.app>} */ (gh.app).owner = 'someone';
   await putKey(page, pem);
   await expect(page.locator('#app-error')).toHaveText(/^前のユーザーの書きかけを残すため、この秘密鍵を保管しませんでした/);
-  expect(asked).toHaveLength(3);
+  expect(asked).toHaveLength(2);
   expect(await keptKey(page)).toBeNull();
   expect(await stored(page, 'drafts')).toHaveLength(1);
   // the token's user's own App (its number typed, where the token's user is kept by number)
   /** @type {NonNullable<typeof gh.app>} */ (gh.app).owner = 'author';
   await putKey(page, pem);
-  await expect(page.locator('#repos')).toBeVisible();
-  expect(asked).toHaveLength(3);
+  await expect(page.locator('#shelf')).toBeVisible();
+  expect(asked).toHaveLength(2);
   expect(await keptKey(page)).not.toBeNull();
   await openRepo(page, 'author/novel');
   await expect(page.locator('#body')).toHaveValue('# 第1話 はじまり\n\n前のユーザー\n');
@@ -214,7 +223,7 @@ test('whose the App is not said by GitHub: the key kept, whose the drafts are no
       : route.fallback(),
   );
   await putKey(page, pem);
-  await expect(page.locator('#repos')).toBeVisible();
+  await expect(page.locator('#shelf')).toBeVisible();
   expect(await keptKey(page)).not.toBeNull();
   expect(await stored(page, 'prefs')).not.toContain(1001);
 });
@@ -251,7 +260,7 @@ test('drafts kept by the App’s Client ID before: its key put in with its App I
     void d.dismiss();
   });
   await putKey(page, pem, { id: APP_ID });
-  await expect(page.locator('#repos')).toBeVisible();
+  await expect(page.locator('#shelf')).toBeVisible();
   expect(asked).toEqual([]);
   expect(await keptKey(page)).not.toBeNull();
 });
@@ -280,7 +289,8 @@ test.describe('with a passkey', () => {
     const { cdp, authenticatorId } = await authenticator(page, true);
     await watchPasskeyNames(page);
     await putKey(page, pem);
-    await expect(page.locator('#vault-kind')).toHaveText(
+    await toSettings(page);
+    await expect(page.locator('#gh-help')).toHaveText(
       'GitHub App の秘密鍵は、この端末の取り出せない鍵（WebCrypto）として置いています。開くたびにパスキーを使います。',
     );
     // (the passkey called, in the passwords' list, by what it opens and the day it was made)
@@ -292,7 +302,7 @@ test.describe('with a passkey', () => {
     await expect(page.locator('#unlock-error')).toHaveText(/^パスキーで開けませんでした（NotAllowedError）/);
     await cdp.send('WebAuthn.setUserVerified', { authenticatorId, isUserVerified: true });
     await page.getByRole('button', { name: 'パスキーで開く' }).click();
-    await expect(page.getByRole('button', { name: 'リポジトリを開く' })).toBeVisible();
+    await expect(page.locator('#shelf')).toBeVisible();
   });
   // NFR-SEC-15: the passkey not made: nothing kept
   test('the passkey not made for the App’s key: said, nothing kept', async ({ page, gh }) => {

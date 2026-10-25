@@ -1,5 +1,6 @@
 import { describe, test, expect } from 'vitest';
 import {
+  byUpdated,
   adminFailure,
   isWorkKey,
   keptAfterForget,
@@ -156,5 +157,16 @@ describe('works', () => {
     expect(keptAfterForget('summary:o/a', true)).toBe(false);
     expect(keptAfterForget('edits:o/a', false)).toBe(false);
     expect(keptAfterForget('owner', false)).toBe(false);
+  });
+  // FR-WORK-01: the list in the server version's order (its shelf: the latest changed first)
+  test('byUpdated: the latest changed first; a work not summed up yet after the others, in the order it was opened', () => {
+    const list = [{ full_name: 'o/a' }, { full_name: 'o/b' }, { full_name: 'o/c' }, { full_name: 'o/d' }];
+    const kept = new Map([
+      ['o/a', { updated: 10 }],
+      ['o/c', { updated: 30 }],
+      ['o/d', { updated: 10 }],
+    ]);
+    expect(byUpdated(list, kept).map(r => r.full_name)).toEqual(['o/c', 'o/a', 'o/d', 'o/b']);
+    expect(byUpdated([], kept)).toEqual([]);
   });
 });

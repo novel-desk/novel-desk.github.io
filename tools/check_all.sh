@@ -4,7 +4,8 @@
 #   性質の試験（fast-check。送る処理と読み込みの順番の組み合わせ、操作の列。種は固定）、
 #   画面の試験（Playwright。Chrome と WebKit。GitHub は偽物）、画面の JS のカバレッジ 100%（画面の試験と単体試験を合わせて。NFR-MAINT-02）、
 #   保存の処理の変異テスト 100%（Stryker。lib の changes、drafts、merge、sync。NFR-MAINT-02）、
-#   トレース検証（画面の試験の記録を formal/ のモデルの手順でたどれるか。TLC を java か podman のコンテナで実行する。NFR-MAINT-03）
+#   トレース検証（画面の試験の記録を formal/ のモデルの手順でたどれるか。TLC を java か podman のコンテナで実行する。NFR-MAINT-03）、
+#   サーバー版との違い（style.css と index.html を、~/novel-writer の決めた commit と比べる。docs/server-differences.md）
 set -euo pipefail
 cd "$(dirname "$0")/.."
 echo "== JS の整形（Prettier）"
@@ -13,6 +14,8 @@ echo "== JS の書き方（ESLint）"
 npm run -s lint:js
 echo "== JS の型（tsc）"
 npm run -s check:types
+echo "== サーバー版との違い（style.css と index.html。理由は docs/server-differences.md）"
+npm run -s check:server
 echo "== lib の単体試験とカバレッジ（vitest。100% でなければ止まる）"
 npm run -s test:unit
 echo "== 性質の試験（fast-check。種は固定）"

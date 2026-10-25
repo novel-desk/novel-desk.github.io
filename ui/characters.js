@@ -31,6 +31,11 @@ export async function openCharacters() {
   const text = path ? (await api.texts([path]))[path] : null;
   charNote = path && text !== null ? { path, text } : null;
   if (charNote) return renderCharacters();
+  // its note there but not to be read: the board left empty, and said (as the server version's)
+  if (path && api.files().includes(path)) {
+    $('characters-board').innerHTML = '';
+    return toast('この資料は開けません（文字コードが UTF-8 ではないか、この端末にまだ読み込まれていません）');
+  }
   // the characters in a folder, a note each: not made again as one
   $('characters-board').innerHTML = folder
     ? `<p class="muted small">キャラクターが「${esc(folder)}」に 1 人 1 つの資料で分かれています。ここでは 1 つの資料の見出しを 1 人として並べるので、1 つの資料にまとめるか、novel.toml の [characters] file でまとめた資料を指定してください。</p>`
@@ -96,9 +101,8 @@ async function boardClick(e) {
     i = Number(b.dataset.person);
   const head = people[i].head,
     nth = nthOf(people, i);
-  // (the note was read when the page was drawn: it opens)
+  // (the note was read when the page was drawn: it opens; drawn again when it changes, so the person is in it)
   await openNote(note.path, { label: '‹ キャラ', title: 'キャラ一覧に戻る', go: () => void openCharacters() });
-  // (the person is in it, as drawn)
   showPerson(/** @type {[number, number]} */ (personRange(/** @type {HTMLTextAreaElement} */ ($('note-body')).value, head, nth)), head);
 }
 

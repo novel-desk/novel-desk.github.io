@@ -49,8 +49,8 @@ test('the branch moved on: what changed only here goes on top; what changed ther
   expect(work.text('chapters/04_new.md')).toBe('# 第4話 新しい\n');
   // the screen shows what is there now
   await expect(page.locator('#body')).toHaveValue(work.text('chapters/02_second.md') ?? '');
-  await expect(page.locator('#episode-note')).toHaveText('両方の版が並んでいます。「――― ここから」の行を探して整理してください');
-  await expect(page.locator('#tree .node.active .conflict')).toHaveText('両方の版');
+  await expect(page.locator('#save-state')).toHaveText('両方の版が並んでいます。「――― ここから」の行を探して整理してください');
+  await expect(page.locator('#tree .node.active .conflict')).toHaveText('競合');
   await expect(page.locator('#tree .node .t')).toContainText(['新しい']);
 });
 
@@ -97,7 +97,7 @@ test('reading again: the episodes come as they are on GitHub, but one with a dra
   await openWork(page);
   await write(page, 'はじまり', '# 第1話 はじまり\n\n下書き\n');
   work.push({ 'chapters/01_first.md': '# 第1話 はじまり\n\nほかで\n', 'chapters/02_second.md': '# 第2話 駅で\n\nほかで変えた\n' });
-  await page.getByRole('button', { name: '再読み込み' }).click();
+  await page.locator('#reload-work').click();
   await expect(page.locator('#sync-state')).toHaveText(/GitHub から読みました/);
   await expect(page.locator('#body')).toHaveValue('# 第1話 はじまり\n\n下書き\n');
   await expect(page.locator('#save-state')).toHaveText('端末に保存済み（未送信）');
@@ -161,8 +161,8 @@ test('送る頻度: 送るを押したときだけ waits for the button; 同期�
   await page.locator('#sync-mode').selectOption('off');
   await expect(page.locator('#sync-state')).toHaveText(/^同期しない設定です/);
   await write(page, 'はじまり', '# 第1話 はじまり\n\n端末だけ\n');
-  await expect(page.locator('#send')).toBeDisabled();
-  await expect(page.locator('#reload')).toBeDisabled();
+  // (同期しない: 送る and マージ not shown, as the server version's push)
+  await expect(page.locator('#send')).toBeHidden();
   // opened again: the mode kept, the work as read before, GitHub not asked where the branch is
   work.push({ 'chapters/02_second.md': '# 第2話 駅で\n\nほかで\n' });
   gh.calls.length = 0;
@@ -246,12 +246,12 @@ const back = page =>
 test('自動: the page left while the list of works is shown: nothing sent then; the work open again, sent', async ({ page, gh, work }) => {
   await openWork(page);
   await write(page, 'はじまり', '一覧で離れる\n');
-  await page.getByRole('button', { name: 'ほかの作品' }).click();
+  await page.getByRole('button', { name: '‹ 作品' }).click();
   await leave(page);
   expect(gh.calls.filter(c => c.startsWith('PATCH'))).toEqual([]);
   await back(page);
-  await expect(page.locator('#repo-list .work small')).toHaveText([/ 字 ・ /]);
-  await page.locator('#repo-list .work', { hasText: 'author/novel' }).click();
+  await expect(page.locator('#works .work small')).toHaveText([/ 字 ・ /]);
+  await page.locator('#works .work', { hasText: 'author/novel' }).click();
   await expect(page.locator('#desk')).toBeVisible();
   await expect(page.locator('#body')).toHaveValue('一覧で離れる\n');
   await expect(page.locator('#sync-state')).toHaveText(/GitHub から読みました/);
@@ -295,7 +295,7 @@ test('the page left while a send of 「送るを押したときだけ」 is on i
   await expect(page.locator('#sync-state')).toHaveText(/^送りました（/);
   await page.unrouteAll();
   h = await holdOnce(page, 'GET', '/git/trees/');
-  await page.getByRole('button', { name: '再読み込み' }).click();
+  await page.locator('#reload-work').click();
   await h.came;
   await leave(page);
   h.release();
@@ -348,9 +348,9 @@ test('the work’s title sent: novel.toml unreadable on GitHub now, said; the sa
   await expect(page.locator('#sync-state')).toHaveText('送る変更はありませんでした（GitHub にもう同じ内容があります）');
   expect(work.refs.main).toBe(head);
   expect(work.text('novel.toml')).toBe(same);
-  await page.getByRole('button', { name: 'ほかの作品' }).click();
+  await page.getByRole('button', { name: '‹ 作品' }).click();
   await openRepo(page, 'author/other');
-  await expect(page.locator('#tree')).toContainText('話がありません');
+  await expect(page.locator('#save-state')).toHaveText('話がありません。「＋ 話を追加」で追加してください');
   await page.locator('#work-title').fill('ほかの題');
   await page.locator('#work-title').press('Enter');
   await page.getByRole('button', { name: '送る（1）' }).click();
@@ -416,7 +416,7 @@ test('two tabs: a draft written in the other tab while this one sends stays on t
   await openWork(page);
   const other = await context.newPage();
   await noPasskey(other);
-  await other.goto('./');
+  await other.goto(page.url());
   await expect(other.locator('#episode-title')).toHaveValue('はじまり');
   // (the branch moved by this tab's send held until the other tab has written)
   /** @type {() => void} */

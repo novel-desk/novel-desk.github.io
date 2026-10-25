@@ -1,5 +1,5 @@
 import { test, expect } from 'vitest';
-import { branchNameError, mergeLines } from '../../lib/branches.js';
+import { branchNameError, commitDate, mergeLines } from '../../lib/branches.js';
 
 // FR-GH-09
 test('branchNameError: a name git takes; empty, spaces, .., a dot or / at either end, .lock refused', () => {
@@ -8,35 +8,31 @@ test('branchNameError: a name git takes; empty, spaces, .., a dot or / at either
   for (const bad of ['a b', 'a..b', '-a', '/a', 'a/', 'a.', 'a.lock', 'a~1', 'a:b', '@', 'a@{1}', 'a//b', 'a/.b', 'a\\b'])
     expect(branchNameError(bad)).toMatch(/使えない文字/);
 });
-test('mergeLines: the commits (8 at most), the episodes changed (12 at most), how many other files', () => {
-  const c = n => ({ commit: { message: `${n}\n\n本文`, committer: { date: '2026-10-0' + (n % 9) + 'T00:00:00Z' } } });
-  const f = (filename, status, extra = {}) => ({ filename, status, additions: 2, deletions: 1, ...extra });
-  const episode = p => (p.endsWith('.md') ? p.replace('.md', '話') : null);
-  const lines = mergeLines({
-    from: 'draft',
-    into: 'main',
-    commits: Array.from({ length: 10 }, (_, i) => c(i + 1)),
-    files: [
-      f('01.md', 'added'),
-      f('02.md', 'removed'),
-      f('03.md', 'modified'),
-      f('x.png', 'renamed', { previous_filename: 'y.png' }),
-      f('05.md', 'renamed', { previous_filename: '04.md' }),
-      f('img.png', 'renamed', { previous_filename: '06.md' }),
-      f('readme.txt', 'modified'),
-      ...Array.from({ length: 10 }, (_, i) => f(`1${i}.md`, 'modified')),
-    ],
-    episode,
-  });
-  expect(lines.slice(0, 3)).toEqual(['draft → main', 'commit 10 件:', '・2026-10-01 1']);
+// FR-GH-09: as the server version's merge preview
+test('mergeLines: what is not sent, the commits (8 at most), the episodes changed with their lengths (12 at most), how many other files', () => {
+  const commits = Array.from({ length: 10 }, (_, i) => ({ date: `10/0${i % 9} 04:20`, subject: `${i + 1}` }));
+  const episodes = [
+    { title: '01話', before: null, after: 1200 },
+    { title: '02話', before: 300, after: null },
+    { title: '03話', before: 1000, after: 1234 },
+    { title: '04話', before: 1500, after: 1000 },
+    { title: '05話', before: 10, after: 10 },
+    ...Array.from({ length: 10 }, (_, i) => ({ title: `1${i}話`, before: 1, after: 2 })),
+  ];
+  const lines = mergeLines({ from: 'draft', into: 'main', unsent: true, commits, episodes, others: 2 });
+  expect(lines.slice(0, 4)).toEqual(['draft → main', '（まだ送っていない変更も、先に送ってから入れます）', 'commit 10 件:', '・10/00 04:20 1']);
   expect(lines).toContain('・ほか 2 件');
   expect(lines).toContain('話の変化:');
-  expect(lines).toContain('・01話 新しい話');
+  expect(lines).toContain('・01話 新しい話（1,200 字）');
   expect(lines).toContain('・02話 削除');
-  expect(lines).toContain('・03話 2 行足し、1 行消す');
-  expect(lines).toContain('・05話 名前の変更');
-  expect(lines).toContain('・06話 名前の変更');
+  expect(lines).toContain('・03話 ＋234 字');
+  expect(lines).toContain('・04話 −500 字');
+  expect(lines).toContain('・05話 ＋0 字');
   expect(lines).toContain('・ほか 3 話');
   expect(lines[lines.length - 1]).toBe('話以外のファイル 2 件');
-  expect(mergeLines({ from: 'a', into: 'b', commits: [], files: [], episode })).toEqual(['a → b', 'commit 0 件:']);
+  expect(mergeLines({ from: 'a', into: 'b', unsent: false, commits: [], episodes: [], others: 0 })).toEqual(['a → b', 'commit 0 件:']);
+});
+test("commitDate: month/day hours:minutes in the author's time, two digits each", () => {
+  expect(commitDate('2026-10-07T19:05:00Z')).toBe('10/08 04:05');
+  expect(commitDate('2026-01-31T23:59:00+09:00')).toBe('01/31 23:59');
 });
