@@ -1,19 +1,27 @@
 // A GitHub App's private key in use in place of a token (FR-GH-01: no token to make again every 90 days). The key is
-// WebCrypto's, made from the .pem once and kept so that it cannot be taken out (extractable: false; ui/vault.js keeps
-// it in IndexedDB). It signs a JWT for 9 minutes; with it, GitHub gives each installation of the App a token for an
-// hour, used for the requests about that installation's repositories, and asked for again before it ends and when
-// GitHub refuses it (ui/github.js). The commits are written as the author, not as the App
+// WebCrypto's, made from the .pem so that it cannot be taken out (extractable: false), and kept encrypted with a
+// passkey (DESK-SEC-01: ui/vault.js lockApp, openApp). It signs a JWT for 9 minutes; with it, GitHub gives each
+// installation of the App a token for an hour, used for the requests about that installation's repositories, and
+// asked for again before it ends and when GitHub refuses it (ui/github.js). The commits are written as the author,
+// not as the App
 import { appName, base64url, deviceOf, jwtBody, manifestOf, ownerOf, pkcs8Of, renewNow, suffixOf } from '../lib/appkey.js';
 import * as store from './db.js';
 import * as gh from './github.js';
+import { lockApp, signingKey } from './vault.js';
 
 /** @typedef {{ name: string, email: string }} Author */
 /** @typedef {{ id: number, account: { login: string, id: number } }} Installation */
 
-// the key from the .pem's text, that cannot be taken out (throws when it is not a key GitHub made)
+// the key from the .pem's text, that cannot be taken out (throws when it is not a key GitHub made; its bytes zeroed)
 /** @param {string} pem @returns {Promise<CryptoKey>} */
-export const importKey = pem =>
-  crypto.subtle.importKey('pkcs8', /** @type {BufferSource} */ (pkcs8Of(pem)), { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['sign']);
+export async function importKey(pem) {
+  const pkcs8 = pkcs8Of(pem);
+  try {
+    return await signingKey(pkcs8);
+  } finally {
+    pkcs8.fill(0);
+  }
+}
 
 /**
  * The App, as ui/github.js uses it (gh.useApp)
@@ -91,12 +99,13 @@ export function appOf(appId, key, author) {
 // --- the manifest flow (FR-GH-01, NFR-SEC-10): GitHub makes the App on the author's account from the manifest posted
 // to it, and comes back with a code and the state sent; the code is turned into the App and its key once
 
-// The flow started: its state (random, used once) kept with the passkey made for the key, and the manifest posted to
-// GitHub (the page leaves for GitHub: the author presses Create there)
-/** @param {Uint8Array | null} credentialId */
-export async function startManifest(credentialId) {
+// The flow started: its state (random, used once) kept with the passkey made for the key and the key from its PRF
+// output (one that cannot be taken out; nothing is encrypted with it until GitHub gives the App's key, and it is
+// deleted then), and the manifest posted to GitHub (the page leaves for GitHub: the author presses Create there)
+/** @param {import('./vault.js').AppSeal | null} seal */
+export async function startManifest(seal) {
   const state = base64url(crypto.getRandomValues(new Uint8Array(24)));
-  await store.put('prefs', 'app-manifest', { state, at: Date.now(), credentialId });
+  await store.put('prefs', 'app-manifest', { state, at: Date.now(), seal });
   const base = location.origin + location.pathname;
   const form = document.createElement('form');
   form.method = 'post';
@@ -111,10 +120,11 @@ export async function startManifest(credentialId) {
   form.submit();
 }
 // The App GitHub made, from the code it gave back: its ID (the Client ID, which a JWT names), its slug (its page),
-// and its key made at once into one that cannot be taken out. Nothing else of the answer is kept: the private key's
-// text, the client secret and the webhook's secret are left with the answer, which nothing holds once this returns
-/** @param {string} code @returns {Promise<{ appId: string, slug: string, key: CryptoKey }>} */
-export async function madeApp(code) {
+// and its key made at once into one that cannot be taken out, and encrypted with the passkey's key (`seal`; none: kept
+// as it is: ui/vault.js lockApp). Nothing else of the answer is kept: the private key's text, the client secret and
+// the webhook's secret are left with the answer, which nothing holds once this returns
+/** @param {string} code @param {import('./vault.js').AppSeal | null} seal */
+export async function madeApp(code, seal) {
   const made = await gh.convertManifest(code);
-  return { appId: made.client_id, slug: made.slug, key: await importKey(made.pem) };
+  return { appId: made.client_id, slug: made.slug, ...(await lockApp(made.pem, seal)) };
 }

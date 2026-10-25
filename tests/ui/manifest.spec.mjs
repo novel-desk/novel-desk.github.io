@@ -1,7 +1,20 @@
 // GitHub App を作って始める (FR-GH-01, NFR-SEC-05, NFR-SEC-10, NFR-SEC-11, NFR-SEC-16): one button posts the App's
 // manifest to GitHub; the fake GitHub makes the App (a key made for the test, never a real one), comes back with the
 // code and the state, and, on the page of installing it, installs it and comes back again
-import { test, expect, keepMoreOpen, noPasskey, openImport, openRepo, persistAsked, stored, toSettings, FakeRepo, watchPersist } from './lib/test.mjs';
+import {
+  test,
+  expect,
+  keepMoreOpen,
+  keptAppForm,
+  noPasskey,
+  openImport,
+  openRepo,
+  persistAsked,
+  stored,
+  toSettings,
+  FakeRepo,
+  watchPersist,
+} from './lib/test.mjs';
 import { manifestOf } from '../../lib/appkey.js';
 
 const AUTHOR = { name: '試験の作者', email: 'author@example.invalid' };
@@ -366,28 +379,42 @@ test.describe('with a passkey', () => {
         hasResidentKey: true,
         hasUserVerification: true,
         isUserVerified: verified,
+        hasPrf: true,
         automaticPresenceSimulation: true,
       },
     });
   }
-  // NFR-SEC-16: the passkey made on the press, before GitHub; back from installing, opened without it once; after,
-  // the passkey each time
-  test('the passkey made on the press; back from installing, straight in; opened again, the passkey', async ({ page, gh }) => {
+  // DESK-SEC-01, NFR-SEC-16: the passkey made on the press, before GitHub; the key GitHub gives encrypted with a key
+  // from its PRF output (kept, until then, with the flow's state: deleted with it), its text and bytes kept nowhere;
+  // back from installing, and each time after, opened with the passkey
+  test('DESK-SEC-01: the passkey made on the press; the key GitHub gives kept encrypted with it; back from installing and after, opened with the passkey', async ({
+    page,
+    gh,
+  }) => {
     await authenticator(page, true);
     await page.goto('./');
     await makeApp(page);
-    await expect(page.locator('#episode-title')).toHaveValue('はじまり');
-    expect(await keptApp(page)).toMatchObject({ passkey: true, extractable: false });
+    await expect(page.locator('#unlock')).toBeVisible();
     expect(gh.installPages).toHaveLength(1);
+    const kept = /** @type {NonNullable<Awaited<ReturnType<typeof keptAppForm>>>} */ (await keptAppForm(page));
+    expect(kept.fields).toEqual(['appId', 'author', 'credentialId', 'data', 'iv', 'kind', 'salt', 'slug']);
+    expect([kept.kind, kept.cryptoKeys]).toEqual(['prf', 0]);
+    const pem = /** @type {{ pem: string }} */ (gh.codes.get('testcode100000000')).pem;
+    const all = await everything(page);
+    for (const line of pem.split('\n').slice(1, -2)) expect(all.texts).not.toContain(line);
+    expect(all.texts).not.toMatch(/PRIVATE KEY|test-client-secret-not-real|testcode1/);
+    await expect(page.locator('#unlock-note')).toHaveText(/暗号化して.*開くたびにパスキーを使います/);
+    await page.getByRole('button', { name: 'パスキーで開く' }).click();
+    await expect(page.locator('#episode-title')).toHaveValue('はじまり');
     await page.reload();
-    await expect(page.locator('#unlock-note')).toHaveText(/開くたびにパスキーを使います/);
+    await expect(page.locator('#unlock')).toBeVisible();
   });
   // the passkey not made: nothing posted to GitHub
   test('the passkey not made: said; nothing posted', async ({ page, gh }) => {
     await authenticator(page, false);
     await page.goto('./');
     await makeApp(page);
-    await expect(page.locator('#app-make-error')).toHaveText(/^パスキーが作られませんでした（NotAllowedError）/);
+    await expect(page.locator('#app-make-error')).toHaveText('パスキーが作られませんでした（取り消されたか、時間切れです）。もう一度押してください');
     expect(gh.manifests).toEqual([]);
     await expect(page.getByRole('button', { name: 'GitHub App を作って始める' })).toBeEnabled();
   });

@@ -3,6 +3,7 @@ import { describe, test, expect } from 'vitest';
 import { generateKeyPairSync, verify, createPrivateKey, sign } from 'node:crypto';
 import {
   APP_NAME_MAX,
+  appFormOf,
   appName,
   authorOf,
   base64url,
@@ -129,7 +130,7 @@ describe('appkey', () => {
     expect(returnOf('https://novel-desk.github.io/')).toBeNull();
     expect(returnOf('コードではない')).toBeNull();
     expect(returnOf('a.b.c')).toBeNull();
-    const p = { state: 's1', at: 1000, credentialId: null };
+    const p = { state: 's1', at: 1000, seal: null };
     expect(startedHere(p, 's1', 1000 + HOUR - 1)).toBe(true);
     expect(startedHere(p, 's1', 1000 + HOUR)).toBe(false);
     expect(startedHere(p, 's2', 1000)).toBe(false);
@@ -147,5 +148,16 @@ describe('appkey', () => {
     expect(authorOf([{ commit: { author: { name: '名前だけ' } } }], account)).toEqual({ name: 'author', email: '42+author@users.noreply.github.com' });
     expect(authorOf([{ commit: { author: { email: 'a@x' } } }], undefined)).toBeNull();
     expect(authorOf([{}], undefined)).toBeNull();
+  });
+  // DESK-SEC-01: how the App's key is kept: encrypted with a passkey's PRF; as it is without PRF (no passkey); as it
+  // is by the version before with a passkey ('old'); by the version before without one, as 'local' is
+  test('appFormOf: prf, local, the version before’s with a passkey old, without one local', () => {
+    const id = new Uint8Array([1]);
+    expect(appFormOf({ kind: 'prf', credentialId: id })).toBe('prf');
+    expect(appFormOf({ kind: 'local' })).toBe('local');
+    expect(appFormOf({ kind: 'local', credentialId: id })).toBe('local');
+    expect(appFormOf({ credentialId: id })).toBe('old');
+    expect(appFormOf({ credentialId: null })).toBe('local');
+    expect(appFormOf({})).toBe('local');
   });
 });

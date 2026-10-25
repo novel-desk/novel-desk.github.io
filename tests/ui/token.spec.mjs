@@ -5,6 +5,8 @@ import {
   expect,
   FakeRepo,
   noPasskey,
+  answering,
+  otherAnswers,
   openImport,
   openRepo,
   openWork,
@@ -35,38 +37,6 @@ async function authenticator(page, hasPrf) {
     },
   });
 }
-// The passkey's answers changed for a test, as other authenticators and browsers give them: localStorage 「nw-create」 and
-// 「nw-get」 say how (none: as the virtual authenticator answers)
-/** @param {import('@playwright/test').Page} page */
-async function otherAnswers(page) {
-  await page.addInitScript(() => {
-    const c = navigator.credentials;
-    const [create, get] = [c.create.bind(c), c.get.bind(c)];
-    /** @param {any} cred @param {any} results */
-    const saying = (cred, results) => Object.assign(cred, { getClientExtensionResults: () => results });
-    c.create = async o => {
-      const how = localStorage.getItem('nw-create');
-      if (how === 'null') return null;
-      if (how === 'error') throw new TypeError('test');
-      const cred = await create(o);
-      // (PRF said to be there, its output given only on a get)
-      return how === 'later' ? saying(cred, { prf: { enabled: true } }) : cred;
-    };
-    c.get = async o => {
-      const how = localStorage.getItem('nw-get');
-      if (how === 'cancel') throw new DOMException('test', 'NotAllowedError');
-      if (how === 'error') throw new TypeError('test');
-      if (how === 'string') throw 'test';
-      if (how === 'null') return null;
-      const cred = await get(o);
-      if (how === 'none') return saying(cred, {});
-      if (how === 'other') return saying(cred, { prf: { results: { first: new Uint8Array(32).fill(7).buffer } } });
-      return cred;
-    };
-  });
-}
-/** @param {import('@playwright/test').Page} page @param {string} key @param {string} value */
-const answering = (page, key, value) => page.evaluate(([k, v]) => localStorage.setItem(k, v), [key, value]);
 /** @param {import('@playwright/test').Page} page */
 async function putToken(page) {
   await page.goto('./');

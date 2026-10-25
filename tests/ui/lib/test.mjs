@@ -82,6 +82,101 @@ export async function takeAll(context, taken) {
 export async function noPasskey(page) {
   await page.addInitScript(() => Object.defineProperty(window, 'PublicKeyCredential', { value: undefined, configurable: true }));
 }
+// The passkey's answers changed for a test, as other authenticators and browsers give them: localStorage 「nw-create」 and
+// 「nw-get」 say how (none: as the virtual authenticator answers)
+/** @param {import('@playwright/test').Page} page */
+export async function otherAnswers(page) {
+  await page.addInitScript(() => {
+    const c = navigator.credentials;
+    const [create, get] = [c.create.bind(c), c.get.bind(c)];
+    /** @param {any} cred @param {any} results */
+    const saying = (cred, results) => Object.assign(cred, { getClientExtensionResults: () => results });
+    c.create = async o => {
+      const how = localStorage.getItem('nw-create');
+      if (how === 'null') return null;
+      if (how === 'error') throw new TypeError('test');
+      const cred = await create(o);
+      // (PRF said to be there, its output given only on a get)
+      return how === 'later' ? saying(cred, { prf: { enabled: true } }) : cred;
+    };
+    c.get = async o => {
+      const how = localStorage.getItem('nw-get');
+      if (how === 'cancel') throw new DOMException('test', 'NotAllowedError');
+      if (how === 'error') throw new TypeError('test');
+      if (how === 'string') throw 'test';
+      if (how === 'null') return null;
+      const cred = await get(o);
+      if (how === 'none') return saying(cred, {});
+      if (how === 'other') return saying(cred, { prf: { results: { first: new Uint8Array(32).fill(7).buffer } } });
+      return cred;
+    };
+  });
+}
+/** @param {import('@playwright/test').Page} page @param {string} key @param {string} value */
+export const answering = (page, key, value) => page.evaluate(([k, v]) => localStorage.setItem(k, v), [key, value]);
+// What this origin's IndexedDB keeps of the GitHub App's key (DESK-SEC-01): its kind, its fields, the bytes kept
+// encrypted (hex), and how many WebCrypto keys are kept anywhere in IndexedDB (every store); null when none is kept
+/** @param {import('@playwright/test').Page} page @returns {Promise<{ kind: string | undefined, fields: string[], data: string, cryptoKeys: number } | null>} */
+export const keptAppForm = page =>
+  page.evaluate(async () => {
+    const db = /** @type {IDBDatabase} */ (
+      await new Promise((resolve, reject) => {
+        const req = indexedDB.open('novel-writer-js');
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      })
+    );
+    /** @param {string} name @returns {Promise<any[]>} */
+    const all = name =>
+      new Promise(resolve => {
+        const get = db.transaction(name).objectStore(name).getAll();
+        get.onsuccess = () => resolve(get.result);
+      });
+    let cryptoKeys = 0;
+    /** @param {any} x */
+    const walk = x => {
+      if (x instanceof CryptoKey) cryptoKeys++;
+      else if (x && typeof x === 'object' && !ArrayBuffer.isView(x) && !(x instanceof ArrayBuffer)) for (const v of Object.values(x)) walk(v);
+    };
+    for (const name of db.objectStoreNames) walk(await all(name));
+    const v = await new Promise(resolve => {
+      const get = db.transaction('vault').objectStore('vault').get('app');
+      get.onsuccess = () => resolve(get.result);
+    });
+    if (!v) return null;
+    const data = v.data ? Array.from(new Uint8Array(v.data), b => b.toString(16).padStart(2, '0')).join('') : '';
+    return { kind: v.kind, fields: Object.keys(v).sort(), data, cryptoKeys };
+  });
+// The keys the page makes from PKCS#8 bytes (crypto.subtle.importKey), kept on the page to be looked at by
+// signingKeys (DESK-SEC-01: the App's key, opened)
+/** @param {import('@playwright/test').Page} page */
+export async function watchSigningKeys(page) {
+  await page.addInitScript(() => {
+    const importKey = SubtleCrypto.prototype.importKey;
+    /** @type {any} */ (window).nwSigningKeys = [];
+    SubtleCrypto.prototype.importKey = /** @type {any} */ (
+      async function (/** @type {any[]} */ ...args) {
+        const key = await importKey.apply(this, /** @type {any} */ (args));
+        if (args[0] === 'pkcs8') /** @type {any} */ (window).nwSigningKeys.push(key);
+        return key;
+      }
+    );
+  });
+}
+// The last key the page made from PKCS#8 bytes: whether it can be taken out (exportKey refused: its error's name), and
+// its signature of `text` (hex), to be checked with the App's public key
+/** @param {import('@playwright/test').Page} page @param {string} text */
+export const signingKeys = (page, text) =>
+  page.evaluate(async text => {
+    const keys = /** @type {CryptoKey[]} */ (/** @type {any} */ (window).nwSigningKeys);
+    const key = /** @type {CryptoKey} */ (keys.at(-1));
+    const out = await crypto.subtle.exportKey('pkcs8', key).then(
+      () => 'exported',
+      e => e.name,
+    );
+    const sig = new Uint8Array(await crypto.subtle.sign('RSASSA-PKCS1-v1_5', key, new TextEncoder().encode(text)));
+    return { count: keys.length, extractable: key.extractable, usages: key.usages, out, sig: Array.from(sig, b => b.toString(16).padStart(2, '0')).join('') };
+  }, text);
 // The browser's navigator.storage.persist counted (how many times the pages of the tab asked to keep the store for
 // good, through the pages it went to: sessionStorage; the browser says yes), read with persistAsked
 /** @param {import('@playwright/test').Page} page */

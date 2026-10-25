@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest';
-import { KEY_INFO, createOptions, getOptions, passkeyName, prfOf, webauthnFailure } from '../../lib/passkey.js';
+import { APP_KEY_INFO, KEY_INFO, createOptions, getOptions, openFailure, passkeyName, prfOf, webauthnFailure } from '../../lib/passkey.js';
 
 const bytes = n => new Uint8Array(n).fill(7);
 
@@ -47,7 +47,17 @@ describe('passkey', () => {
     expect(webauthnFailure({})).toBe('unsupported');
     expect(webauthnFailure(undefined)).toBe('unsupported');
   });
-  test('KEY_INFO: names what the key is for, and its version', () => {
+  // DESK-SEC-01: the token's key and the GitHub App's key are told apart by what they are for
+  test('KEY_INFO, APP_KEY_INFO: name what the key is for, and its version', () => {
     expect(KEY_INFO).toBe('novel-writer-js token v1');
+    expect(APP_KEY_INFO).toBe('novel-writer-js app key v1');
+  });
+  // DESK-SEC-01: the passkey not opening the token or the App's key: the same words for both
+  test('openFailure: said no or timed out; a browser that cannot, by its error’s name (or the error itself)', () => {
+    expect(openFailure({ name: 'NotAllowedError' })).toBe('パスキーで開けませんでした（取り消されたか、時間切れです）');
+    expect(openFailure({ name: 'AbortError' })).toBe('パスキーで開けませんでした（取り消されたか、時間切れです）');
+    expect(openFailure(new TypeError('x'))).toBe('パスキーを使えません（TypeError）');
+    expect(openFailure('test')).toBe('パスキーを使えません（test）');
+    expect(openFailure(undefined)).toBe('パスキーを使えません（undefined）');
   });
 });

@@ -10,7 +10,7 @@ import * as vault from './ui/vault.js';
 import { api } from './ui/shared.js';
 import { importBox, showWorks, wireWorks } from './ui/works.js';
 import { appOf, importKey, madeApp, startManifest } from './ui/appkey.js';
-import { authorOf, HOUR, installUrl, returnOf, sameOwner, startedHere } from './lib/appkey.js';
+import { appFormOf, authorOf, HOUR, installUrl, returnOf, sameOwner, startedHere } from './lib/appkey.js';
 import { forgetDevice, keepWork, worksHere } from './ui/repo.js';
 
 // started: every module came and linked (boot.js reloads the page once when they do not)
@@ -29,10 +29,16 @@ const KINDS = {
   prf: 'トークンはパスキー（PRF）から作った鍵で暗号化して、この端末に置いています。開くたびにパスキーを使います。',
   local:
     'このブラウザーはパスキーの PRF に対応していないため、トークンはこの端末の取り出せない鍵（WebCrypto）で暗号化して置いています。パスキーは使いません。この端末でこのブラウザーを開ける人は、トークンを使えます。',
-  app: 'GitHub App の秘密鍵は、この端末の取り出せない鍵（WebCrypto）として置いています。開くたびにパスキーを使います。',
+  'app-prf': 'GitHub App の秘密鍵はパスキー（PRF）から作った鍵で暗号化して、この端末に置いています。開くたびにパスキーを使います。',
   'app-local':
-    'GitHub App の秘密鍵は、この端末の取り出せない鍵（WebCrypto）として置いています。このブラウザーはパスキーに対応していないため、パスキーは使いません。この端末でこのブラウザーを開ける人は、作品を読み書きできます。',
+    'このブラウザーはパスキーの PRF に対応していないため、GitHub App の秘密鍵は暗号化せず、この端末の取り出せない鍵（WebCrypto）として置いています。パスキーは使いません。この端末でこのブラウザーを開ける人は、作品を読み書きできます。',
+  // (DESK-SEC-01: kept by the version before; said here only, not each time it is opened)
+  'app-old':
+    'GitHub App の秘密鍵は暗号化されていません（前の版で、この端末の取り出せない鍵として置いたものです。開くたびにパスキーを使います）。GitHub の App の設定で秘密鍵を作り直し、ログアウトしてから新しい秘密鍵で始めると、パスキーで暗号化して保存します。',
 };
+// what the screen to open it with says of an App's key kept with a passkey (the one kept by the version before: what
+// to do with it is said in the settings only)
+const UNLOCK_APP = { 'app-prf': KINDS['app-prf'], 'app-old': 'GitHub App の秘密鍵は、開くたびにパスキーを使います。' };
 /** @type {keyof typeof KINDS} */
 let kind = '';
 /** @type {string} the token in use ('' none yet) */
@@ -78,7 +84,7 @@ async function openToken() {
   $('unlock-error').textContent = '';
   $('open-token').disabled = true;
   try {
-    if (a) await withApp(await vault.openApp(a));
+    if (a) await withApp(a, await vault.openApp(a));
     else await withToken(await vault.open(/** @type {import('./ui/vault.js').Vault} */ (v)));
   } catch (err) {
     $('unlock-error').textContent = err.message;
@@ -302,21 +308,24 @@ async function keepApp(/** @type {SubmitEvent} */ e) {
     if (!repos.length)
       throw new Error('この GitHub App は、どのリポジトリにも入っていません。GitHub の App の設定の Install App で、作品のリポジトリに入れてください');
     await checkLogin(await whoseApp(app), 'この秘密鍵');
-    const v = await vault.keepApp({ appId, key, author, credentialId: await vault.appPasskey() });
+    const seal = await vault.appPasskey();
+    // (the file read again: its bytes encrypted with the passkey's key, and zeroed)
+    const { lock } = await vault.lockApp(await file.text(), seal);
+    const v = await vault.keepApp({ appId, author, ...lock });
     void keepStore();
     await vault.forget();
     /** @type {HTMLFormElement} */ (/** @type {unknown} */ ($('app-form'))).reset();
-    if (!v.credentialId) toast('パスキーに対応していないため、パスキーなしで保管しました');
-    await withApp(v, app);
+    if (v.kind === 'local') toast('PRF に対応していないため、パスキーなしで保管しました');
+    await withApp(v, key, app);
   } catch (err) {
     $('app-error').textContent = err.message;
   } finally {
     $('keep-app').disabled = false;
   }
 }
-/** @param {AppVault} v @param {import('./ui/github.js').App} [app] the one it was checked with */
-function useApp(v, app = appOf(v.appId, v.key, v.author)) {
-  kind = v.credentialId ? 'app' : 'app-local';
+/** @param {AppVault} v as kept @param {CryptoKey} key its key to sign with (opened) @param {import('./ui/github.js').App} [app] the one it was checked with */
+function useApp(v, key, app = appOf(v.appId, key, v.author)) {
+  kind = `app-${appFormOf(v)}`;
   gh.useToken('');
   gh.useApp(app);
   using = 'app';
@@ -324,9 +333,9 @@ function useApp(v, app = appOf(v.appId, v.key, v.author)) {
   appInUse = app;
   hideNotice();
 }
-/** @param {AppVault} v @param {import('./ui/github.js').App} [app] */
-async function withApp(v, app) {
-  useApp(v, app);
+/** @param {AppVault} v @param {CryptoKey} key @param {import('./ui/github.js').App} [app] */
+async function withApp(v, key, app) {
+  useApp(v, key, app);
   // (an App made by the manifest flow, no work chosen yet: where the author installed it)
   if (v.slug && !(await store.get('prefs', 'repo'))) await installed(false);
   else await openFirst();
@@ -341,9 +350,9 @@ async function makeApp() {
   $('app-make-error').textContent = '';
   $('make-app').disabled = true;
   try {
-    const credentialId = await vault.appPasskey();
+    const seal = await vault.appPasskey();
     $('app-paste-form').hidden = false;
-    await startManifest(credentialId);
+    await startManifest(seal);
   } catch (err) {
     $('app-make-error').textContent = err.message;
   } finally {
@@ -383,22 +392,21 @@ async function pasteCode(/** @type {SubmitEvent} */ e) {
   $('app-paste').value = '';
   await finishApp(back.code, /** @type {Pending} */ (p));
 }
-// The code turned into the App: its key kept (cannot be taken out; the private key's text not kept), then GitHub's
-// page to install it on the work's repositories. The state is used up first: the code is taken once
+// The code turned into the App: its key kept (encrypted with the passkey made when the flow started, DESK-SEC-01; the
+// private key's text not kept), then GitHub's page to install it on the work's repositories. The state is used up
+// first (with the passkey's key kept with it): the code is taken once
 /** @param {string} code @param {Pending} p */
 async function finishApp(code, p) {
   await store.del('prefs', 'app-manifest');
   show('setup');
   $('app-paste-form').hidden = true;
   try {
-    const { appId, slug, key } = await madeApp(code);
+    const { appId, slug, key, lock } = await madeApp(code, p.seal);
     await checkLogin(await whoseApp(appOf(appId, key, null)), 'この GitHub App');
-    const v = await vault.keepApp({ appId, slug, key, author: null, credentialId: p.credentialId });
+    const v = await vault.keepApp({ appId, slug, author: null, ...lock });
     void keepStore();
     await vault.forget();
-    // (back from installing it, opened once without the passkey made a moment ago)
-    await store.put('prefs', 'app-installing', Date.now());
-    useApp(v);
+    useApp(v, key);
     await installed(true);
   } catch (err) {
     $('app-make-error').textContent = `GitHub App を受け取れませんでした（${err.message}）`;
@@ -425,7 +433,6 @@ async function installed(leave) {
     if (leave) location.assign(installUrl(/** @type {string} */ (v.slug)));
     return;
   }
-  await store.del('prefs', 'app-installing');
   if (repos.length === 1) return openRepo({ full_name: repos[0].full_name, default_branch: repos[0].default_branch, visibility: repos[0].visibility });
   await chooseRepo();
   importBox().open = true;
@@ -473,11 +480,11 @@ async function start() {
   if (back) return cameBack(back);
   const a = await vault.keptApp();
   if (a) {
-    /** @type {number} */
-    const installing = (await store.get('prefs', 'app-installing')) ?? 0;
-    if (!a.credentialId || Date.now() - installing < HOUR) return withApp(a);
-    kind = 'app';
-    $('unlock-note').textContent = KINDS.app;
+    const form = appFormOf(a);
+    // (kept without a passkey: opened at once)
+    if (form === 'local') return withApp(a, await vault.openApp(a));
+    kind = `app-${form}`;
+    $('unlock-note').textContent = UNLOCK_APP[kind];
     return show('unlock');
   }
   const v = await vault.kept();

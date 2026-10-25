@@ -1,12 +1,17 @@
 // GitHub App の秘密鍵で始める (FR-GH-01, NFR-SEC-15, NFR-SEC-16): a GitHub App's private key in place of a token.
 // The key is made here for the test (never a real one); the fake GitHub checks the App's JWTs with its public key,
 // gives its installation tokens for a while, and takes them until they end or are revoked
-import { generateKeyPairSync } from 'node:crypto';
+import { createPrivateKey, generateKeyPairSync, verify } from 'node:crypto';
 import {
   test,
   expect,
   noPasskey,
+  answering,
   keepMoreOpen,
+  keptAppForm,
+  otherAnswers,
+  signingKeys,
+  watchSigningKeys,
   openImport,
   openRepo,
   openWork,
@@ -78,11 +83,13 @@ test('started with the App’s private key: kept so that it cannot be taken out;
   await noPasskey(page);
   await watchPersist(page);
   await putKey(page, pem);
-  await expect(page.locator('#toast')).toHaveText('パスキーに対応していないため、パスキーなしで保管しました');
+  await expect(page.locator('#toast')).toHaveText('PRF に対応していないため、パスキーなしで保管しました');
   // (the browser asked once to keep this device's store for good)
   expect(await persistAsked(page)).toBe(1);
   await toSettings(page);
-  await expect(page.locator('#gh-help')).toHaveText(/GitHub App の秘密鍵は、この端末の取り出せない鍵.*パスキーは使いません/);
+  await expect(page.locator('#gh-help')).toHaveText(
+    /PRF に対応していないため、GitHub App の秘密鍵は暗号化せず、この端末の取り出せない鍵.*パスキーは使いません/,
+  );
   await page.getByRole('button', { name: '‹ 戻る' }).click();
   expect(await keptKey(page)).toEqual({ extractable: false, usages: ['sign'], out: 'InvalidAccessError', author: AUTHOR, appId: APP_ID });
   // the file's content kept nowhere
@@ -265,51 +272,209 @@ test('drafts kept by the App’s Client ID before: its key put in with its App I
   expect(await keptKey(page)).not.toBeNull();
 });
 
+// An App's key kept as the version before kept it (DESK-SEC-01): WebCrypto's key that cannot be taken out, as it is,
+// with the credential ID of a passkey made for it (null: none); the page loaded again then
+/** @param {import('@playwright/test').Page} page @param {string} pem @param {boolean} passkey */
+async function keepOld(page, pem, passkey) {
+  await page.goto('./');
+  await expect(page.locator('#setup')).toBeVisible();
+  const der = [...createPrivateKey(pem).export({ type: 'pkcs8', format: 'der' })];
+  await page.evaluate(async ([der, appId, author, passkey]) => {
+    const key = await crypto.subtle.importKey('pkcs8', new Uint8Array(der), { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['sign']);
+    const rand = (/** @type {number} */ n) => crypto.getRandomValues(new Uint8Array(n));
+    let credentialId = null;
+    if (passkey) {
+      const cred = /** @type {PublicKeyCredential} */ (
+        await navigator.credentials.create({
+          publicKey: {
+            rp: { id: location.hostname, name: 'Novel Desk' },
+            user: { id: rand(16), name: 'Novel Desk GitHub App', displayName: 'Novel Desk GitHub App' },
+            challenge: rand(32),
+            pubKeyCredParams: [{ type: 'public-key', alg: -7 }],
+            authenticatorSelection: { residentKey: 'preferred', userVerification: 'required' },
+          },
+        })
+      );
+      credentialId = new Uint8Array(cred.rawId);
+    }
+    await new Promise((resolve, reject) => {
+      const req = indexedDB.open('novel-writer-js');
+      req.onsuccess = () => {
+        const tx = req.result.transaction('vault', 'readwrite');
+        tx.objectStore('vault').put({ appId, key, author, credentialId }, 'app');
+        tx.oncomplete = () => resolve(null);
+        tx.onerror = () => reject(tx.error);
+      };
+      req.onerror = () => reject(req.error);
+    });
+  }, /** @type {const} */ ([der, APP_ID, AUTHOR, passkey]));
+  await page.reload();
+}
+// the App's private key in PKCS#8 (DER, hex), as 16-byte pieces: none of them is to be found in what is kept
+/** @param {string} pem */
+const pieces = pem => {
+  const der = createPrivateKey(pem).export({ type: 'pkcs8', format: 'der' });
+  const out = [];
+  for (let i = 0; i + 16 <= der.length; i += 16) out.push(der.subarray(i, i + 16).toString('hex'));
+  return out;
+};
+
+// DESK-SEC-01: one kept by the version before without a passkey (a browser without passkeys): opened at once, as one
+// kept without PRF now is, and the settings say so
+test('DESK-SEC-01: the App’s key kept by the version before without a passkey: opened at once; the settings say it is not encrypted', async ({ page, gh }) => {
+  const pem = makeApp(gh);
+  await noPasskey(page);
+  await keepOld(page, pem, false);
+  await expect(page.locator('#shelf')).toBeVisible();
+  await toSettings(page);
+  await expect(page.locator('#gh-help')).toHaveText(/GitHub App の秘密鍵は暗号化せず.*パスキーは使いません/);
+});
+
 test.describe('with a passkey', () => {
   test.skip(({ browserName }) => browserName !== 'chromium', 'WebKit has no virtual authenticator');
-  /** @param {import('@playwright/test').Page} page @param {boolean} verified */
-  async function authenticator(page, verified) {
+  /** @param {import('@playwright/test').Page} page @param {boolean} verified @param {boolean} [hasPrf] */
+  async function authenticator(page, verified, hasPrf = true) {
     const cdp = await page.context().newCDPSession(page);
     await cdp.send('WebAuthn.enable');
-    const { authenticatorId } = await cdp.send('WebAuthn.addVirtualAuthenticator', {
+    await cdp.send('WebAuthn.addVirtualAuthenticator', {
       options: {
         protocol: 'ctap2',
         transport: 'internal',
         hasResidentKey: true,
         hasUserVerification: true,
         isUserVerified: verified,
+        hasPrf,
         automaticPresenceSimulation: true,
       },
     });
-    return { cdp, authenticatorId };
   }
-  // NFR-SEC-15: opened with the passkey made for it; the passkey refused: said, not opened
-  test('the App’s key opened with its passkey each time; refused: said', async ({ page, gh }) => {
+  // DESK-SEC-01, NFR-SEC-15: kept encrypted with a key from its passkey's PRF output: neither the key (WebCrypto's)
+  // nor its PKCS#8 bytes nor the .pem's text kept anywhere. Opened each time with the passkey, into a key that cannot
+  // be taken out and that signs (GitHub takes its JWT); the passkey refused: said, not opened
+  test('DESK-SEC-01: with PRF, the App’s key kept encrypted (no key, PKCS#8 or PEM kept); opened with its passkey each time into a key that cannot be taken out, that signs', async ({
+    page,
+    gh,
+  }) => {
     const pem = makeApp(gh);
-    const { cdp, authenticatorId } = await authenticator(page, true);
+    await otherAnswers(page);
+    await authenticator(page, true);
     await watchPasskeyNames(page);
+    await watchSigningKeys(page);
     await putKey(page, pem);
+    await expect(page.locator('#shelf')).toBeVisible();
     await toSettings(page);
     await expect(page.locator('#gh-help')).toHaveText(
-      'GitHub App の秘密鍵は、この端末の取り出せない鍵（WebCrypto）として置いています。開くたびにパスキーを使います。',
+      'GitHub App の秘密鍵はパスキー（PRF）から作った鍵で暗号化して、この端末に置いています。開くたびにパスキーを使います。',
     );
     // (the passkey called, in the passwords' list, by what it opens and the day it was made)
     expect(await passkeyNames(page)).toEqual([`Novel Desk GitHub App ${today()}`]);
+    // kept: the credential ID, the salt, the iv and the encrypted bytes only; no WebCrypto key anywhere
+    const kept = /** @type {NonNullable<Awaited<ReturnType<typeof keptAppForm>>>} */ (await keptAppForm(page));
+    expect(kept.kind).toBe('prf');
+    expect(kept.fields).toEqual(['appId', 'author', 'credentialId', 'data', 'iv', 'kind', 'salt']);
+    expect(kept.cryptoKeys).toBe(0);
+    expect(kept.data.length).toBeGreaterThan(1000);
+    for (const piece of pieces(pem)) expect(kept.data).not.toContain(piece);
+    const all = JSON.stringify(await Promise.all(['vault', 'drafts', 'snapshots', 'prefs', 'blobs'].map(s => stored(page, s))));
+    for (const line of pem.split('\n').slice(1, -2)) expect(all).not.toContain(line);
+    expect(all).not.toContain('PRIVATE KEY');
+    // opened again: the passkey; the key made from what it decrypts cannot be taken out, and signs
     await page.reload();
-    await expect(page.locator('#unlock-note')).toHaveText(/開くたびにパスキーを使います/);
-    await cdp.send('WebAuthn.setUserVerified', { authenticatorId, isUserVerified: false });
+    await expect(page.locator('#unlock-note')).toHaveText(/暗号化して.*開くたびにパスキーを使います/);
+    await answering(page, 'nw-get', 'cancel');
     await page.getByRole('button', { name: 'パスキーで開く' }).click();
-    await expect(page.locator('#unlock-error')).toHaveText(/^パスキーで開けませんでした（NotAllowedError）/);
-    await cdp.send('WebAuthn.setUserVerified', { authenticatorId, isUserVerified: true });
+    await expect(page.locator('#unlock-error')).toHaveText('パスキーで開けませんでした（取り消されたか、時間切れです）');
+    await answering(page, 'nw-get', '');
     await page.getByRole('button', { name: 'パスキーで開く' }).click();
     await expect(page.locator('#shelf')).toBeVisible();
+    const key = await signingKeys(page, 'DESK-SEC-01');
+    expect([key.count, key.extractable, key.usages, key.out]).toEqual([1, false, ['sign'], 'InvalidAccessError']);
+    expect(verify('sha256', Buffer.from('DESK-SEC-01'), /** @type {NonNullable<typeof gh.app>} */ (gh.app).publicKey, Buffer.from(key.sig, 'hex'))).toBe(true);
+    // (the repositories read with it: GitHub took the JWT it signed)
+    await openRepo(page, 'author/novel');
+    await expect(page.locator('#episode-title')).toHaveValue('はじまり');
+  });
+  // DESK-SEC-01, NFR-USE-01: the passkey not opening the App's key: why, in the token's words; another passkey's PRF
+  // output (the key from it opens nothing): said; opened once the passkey answers
+  test('DESK-SEC-01: the passkey not opening the App’s key: said as for the token; another passkey: not decrypted; opened once it answers', async ({
+    page,
+    gh,
+  }) => {
+    const pem = makeApp(gh);
+    await otherAnswers(page);
+    await authenticator(page, true);
+    await putKey(page, pem);
+    await expect(page.locator('#shelf')).toBeVisible();
+    await page.reload();
+    for (const [how, said] of [
+      ['cancel', 'パスキーで開けませんでした（取り消されたか、時間切れです）'],
+      ['error', 'パスキーを使えません（TypeError）'],
+      ['string', 'パスキーを使えません（test）'],
+      ['none', 'パスキーが PRF の値を返しませんでした'],
+      ['other', 'GitHub App の秘密鍵を復号できませんでした（作ったときと違うパスキーかもしれません）'],
+    ]) {
+      await answering(page, 'nw-get', how);
+      await page.getByRole('button', { name: 'パスキーで開く' }).click();
+      await expect(page.locator('#unlock-error')).toHaveText(said);
+    }
+    await answering(page, 'nw-get', '');
+    await page.getByRole('button', { name: 'パスキーで開く' }).click();
+    await expect(page.locator('#shelf')).toBeVisible();
+  });
+  // DESK-SEC-01: an authenticator without PRF: the key that cannot be taken out kept as it is, no passkey; the toast
+  // and the settings say it is not encrypted; opened again at once
+  test('DESK-SEC-01: an authenticator without PRF: the key kept as it is, not encrypted, and the screen says so', async ({ page, gh }) => {
+    const pem = makeApp(gh);
+    await authenticator(page, true, false);
+    await putKey(page, pem);
+    await expect(page.locator('#toast')).toHaveText('PRF に対応していないため、パスキーなしで保管しました');
+    await toSettings(page);
+    await expect(page.locator('#gh-help')).toHaveText(
+      'このブラウザーはパスキーの PRF に対応していないため、GitHub App の秘密鍵は暗号化せず、この端末の取り出せない鍵（WebCrypto）として置いています。パスキーは使いません。この端末でこのブラウザーを開ける人は、作品を読み書きできます。',
+    );
+    const kept = await keptAppForm(page);
+    expect([kept?.kind, kept?.fields, kept?.cryptoKeys]).toEqual(['local', ['appId', 'author', 'key', 'kind'], 1]);
+    expect(await keptKey(page)).toEqual({ extractable: false, usages: ['sign'], out: 'InvalidAccessError', author: AUTHOR, appId: APP_ID });
+    await page.reload();
+    await expect(page.locator('#shelf')).toBeVisible();
+  });
+  // DESK-SEC-01: one kept by the version before with a passkey (not encrypted; it cannot be now): opened with the
+  // passkey as before, the refusal said in the token's words; that it is not encrypted, and what to do, said in the
+  // settings only (not on opening it, nor in a toast)
+  test('DESK-SEC-01: the App’s key kept by the version before: opened with its passkey as before; the settings only say it is not encrypted and how to have it so', async ({
+    page,
+    gh,
+  }) => {
+    const pem = makeApp(gh);
+    await otherAnswers(page);
+    await authenticator(page, true);
+    await keepOld(page, pem, true);
+    await expect(page.locator('#unlock-note')).toHaveText('GitHub App の秘密鍵は、開くたびにパスキーを使います。');
+    for (const [how, said] of [
+      ['cancel', 'パスキーで開けませんでした（取り消されたか、時間切れです）'],
+      ['error', 'パスキーを使えません（TypeError）'],
+    ]) {
+      await answering(page, 'nw-get', how);
+      await page.getByRole('button', { name: 'パスキーで開く' }).click();
+      await expect(page.locator('#unlock-error')).toHaveText(said);
+    }
+    await answering(page, 'nw-get', '');
+    await page.getByRole('button', { name: 'パスキーで開く' }).click();
+    await expect(page.locator('#shelf')).toBeVisible();
+    await expect(page.locator('#toast')).not.toHaveText(/暗号化/);
+    await toSettings(page);
+    await expect(page.locator('#gh-help')).toHaveText(
+      'GitHub App の秘密鍵は暗号化されていません（前の版で、この端末の取り出せない鍵として置いたものです。開くたびにパスキーを使います）。GitHub の App の設定で秘密鍵を作り直し、ログアウトしてから新しい秘密鍵で始めると、パスキーで暗号化して保存します。',
+    );
+    // (kept as it was)
+    expect((await keptAppForm(page))?.fields).toEqual(['appId', 'author', 'credentialId', 'key']);
   });
   // NFR-SEC-15: the passkey not made: nothing kept
   test('the passkey not made for the App’s key: said, nothing kept', async ({ page, gh }) => {
     const pem = makeApp(gh);
     await authenticator(page, false);
     await putKey(page, pem);
-    await expect(page.locator('#app-error')).toHaveText(/^パスキーが作られませんでした（NotAllowedError）/);
+    await expect(page.locator('#app-error')).toHaveText('パスキーが作られませんでした（取り消されたか、時間切れです）。もう一度押してください');
     expect(await keptKey(page)).toBeNull();
   });
 });
