@@ -538,8 +538,12 @@ test('logged out with the drafts kept, opened again: their branch and mode; neve
   ]);
   // their branch gone on GitHub: the default one opened; nothing sent by itself to it, 自動 too
   delete work.refs.side;
-  await page.locator('#reload-work').click();
-  await expect(page.locator('#toast')).toHaveText('side は GitHub にもう無いので、main を開きました');
+  // (pressed again until taken: a press while the check of every minute, moved on by the clock above, is still reading
+  // is not taken, and a busy machine reads slowly)
+  await expect(async () => {
+    await page.locator('#reload-work').click();
+    await expect(page.locator('#toast')).toHaveText('side は GitHub にもう無いので、main を開きました', { timeout: 1000 });
+  }).toPass();
   await expect(page.locator('#sync-state')).toHaveText(
     /^この端末の未送信の変更は、ブランチ side で書いたものです。いまは main を開いているので、自動では送りません/,
   );
