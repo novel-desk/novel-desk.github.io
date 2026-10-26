@@ -1,5 +1,5 @@
 # サーバー版（~/novel-writer）と比べる相手の commit。サーバー版を直して合わせたら、ここを進める
-commit 4874314
+commit e9a7cf6
 #
 # 理由のある違い: docs/server-differences.md の番号と、tools/server_diff.mjs が出す鍵（node tools/server_diff.mjs --list）
 #
@@ -74,7 +74,3 @@ A10 css + #releases-body
 B1 html html > head > title text
 B1 html html > head > meta[name="apple-mobile-web-app-title"] [content]
 B1 html #shelf > header.bar > strong.brand text
-# B2. サーバー版に無い直し: プレビューを横にはらったときに前のページに戻らない
-B2 css html {overscroll-behavior-x}
-B2 css .preview {overscroll-behavior-x}
-B2 css .preview {touch-action}

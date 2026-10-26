@@ -1,18 +1,18 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <!-- Novel Desk: 藍の地に原稿用紙の罫と、朱のペン先（サーバー版の生成りの地と見分けるため）。中身は中央 80% に収める（maskable のため） -->
-  <rect width="512" height="512" fill="#2c4a63"/>
-  <g stroke="#5f7d95" stroke-width="6">
+  <!-- Novel Desk: サーバー版のアイコン（原稿用紙の罫と、朱のペン先）を、サーバー版のダークモードの色で塗ったもの（生成りの地のサーバー版と見分けるため）。中身は中央 80% に収める（maskable のため） -->
+  <rect width="512" height="512" fill="#16171a"/>
+  <g stroke="#3a3d44" stroke-width="6">
     <line x1="150" y1="120" x2="150" y2="392"/>
     <line x1="210" y1="120" x2="210" y2="392"/>
     <line x1="270" y1="120" x2="270" y2="392"/>
   </g>
-  <g stroke="#f7f5f0" stroke-width="10" stroke-linecap="round">
+  <g stroke="#e4e1da" stroke-width="10" stroke-linecap="round">
     <line x1="150" y1="150" x2="150" y2="300"/>
     <line x1="210" y1="150" x2="210" y2="350"/>
   </g>
   <g transform="translate(330 260) rotate(28)">
     <path d="M0 -150 L34 -40 L22 60 L0 110 L-22 60 L-34 -40 Z" fill="#c0563b"/>
-    <path d="M0 -40 L0 70" stroke="#f7f5f0" stroke-width="6" stroke-linecap="round"/>
-    <circle cx="0" cy="-40" r="10" fill="#f7f5f0"/>
+    <path d="M0 -40 L0 70" stroke="#16171a" stroke-width="6" stroke-linecap="round"/>
+    <circle cx="0" cy="-40" r="10" fill="#16171a"/>
   </g>
 </svg>

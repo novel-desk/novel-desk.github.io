@@ -188,6 +188,9 @@ a.button.primary { background: var(--accent); color: #fff; font-weight: 600; }
 .foot-tools .ep-step { font-size: 11px; padding: 2px 6px; white-space: nowrap; } .ep-step:disabled { opacity: .3; }
 #save-state { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .preview { overscroll-behavior-y: contain; }
+/* a swipe across the preview moves to the next or previous episode (app.js), not back a page in the browser */
+html { overscroll-behavior-x: none; }
+.preview { overscroll-behavior-x: none; touch-action: pan-y pinch-zoom; }
 .paper { overflow: hidden; }
 /* the input bar: small buttons side by side from the left, off the edges; the undo arrows drawn */
 .kbar { display: flex; align-items: center; justify-content: flex-start; overflow-x: auto; background: var(--side); border-top: 1px solid var(--line);
@@ -366,6 +369,3 @@ a.button.primary { background: var(--accent); color: #fff; font-weight: 600; }
 @media (max-width: 760px) {
   #save-state { white-space: normal; line-height: 1.35; overflow-wrap: anywhere; }
 }
-/* プレビューを横にはらったとき、ブラウザーが前のページに戻らないようにする（B2: サーバー版に無い直し） */
-html { overscroll-behavior-x: none; }
-.preview { overscroll-behavior-x: none; touch-action: pan-y pinch-zoom; }
