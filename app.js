@@ -9,7 +9,7 @@ import * as gh from './ui/github.js';
 import * as vault from './ui/vault.js';
 import { api } from './ui/shared.js';
 import { importBox, showWorks, wireWorks } from './ui/works.js';
-import { appOf, importKey, madeApp, startManifest } from './ui/appkey.js';
+import { appOf, madeApp, startManifest } from './ui/appkey.js';
 import { appFormOf, authorOf, HOUR, installUrl, returnOf, sameOwner, startedHere } from './lib/appkey.js';
 import { forgetDevice, keepWork, worksHere } from './ui/repo.js';
 
@@ -34,7 +34,7 @@ const KINDS = {
     'このブラウザーはパスキーの PRF に対応していないため、GitHub App の秘密鍵は暗号化せず、この端末の取り出せない鍵（WebCrypto）として置いています。パスキーは使いません。この端末でこのブラウザーを開ける人は、作品を読み書きできます。',
   // (DESK-SEC-01: kept by the version before; said here only, not each time it is opened)
   'app-old':
-    'GitHub App の秘密鍵は暗号化されていません（前の版で、この端末の取り出せない鍵として置いたものです。開くたびにパスキーを使います）。GitHub の App の設定で秘密鍵を作り直し、ログアウトしてから新しい秘密鍵で始めると、パスキーで暗号化して保存します。',
+    'GitHub App の秘密鍵は暗号化されていません（前の版で、この端末の取り出せない鍵として置いたものです。開くたびにパスキーを使います）。ログアウトしてから「GitHub App を作って始める」で App を作り直すと、パスキーで暗号化して保存します。前の App は、GitHub の Settings → Developer settings → GitHub Apps で消してください。',
 };
 // what the screen to open it with says of an App's key kept with a passkey (the one kept by the version before: what
 // to do with it is said in the settings only)
@@ -211,7 +211,7 @@ const keepExpiry = day => store.put('prefs', 'token-expires', endOf(day));
 function showNotice(text) {
   $('token-notice-text').textContent =
     using === 'app'
-      ? `${text} GitHub の App の設定で秘密鍵を作り直し、ログアウトしてから新しい秘密鍵で始めてください。書いたものはこの端末に残っています。`
+      ? `${text} ログアウトしてから「GitHub App を作って始める」で App を作り直してください。書いたものはこの端末に残っています。`
       : `${text} GitHub のトークンの一覧でトークンを作り直し（Regenerate token）、新しい値を入れてください。書いたものはこの端末に残っています。`;
   $('token-notice-token').hidden = using === 'app';
   $('token-notice').hidden = false;
@@ -285,44 +285,6 @@ async function openFirst() {
   await desk.open(r);
 }
 
-// --- a GitHub App's private key in place of the token (FR-GH-01, NFR-SEC-15: ui/appkey.js, ui/vault.js keepApp)
-
-async function keepApp(/** @type {SubmitEvent} */ e) {
-  e.preventDefault();
-  $('app-error').textContent = '';
-  const appId = $('app-id').value.trim();
-  const author = { name: $('app-name').value.trim(), email: $('app-email').value.trim() };
-  // (the form asks for each: it is not sent without them)
-  const file = /** @type {File} */ ($('app-key').files?.[0]);
-  $('keep-app').disabled = true;
-  try {
-    const key = await importKey(await file.text());
-    const app = appOf(appId, key, author);
-    /** @type {any[]} */
-    let repos;
-    try {
-      repos = await app.repos();
-    } catch (err) {
-      throw new Error(`GitHub App として GitHub に入れませんでした（App ID か秘密鍵が違うかもしれません）: ${err.message}`, { cause: err });
-    }
-    if (!repos.length)
-      throw new Error('この GitHub App は、どのリポジトリにも入っていません。GitHub の App の設定の Install App で、作品のリポジトリに入れてください');
-    await checkLogin(await whoseApp(app), 'この秘密鍵');
-    const seal = await vault.appPasskey();
-    // (the file read again: its bytes encrypted with the passkey's key, and zeroed)
-    const { lock } = await vault.lockApp(await file.text(), seal);
-    const v = await vault.keepApp({ appId, author, ...lock });
-    void keepStore();
-    await vault.forget();
-    /** @type {HTMLFormElement} */ (/** @type {unknown} */ ($('app-form'))).reset();
-    if (v.kind === 'local') toast('PRF に対応していないため、パスキーなしで保管しました');
-    await withApp(v, key, app);
-  } catch (err) {
-    $('app-error').textContent = err.message;
-  } finally {
-    $('keep-app').disabled = false;
-  }
-}
 /** @param {AppVault} v as kept @param {CryptoKey} key its key to sign with (opened) @param {import('./ui/github.js').App} [app] the one it was checked with */
 function useApp(v, key, app = appOf(v.appId, key, v.author)) {
   kind = `app-${appFormOf(v)}`;
@@ -473,12 +435,60 @@ async function changeAuthor(/** @type {SubmitEvent} */ e) {
   $('author-notice').hidden = true;
 }
 
+// 利用規約 (DESK-OPS-02): agreed to on this device on starting (the button pressed to make the App or keep the
+// token), and by one started before, when it is opened and they changed (their 版, data-version). Agreed to while this
+// device's storage cannot be written: for this time the page is open
+const TERMS = $('terms').dataset.version;
+let agreedNow = false;
+function agreed() {
+  try {
+    return agreedNow || localStorage.getItem('terms') === TERMS;
+  } catch {
+    return agreedNow;
+  }
+}
+/** @type {(() => void) | null} what agreeing goes on with (none: read from the settings) */
+let afterTerms = null;
+/** @type {(() => void) | null} where 戻る goes (none: nothing to go back to, only agreeing) */
+let backFromTerms = null;
+/** @param {(() => void) | null} then @param {(() => void) | null} back */
+function showTerms(then, back) {
+  afterTerms = then;
+  backFromTerms = back;
+  $('agree-terms').hidden = !then;
+  $('close-terms').hidden = !back;
+  show('terms');
+}
+function agree() {
+  agreedNow = true;
+  try {
+    localStorage.setItem('terms', /** @type {string} */ (TERMS));
+  } catch {}
+  // (at once, within the press: what it goes on with may make a passkey)
+  afterTerms?.();
+}
+/** @param {() => void} go starting, the 利用規約 agreed to first on this device */
+function agreeFirst(go) {
+  if (agreed()) return go();
+  showTerms(
+    () => {
+      show('setup');
+      go();
+    },
+    () => show('setup'),
+  );
+}
+
 async function start() {
   const back = returnOf(location.href);
   // (what GitHub gave back is not left in the address, nor in the history)
   if (location.search) history.replaceState(null, '', location.pathname);
+  // (back from GitHub: agreed to where it was started; the page it came back to may be another one, as Safari)
   if (back) return cameBack(back);
   const a = await vault.keptApp();
+  const v = a ? undefined : await vault.kept();
+  // (started before the 利用規約 were agreed to here, or before they changed)
+  if ((a || v) && !agreed()) return showTerms(() => void start(), null);
   if (a) {
     const form = appFormOf(a);
     // (kept without a passkey: opened at once)
@@ -487,7 +497,6 @@ async function start() {
     $('unlock-note').textContent = UNLOCK_APP[kind];
     return show('unlock');
   }
-  const v = await vault.kept();
   kind = v?.kind ?? '';
   if (!v) {
     show('setup');
@@ -506,9 +515,11 @@ async function start() {
   show('unlock');
 }
 
-$('setup-form').addEventListener('submit', e => void keepToken(/** @type {SubmitEvent} */ (e)));
-$('app-form').addEventListener('submit', e => void keepApp(/** @type {SubmitEvent} */ (e)));
-$('make-app').addEventListener('click', () => void makeApp());
+$('setup-form').addEventListener('submit', e => {
+  e.preventDefault();
+  agreeFirst(() => void keepToken(/** @type {SubmitEvent} */ (e)));
+});
+$('make-app').addEventListener('click', () => agreeFirst(() => void makeApp()));
 $('app-paste-form').addEventListener('submit', e => void pasteCode(/** @type {SubmitEvent} */ (e)));
 $('author-notice').addEventListener('submit', e => void changeAuthor(/** @type {SubmitEvent} */ (e)));
 $('forget-token-install').addEventListener('click', () => void forgetToken());
@@ -527,6 +538,9 @@ $('logout').addEventListener('click', () => void forgetToken());
 $('forget-token-unlock').addEventListener('click', () => void forgetToken());
 $('open-settings').addEventListener('click', () => void openSettings());
 $('close-settings').addEventListener('click', () => void chooseRepo());
+$('agree-terms').addEventListener('click', agree);
+$('open-terms').addEventListener('click', () => showTerms(null, () => void openSettings()));
+$('close-terms').addEventListener('click', () => backFromTerms?.());
 wireWorks({ open: openRepo });
 desk.wire({ changeRepo: () => void chooseRepo(), open: openRepo, relist: chooseRepo });
 $('token-replace-form').addEventListener('submit', e => void replaceToken(/** @type {SubmitEvent} */ (e)));

@@ -16,9 +16,6 @@ A1 html - #admin
 A1 html - #settings > main.settings-main > section.card:3 > div.gh-actions
 A1 css + #setup.auth
 A1 css + .paste-form
-A1 css + .key-form
-A1 css + #app-key-details summary
-A1 css + #app-key-details[open] summary
 A1 css + .install h2
 A1 css + .install ol
 A1 css + .token-notice
@@ -70,7 +67,12 @@ A8 html + html > head > meta[name="referrer"]
 # A10. 履歴・リリース・未送信の一覧のダイアログ
 A10 html + #releases
 A10 css + #releases-body
-# B1. 作者に決めてほしいもの: アプリの名前
+# B1. 作者が決めたもの: アプリの名前
 B1 html html > head > title text
 B1 html html > head > meta[name="apple-mobile-web-app-title"] [content]
 B1 html #shelf > header.bar > strong.brand text
+# B2. 作者が決めたもの: 利用規約とベータ版の表示
+B2 html + #terms
+B2 html + #settings > main.settings-main > section.card:4
+B2 css + .terms-list
+B2 css + .terms-list a

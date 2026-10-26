@@ -2,12 +2,18 @@
 // tests start with (the token kept, the work chosen). Every page's and service worker's counts of the app (istanbul,
 // coverage.mjs) are taken when its test ends (a page that goes away before keeps them for the page after it)
 import { test as base, expect } from '@playwright/test';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { FakeGitHub, FakeRepo, TOKEN } from './fake-github.mjs';
 import { OUT, TAKE, ON_LEAVE } from './coverage.mjs';
 
 export { expect, FakeRepo, TOKEN };
+
+// the 版 of the 利用規約 (index.html, #terms data-version): agreed to on the device of every test but those of the
+// 利用規約 themselves (test.use({ agreed: false }))
+export const TERMS = /** @type {string} */ (
+  /id="terms"[^>]*data-version="([^"]+)"/.exec(readFileSync(join(import.meta.dirname, '../../../index.html'), 'utf8'))?.[1]
+);
 
 // A work as the server version makes it (novel.toml with dir, title = "heading", [titles], a chapter folder). The texts
 // are made up for the tests
@@ -47,8 +53,10 @@ export const test = base.extend(
       },
       { scope: 'worker' },
     ],
-    context: async (/** @type {any} */ { context, taken }, /** @type {any} */ use) => {
+    agreed: [true, { option: true }],
+    context: async (/** @type {any} */ { context, taken, agreed }, /** @type {any} */ use) => {
       await context.addInitScript(ON_LEAVE);
+      if (agreed) await context.addInitScript(v => localStorage.setItem('terms', v), TERMS);
       await use(context);
       await takeAll(context, taken);
     },

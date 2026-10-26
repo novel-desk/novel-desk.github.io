@@ -1,7 +1,7 @@
 // The app's page itself: the colour and the screen's size on 設定 (FR-APP-01, FR-APP-05) where the
 // browser keeps nothing for it, a browser without a service worker or one that will not take it (FR-APP-02), and this
 // device's store that cannot be opened or is full (NFR-USE-01)
-import { test, expect, noPasskey, openWork, toSettings } from './lib/test.mjs';
+import { test, expect, keepMoreOpen, noPasskey, openRepo, openWork, toSettings, TOKEN } from './lib/test.mjs';
 
 // FR-APP-01: a browser that lets the page keep nothing (localStorage refused): the colour 自動, and one chosen still
 // shown; a tap between the buttons changes nothing
@@ -13,7 +13,15 @@ test('the colour where the browser keeps nothing for the page: 自動, and one c
       },
     }),
   );
-  await openWork(page);
+  // (the 利用規約 agreed to, not kept: asked on starting)
+  await noPasskey(page);
+  await keepMoreOpen(page);
+  await page.goto('./');
+  await page.getByLabel('トークン', { exact: true }).fill(TOKEN);
+  await page.getByRole('button', { name: 'パスキーで保管する' }).click();
+  await page.getByRole('button', { name: '同意して始める' }).click();
+  await openRepo(page, 'author/novel');
+  await expect(page.locator('#episode-title')).toHaveValue('はじまり');
   await toSettings(page);
   await expect(page.locator('[data-theme-pick=""]')).toHaveClass(/on/);
   await page.locator('[data-theme-pick="dark"]').click();

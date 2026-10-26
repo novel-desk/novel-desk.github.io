@@ -4,24 +4,13 @@
 // installation of the App a token for an hour, used for the requests about that installation's repositories, and
 // asked for again before it ends and when GitHub refuses it (ui/github.js). The commits are written as the author,
 // not as the App
-import { appName, base64url, deviceOf, jwtBody, manifestOf, ownerOf, pkcs8Of, renewNow, suffixOf } from '../lib/appkey.js';
+import { appName, base64url, deviceOf, jwtBody, manifestOf, ownerOf, renewNow, suffixOf } from '../lib/appkey.js';
 import * as store from './db.js';
 import * as gh from './github.js';
-import { lockApp, signingKey } from './vault.js';
+import { lockApp } from './vault.js';
 
 /** @typedef {{ name: string, email: string }} Author */
 /** @typedef {{ id: number, account: { login: string, id: number } }} Installation */
-
-// the key from the .pem's text, that cannot be taken out (throws when it is not a key GitHub made; its bytes zeroed)
-/** @param {string} pem @returns {Promise<CryptoKey>} */
-export async function importKey(pem) {
-  const pkcs8 = pkcs8Of(pem);
-  try {
-    return await signingKey(pkcs8);
-  } finally {
-    pkcs8.fill(0);
-  }
-}
 
 /**
  * The App, as ui/github.js uses it (gh.useApp)

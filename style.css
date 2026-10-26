@@ -337,12 +337,13 @@ html { overscroll-behavior-x: none; }
 .history-tabs button { white-space: nowrap; padding: 6px 4px; }
 
 /* ---- Novel Desk だけにある部品（サーバーが無いために同じにできない所。docs/server-differences.md） ---- */
-/* 始める画面: GitHub App、トークン、鍵のファイル、ホーム画面に追加のカードを縦に並べる（A1） */
+/* 始める画面: ホーム画面に追加、GitHub App、トークンのカードを縦に並べる（A1） */
 #setup.auth { align-content: center; gap: 12px; }
-.paste-form, .key-form { display: grid; gap: 12px; }
-#app-key-details summary { cursor: pointer; color: var(--muted); font-size: 14px; }
-#app-key-details[open] summary { margin-bottom: 12px; }
+.paste-form { display: grid; gap: 12px; }
 .install h2 { margin: 0; font-size: 15px; } .install ol { margin: 0; padding-left: 1.4em; display: grid; gap: 4px; }
+/* 利用規約: 番号付きの項目を、読みやすい行の高さで（B2） */
+.terms-list { margin: 0; padding-left: 1.4em; display: grid; gap: 8px; font-size: 13px; line-height: 1.7; }
+.terms-list a { color: var(--accent); overflow-wrap: anywhere; }
 /* トークンの期限・GitHub がトークンを断った・GitHub App のコミットの作者の知らせ（A1） */
 .token-notice { position: fixed; top: env(safe-area-inset-top); left: 0; right: 0; z-index: 15; background: var(--paper); border-bottom: 1px solid var(--error); color: var(--error); padding: 8px 16px; font-size: 13px; display: grid; gap: 6px; }
 .token-notice p { margin: 0; }

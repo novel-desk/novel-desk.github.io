@@ -27,8 +27,44 @@
 <!-- 読み込み中（サーバー版の、ログインを確かめている間と同じく何も出さない） -->
 <section id="loading" class="auth"></section>
 
-<!-- 始める: GitHub App を作る（いちばん上）、トークン、鍵のファイル -->
+<!-- 利用規約: 使い始める前に同意してもらう。data-version は規約の版で、上げるともう一度同意を求める（DESK-OPS-02） -->
+<section id="terms" class="auth" data-version="1" hidden>
+  <div class="auth-card">
+    <h1>利用規約</h1>
+    <p class="muted small">Novel Desk はベータ版です。使い始める前に読んでください。</p>
+    <ol class="terms-list">
+      <li>Novel Desk（以下「本アプリ」）は、作者個人が事業としてではなく、無料で公開しているベータ版です。不具合があり、予告なく変わることがあります。</li>
+      <li>作者は、本アプリの公開を予告なく急にやめることがあります。公開をやめると、本アプリを開けなくなることがあります。GitHub に送った原稿は利用者の GitHub に残りますが、送っていない書きかけは失われることがあります。</li>
+      <li>本アプリには作者のサーバーがなく、作者のもとにはデータが何も残りません。原稿、トークン、GitHub App の秘密鍵は、利用者の端末と利用者の GitHub にだけ置かれ、作者には届きません。本アプリのソースコードは <a href="https://github.com/novel-desk/novel-desk.github.io" target="_blank" rel="noopener noreferrer">https://github.com/novel-desk/novel-desk.github.io</a> で公開しています。</li>
+      <li>トークン、GitHub App とその秘密鍵、パスキー、端末、GitHub のアカウントは、利用者が自分の責任で管理してください。漏れたときや端末をなくしたときは、利用者が GitHub でトークンや GitHub App を消してください。</li>
+      <li>原稿の控えは、利用者が自分で取ってください。</li>
+      <li>本アプリは現状のまま提供します。作者は何も保証せず、問い合わせへの回答や不具合の修正も約束しません。</li>
+      <li>本アプリを使ったこと、または使えなかったことで生じたどのような損害（原稿の消失、意図しない公開、鍵の漏えい、アカウントの停止などを含みます）についても、作者は一切の責任を負いません。</li>
+      <li>本アプリは GitHub, Inc. とも Apple Inc. とも関係がありません。GitHub の利用には GitHub の規約が適用されます。</li>
+      <li>この規約は予告なく変わることがあります。変わったときは、次に開いたときにもう一度同意を求めます。この規約の一部が法令により無効とされても、ほかの部分は有効です。この規約には日本の法律を適用します。</li>
+    </ol>
+    <p class="muted small">第 1 版（2026 年 10 月 26 日）</p>
+    <button class="primary" id="agree-terms">同意して始める</button>
+    <button class="ghost" id="close-terms" hidden>戻る</button>
+  </div>
+</section>
+
+<!-- 始める: ホーム画面に追加（いちばん上）、GitHub App を作る、トークン。押すと、同意していなければ先に利用規約を出す -->
 <section id="setup" class="auth" hidden>
+  <!-- ホーム画面に追加: iPhone の Safari のタブ（手順と、先に追加する理由）、またはインストールを勧めるブラウザー -->
+  <div class="auth-card install" id="install-ios" hidden>
+    <h2>先にホーム画面に追加してください</h2>
+    <p class="muted small">Safari のタブとホーム画面のアプリでは、この端末の保存場所が別になります。ここで始めても、ホーム画面のアプリからは見えません。ホーム画面に追加してから、そこから開いて始めてください。</p>
+    <ol class="small">
+      <li>画面の下（iPad では上）の共有ボタン（四角から矢印が出ている形）を押す</li>
+      <li>「ホーム画面に追加」を押し、「追加」を押す</li>
+      <li>ホーム画面の Novel Desk から開く</li>
+    </ol>
+  </div>
+  <div class="auth-card install" id="install-app" hidden>
+    <p class="muted small">この端末にアプリとして入れると、ホーム画面やアプリの一覧から開けます。</p>
+    <button id="install">インストール</button>
+  </div>
   <div class="auth-card" id="app-make">
     <h1>Novel Desk</h1>
     <p class="muted small">GitHub に Novel Desk 専用の GitHub App を作って始めます。GitHub の画面で「Create GitHub App」を押し、続けて作品のリポジトリを選んで「Install」を押すと、作品を開けます。鍵のファイルや設定を扱うことはありません。秘密鍵はこの端末の取り出せない鍵として置きます。</p>
@@ -59,34 +95,6 @@
     <button class="primary" id="keep-token">パスキーで保管する</button>
     <p id="setup-error" class="error" role="alert"></p>
   </form>
-  <!-- 鍵のファイルがあるとき: GitHub App の秘密鍵で始める -->
-  <details class="auth-card" id="app-key-details">
-  <summary>鍵のファイルがあるとき</summary>
-  <form id="app-form" class="key-form">
-    <p class="muted small">作品のリポジトリに入れた GitHub App の秘密鍵（.pem）で始めます。秘密鍵はこの端末の取り出せない鍵として置き、ファイルの中身は残しません。ふつうは上の「GitHub App を作って始める」を使ってください。</p>
-    <label>App ID（または Client ID）<input id="app-id" autocomplete="off" spellcheck="false" required></label>
-    <label>秘密鍵（.pem）<input id="app-key" type="file" accept=".pem" required></label>
-    <label>コミットに書く名前<input id="app-name" autocomplete="name" required></label>
-    <label>コミットに書くメールアドレス<input id="app-email" type="email" autocomplete="email" placeholder="GitHub の noreply のアドレス" required></label>
-    <p class="muted small">GitHub App で送ったコミットも、作者はここに書いた名前とメールアドレスになります（GitHub の Settings → Emails にある noreply のアドレスを勧めます）。</p>
-    <button class="primary" id="keep-app">秘密鍵を保管する</button>
-    <p id="app-error" class="error" role="alert"></p>
-  </form>
-  </details>
-  <!-- ホーム画面に追加: iPhone の Safari のタブ（手順と、先に追加する理由）、またはインストールを勧めるブラウザー -->
-  <div class="auth-card install" id="install-ios" hidden>
-    <h2>先にホーム画面に追加してください</h2>
-    <p class="muted small">Safari のタブとホーム画面のアプリでは、この端末の保存場所が別になります。ここで始めても、ホーム画面のアプリからは見えません。ホーム画面に追加してから、そこから開いて始めてください。</p>
-    <ol class="small">
-      <li>画面の下（iPad では上）の共有ボタン（四角から矢印が出ている形）を押す</li>
-      <li>「ホーム画面に追加」を押し、「追加」を押す</li>
-      <li>ホーム画面の Novel Desk から開く</li>
-    </ol>
-  </div>
-  <div class="auth-card install" id="install-app" hidden>
-    <p class="muted small">この端末にアプリとして入れると、ホーム画面やアプリの一覧から開けます。</p>
-    <button id="install">インストール</button>
-  </div>
 </section>
 
 <!-- GitHub App を作ったあと、作品のリポジトリに入れる -->
@@ -324,6 +332,11 @@
       <h2>GitHub</h2>
       <p id="gh-state" class="muted"></p>
       <p class="muted small" id="gh-help"></p>
+    </section>
+    <section class="card">
+      <h2>利用規約</h2>
+      <p class="muted small">Novel Desk はベータ版です。</p>
+      <button id="open-terms">利用規約を読む</button>
     </section>
   </main>
 </section>
