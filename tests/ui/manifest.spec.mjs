@@ -215,6 +215,8 @@ test('a wrong or missing state: refused, nothing converted; the code shown to pa
   await page.goto('./?code=testcode100000000&state=not-the-state');
   await expect(page.locator('#app-bridge')).toBeVisible();
   await expect(page.locator('#app-bridge-code')).toHaveValue('not-the-state.testcode100000000');
+  // (a link sent by someone else shows it too: told to close it when no App is being made)
+  await expect(page.locator('#app-bridge')).toContainText('GitHub App を作っている途中でなければ、このページは閉じてください。');
   expect(page.url()).toBe(baseURL);
   expect(conversions(gh)).toEqual([]);
   // the code copied (the clipboard taken; then refused: selected, to copy by hand)

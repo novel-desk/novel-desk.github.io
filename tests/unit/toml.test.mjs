@@ -96,6 +96,16 @@ describe('toml', () => {
     expect(ok('# only a comment\n\n')).toEqual({});
   });
 });
+// DESK-SEC-04: a novel.toml read from GitHub (anyone's public repository can be opened) does not change what every
+// object of the page has: 「__proto__」 not taken as a key; keys every object has (constructor, toString) are the
+// table's own
+test('toml: 「__proto__」 not read; keys every object has, the table’s own', () => {
+  for (const src of ['__proto__.method = "DELETE"', '[__proto__]\nmethod = "DELETE"', 'a.__proto__.method = "DELETE"', '__proto__ = 1', '"__proto__" = 1'])
+    expect(parseToml(src).error).toMatch(/キー「__proto__」は使えません/);
+  expect(/** @type {any} */ ({}).method).toBeUndefined();
+  expect(ok('constructor.prototype.method = "DELETE"\ntoString = 1')).toEqual({ constructor: { prototype: { method: 'DELETE' } }, toString: 1 });
+  expect(/** @type {any} */ (Object).prototype.method).toBeUndefined();
+});
 test('toml: an array not closed at the end of the file', () => {
   expect(parseToml('a = [1,').error).toBe('1 行目: 値がありません');
 });
