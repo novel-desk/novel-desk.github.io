@@ -76,3 +76,8 @@ B2 html + #terms
 B2 html + #settings > main.settings-main > section.card:4
 B2 css + .terms-list
 B2 css + .terms-list a
+# B3. 作者が決めたもの: 連携が切れたときの表示と、連携をやめる手順
+B3 html + #relink
+B3 html + #settings > main.settings-main > section.card:3 > details.leave
+B3 css + .leave summary
+B3 css + .leave[open] summary

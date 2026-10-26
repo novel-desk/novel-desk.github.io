@@ -332,6 +332,18 @@
       <h2>GitHub</h2>
       <p id="gh-state" class="muted"></p>
       <p class="muted small" id="gh-help"></p>
+      <button id="relink" hidden></button>
+      <details class="leave">
+        <summary>連携をやめるとき</summary>
+        <ol class="terms-list">
+          <li>送っていない書きかけがあれば、先に送ります（作品の「リリース・GitHub・その他」の「未送信の一覧」で確かめられます）。GitHub で連携を消すと、この端末からは送れなくなります。</li>
+          <li>右上の「ログアウト」を押します。この端末から、トークンや App の秘密鍵と、作品の控えを消します。</li>
+          <li id="leave-app">GitHub で App を消します。<a id="leave-app-link" href="https://github.com/settings/apps" target="_blank" rel="noopener noreferrer">GitHub App の一覧</a><span id="leave-app-then"></span>App を消すと、リポジトリへのインストールも一緒に外れます。</li>
+          <li id="leave-token">GitHub の<a href="https://github.com/settings/personal-access-tokens" target="_blank" rel="noopener noreferrer">トークンの一覧</a>で、このトークンを消します（Delete）。</li>
+          <li>パスキーを、パスワードの管理（iPhone なら「パスワード」アプリ）で消します。名前は novel-desk.github.io です。</li>
+        </ol>
+        <p class="muted small">GitHub のリポジトリと、送った原稿は残ります。また使うときは、最初の画面からもう一度始めます。</p>
+      </details>
     </section>
     <section class="card">
       <h2>利用規約</h2>

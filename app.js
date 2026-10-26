@@ -10,7 +10,7 @@ import * as vault from './ui/vault.js';
 import { api } from './ui/shared.js';
 import { importBox, showWorks, wireWorks } from './ui/works.js';
 import { appOf, madeApp, startManifest } from './ui/appkey.js';
-import { appFormOf, authorOf, HOUR, installUrl, returnOf, sameOwner, startedHere } from './lib/appkey.js';
+import { appFormOf, appSettingsUrl, authorOf, HOUR, installUrl, returnOf, sameOwner, startedHere } from './lib/appkey.js';
 import { forgetDevice, keepWork, worksHere } from './ui/repo.js';
 
 // started: every module came and linked (boot.js reloads the page once when they do not)
@@ -196,10 +196,38 @@ async function openSettings() {
   show('settings');
   $('screen-info').textContent = screenInfo();
   $('gh-help').textContent = KINDS[kind];
-  $('gh-state').textContent = using === 'app' ? 'GitHub App で連携しています' : 'トークンで連携しています';
-  // (GitHub not saying it: nothing said)
-  const who = using === 'app' ? await whoseApp(/** @type {import('./ui/github.js').App} */ (appInUse)) : await gh.getJson('/user').catch(() => null);
+  showLeave();
+  const app = using === 'app';
+  $('gh-state').textContent = app ? 'GitHub App で連携しています' : 'トークンで連携しています';
+  // asked of GitHub: refused (deleted on GitHub, or the token's time over), said so; GitHub not saying it (not reached,
+  // failed), nothing said
+  $('relink').hidden = true;
+  let who = null;
+  try {
+    who = app ? await /** @type {import('./ui/github.js').App} */ (appInUse).who() : await gh.getJson('/user');
+  } catch (err) {
+    if (err instanceof gh.GitHubError && (err.status === 401 || err.status === 404)) {
+      $('gh-state').textContent = app
+        ? 'GitHub App の連携が切れています。GitHub がこの App を断りました（GitHub で App を消したときも、こうなります）。'
+        : 'トークンの連携が切れています。GitHub がこのトークンを断りました（期限が切れたときや、GitHub でトークンを消したときも、こうなります）。';
+      $('relink').textContent = app ? 'ログアウトして、App を作り直す' : '新しいトークンを入れる';
+      $('relink').hidden = false;
+    }
+  }
   $('me').textContent = who ? `GitHub の ${who.login}` : '';
+}
+// 連携をやめるとき: the steps for the way it is connected; an App made here, its own page to delete it on
+function showLeave() {
+  const app = using === 'app';
+  $('leave-app').hidden = !app;
+  $('leave-token').hidden = app;
+  const slug = appVault?.slug;
+  const link = $('leave-app-link');
+  link.setAttribute('href', slug ? appSettingsUrl(slug) : 'https://github.com/settings/apps');
+  link.textContent = slug ? `「${slug}」の Advanced のページ` : 'GitHub App の一覧';
+  $('leave-app-then').textContent = slug
+    ? 'を開き、「Delete GitHub App」を押して、App の名前を入れます。'
+    : 'でこの端末の App を開き、Advanced の「Delete GitHub App」を押して、App の名前を入れます。';
 }
 
 // --- the token's expiry, said from 14 days before (GitHub does not let the page read it: the author says it), and a
@@ -544,11 +572,15 @@ $('close-terms').addEventListener('click', () => backFromTerms?.());
 wireWorks({ open: openRepo });
 desk.wire({ changeRepo: () => void chooseRepo(), open: openRepo, relist: chooseRepo });
 $('token-replace-form').addEventListener('submit', e => void replaceToken(/** @type {SubmitEvent} */ (e)));
-$('token-replace-open').addEventListener('click', () => {
+function openReplace() {
   $('new-token-expires').value = dayAfter(Date.now());
   $('token-replace-error').textContent = '';
   /** @type {HTMLDialogElement} */ (/** @type {unknown} */ ($('token-replace'))).showModal();
-});
+}
+$('token-replace-open').addEventListener('click', openReplace);
+// the connection refused, said in the settings: an App, logged out to make it again (on the first screen: the passkey
+// is made by the button pressed there); a token, a new one put in
+$('relink').addEventListener('click', () => (using === 'app' ? void forgetToken() : openReplace()));
 $('close-token-replace').addEventListener('click', () => /** @type {HTMLDialogElement} */ (/** @type {unknown} */ ($('token-replace'))).close());
 $('token-notice-close').addEventListener('click', hideNotice);
 $('token-expires').value = dayAfter(Date.now());

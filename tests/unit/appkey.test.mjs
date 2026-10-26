@@ -5,6 +5,7 @@ import {
   APP_NAME_MAX,
   appFormOf,
   appName,
+  appSettingsUrl,
   authorOf,
   base64url,
   deviceOf,
@@ -77,6 +78,10 @@ describe('appkey', () => {
     });
     expect(suffixOf(new Uint8Array([0, 35, 36, 255]))).toBe('0z03');
     expect(installUrl('novel-desk-k3x9a1')).toBe('https://github.com/apps/novel-desk-k3x9a1/installations/new');
+  });
+  // DESK-OPS-03: the page on GitHub where an App made here is deleted (Advanced → Delete GitHub App)
+  test('appSettingsUrl: the App’s Advanced page on GitHub', () => {
+    expect(appSettingsUrl('novel-desk-k3x9a1')).toBe('https://github.com/settings/apps/novel-desk-k3x9a1/advanced');
   });
   // FR-GH-01: the App's name tells the device it was made on and the day, on GitHub's list of Apps (a device lost: its
   // App deleted there); within GitHub's 34 letters, its random end kept
