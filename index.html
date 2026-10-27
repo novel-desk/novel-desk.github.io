@@ -24,8 +24,8 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<!-- 読み込み中（サーバー版の、ログインを確かめている間と同じく何も出さない） -->
-<section id="loading" class="auth"></section>
+<!-- 読み込み中: 開いた直後はサーバー版と同じく何も出さない。パスキーで開いた後や GitHub から戻った後は、行っている手順を出す（B4） -->
+<section id="loading" class="auth"><p id="loading-text" class="loading-text" role="status"></p></section>
 
 <!-- 利用規約: 使い始める前に同意してもらう。data-version は規約の版で、上げるともう一度同意を求める（DESK-OPS-02） -->
 <section id="terms" class="auth" data-version="1" hidden>
@@ -323,7 +323,8 @@
       <h2>GitHub</h2>
       <p id="gh-state" class="muted"></p>
       <p class="muted small" id="gh-help"></p>
-      <button id="relink" hidden>ログアウトして、App を作り直す</button>
+      <button id="relink" hidden>ログアウトして App を再作成</button>
+      <a class="button" id="app-repos-link" href="https://github.com/settings/installations" target="_blank" rel="noopener noreferrer">App をインストールするリポジトリを選ぶ（GitHub）</a>
       <details class="leave">
         <summary>連携をやめるとき</summary>
         <ol class="terms-list">

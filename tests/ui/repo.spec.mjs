@@ -83,7 +83,7 @@ test('made but not readable yet: said; then, and an empty repository made elsewh
   await expect(page.locator('#works .work', { hasText: 'author/empty' })).toContainText('空のリポジトリです（開くと作品として始められます）');
   await create(page, { title: '試験の新作', repo: 'later', token: ADMIN });
   await expect(page.locator('#toast')).toHaveText(
-    /^author\/later（非公開）を作りました。GitHub App がこのリポジトリに入っていないので、まだ読めません。.*Install App で、このリポジトリを足して/,
+    /^author\/later（非公開）を作りました。GitHub App がこのリポジトリにインストールされていないため、まだ読めません。設定の「App をインストールするリポジトリを選ぶ」で/,
   );
   await expect(page.locator('#new-repo')).toBeHidden();
   expect(gh.repos.get('author/later')?.empty).toBe(true);
@@ -207,7 +207,10 @@ test('a new work for the user named, and for an organisation; the default branch
   expect(gh.repos.get('author/mine')?.text('novel.toml')).toContain('title = "自分の作品"');
   await page.getByRole('button', { name: '‹ 作品' }).click();
   await create(page, { title: '組織の作品', repo: 'shared', token: ADMIN, owner: 'novel-org' });
-  await expect(page.locator('#toast')).toHaveText(/^novel-org\/shared（非公開）を作りました。GitHub App がこのリポジトリに入っていないので、まだ読めません。/);
+  // (an organisation's: the App cannot be installed there, said so; nothing to choose in the settings)
+  await expect(page.locator('#toast')).toHaveText(
+    'novel-org/shared（非公開）を作りました。GitHub App は作成したアカウントのリポジトリにしかインストールできないため、組織のこのリポジトリは Novel Desk では開けません',
+  );
   expect(gh.adminCalls).toEqual(['GET /user', 'POST /user/repos', 'GET /user', 'POST /orgs/novel-org/repos']);
   expect(gh.repos.get('novel-org/shared')?.empty).toBe(true);
 });

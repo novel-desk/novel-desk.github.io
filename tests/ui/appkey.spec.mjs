@@ -50,6 +50,9 @@ async function startApp(page, gh, repos = ['author/novel']) {
 const pemOf = gh => /** @type {{ pem: string }} */ ([...gh.codes.values()].at(-1)).pem;
 // the App made: its Client ID (its ID kept, as GitHub gives it with the key)
 const CLIENT_ID = 'Iv23testclient1';
+// the passkey said no to (or deleted): the way out said
+const CANCELLED =
+  'パスキーで開けませんでした（取り消されたか、時間切れになりました）。パスワードの管理でパスキーを削除した場合は、もう開けません。「ログアウト」を押して、App を再作成してください';
 /** @param {import('@playwright/test').Page} page what the vault keeps of the App's key, and whether it can be taken out */
 const keptKey = page =>
   page.evaluate(
@@ -169,7 +172,9 @@ test('a repository it is not on: said; not opened', async ({ page, gh }) => {
   await expect(page.locator('#shelf')).toBeVisible();
   await openRepo(page, 'someone/tools');
   // (not opened: the list of works again, said, as the server version's)
-  await expect(page.locator('#toast')).toHaveText(/^作品を開けませんでした: このリポジトリには GitHub App が入っていません/);
+  await expect(page.locator('#toast')).toHaveText(
+    /^作品を開けませんでした: このリポジトリには GitHub App がインストールされていません。設定の「App をインストールするリポジトリを選ぶ」で/,
+  );
 });
 
 // NFR-SEC-16: the drafts an account's App left on this device: an App made again by the same account (by the
@@ -384,7 +389,9 @@ test.describe('with a passkey', () => {
     await expect(page.locator('#unlock-note')).toHaveText(/暗号化して.*開くたびにパスキーを使います/);
     await answering(page, 'nw-get', 'cancel');
     await page.getByRole('button', { name: 'パスキーで開く' }).click();
-    await expect(page.locator('#unlock-error')).toHaveText('パスキーで開けませんでした（取り消されたか、時間切れです）');
+    await expect(page.locator('#unlock-error')).toHaveText(
+      /^パスキーで開けませんでした（取り消されたか、時間切れになりました）。.*「ログアウト」を押して、App を再作成してください$/,
+    );
     await answering(page, 'nw-get', '');
     await page.getByRole('button', { name: 'パスキーで開く' }).click();
     await expect(page.locator('#shelf')).toBeVisible();
@@ -458,11 +465,21 @@ test.describe('with a passkey', () => {
     await otherAnswers(page);
     await authenticator(page, true);
     await startApp(page, gh, ['author/novel', 'author/other']);
+    // DESK-OPS-05: opened, what is read next said until the next screen (the repositories the App is on, held here)
+    let release = () => {};
+    const gate = new Promise(r => (release = () => r(undefined)));
+    await page.route('https://api.github.com/installation/repositories**', async route => {
+      await gate;
+      await route.fallback();
+    });
     await page.getByRole('button', { name: 'パスキーで開く' }).click();
+    await expect(page.locator('#loading-text')).toHaveText('作品を読み込んでいます…');
+    release();
     await expect(page.locator('#shelf')).toBeVisible();
+    await page.unrouteAll();
     await page.reload();
     for (const [how, said] of [
-      ['cancel', 'パスキーで開けませんでした（取り消されたか、時間切れです）'],
+      ['cancel', CANCELLED],
       ['error', 'パスキーを使えません（TypeError）'],
       ['string', 'パスキーを使えません（test）'],
       ['none', 'パスキーが PRF の値を返しませんでした'],
@@ -505,7 +522,7 @@ test.describe('with a passkey', () => {
     await keepOld(page, pem, true);
     await expect(page.locator('#unlock-note')).toHaveText('GitHub App の秘密鍵は、開くたびにパスキーを使います。');
     for (const [how, said] of [
-      ['cancel', 'パスキーで開けませんでした（取り消されたか、時間切れです）'],
+      ['cancel', CANCELLED],
       ['error', 'パスキーを使えません（TypeError）'],
     ]) {
       await answering(page, 'nw-get', how);

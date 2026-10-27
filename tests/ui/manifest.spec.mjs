@@ -306,7 +306,7 @@ test('not installed yet: the screen with GitHub’s page; installed meanwhile on
     .poll(() => page.locator('#repo-options option').evaluateAll(o => o.map(x => /** @type {HTMLOptionElement} */ (x).value)))
     .toEqual(['author/novel', 'someone/tools']);
   await openRepo(page, 'someone/tools');
-  await expect(page.locator('#toast')).toHaveText(/^作品を開けませんでした: このリポジトリには GitHub App が入っていません/);
+  await expect(page.locator('#toast')).toHaveText(/^作品を開けませんでした: このリポジトリには GitHub App がインストールされていません/);
   await expect(page.locator('#author-notice')).toBeHidden();
   expect((await keptApp(page))?.author).toBeNull();
   // the author's own: proposed

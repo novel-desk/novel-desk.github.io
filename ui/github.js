@@ -10,7 +10,7 @@ export const onRefused = f => refusals.addEventListener('refused', f);
 /**
  * The GitHub App in use (ui/appkey.js): the installation's token for a request (`fresh`: asked
  * for again, the one before refused), the repositories it is installed on, and who the commits are written by
- * @typedef {{ tokenFor: (url: string, fresh: boolean) => Promise<string>, repos: () => Promise<any[]>, account: (url: string) => Promise<{ login: string, id: number } | undefined>, who: () => Promise<import('../lib/appkey.js').Who>, author: { name: string, email: string } | null }} App
+ * @typedef {{ tokenFor: (url: string, fresh: boolean) => Promise<string>, repos: () => Promise<any[]>, installedOn: () => Promise<any[]>, account: (url: string) => Promise<{ login: string, id: number } | undefined>, who: () => Promise<import('../lib/appkey.js').Who>, author: { name: string, email: string } | null }} App
  */
 /** @type {App | null} */
 let app = null;
@@ -209,13 +209,15 @@ export async function requestAs(as, method, path, body) {
 }
 /** @param {string} as @param {string} method @param {string} path @param {unknown} [body] @returns {Promise<any>} */
 const sendAs = async (as, method, path, body) => (await requestAs(as, method, path, body)).json;
-// a private repository made with the token `as` (Administration): the owner's (its user's when '' or its own login)
-/** @param {string} as @param {string} owner @param {string} name @param {string} description @returns {Promise<RepoMeta>} */
+// a private repository made with the token `as` (Administration): the owner's (its user's when '' or its own login;
+// `mine`: made on the user's own account, where the App can be installed)
+/** @param {string} as @param {string} owner @param {string} name @param {string} description @returns {Promise<RepoMeta & { mine: boolean }>} */
 export async function createRepo(as, owner, name, description) {
   const me = (await sendAs(as, 'GET', '/user')).login;
   const body = { name, description, private: true, auto_init: false };
-  const r = await sendAs(as, 'POST', !owner || owner === me ? '/user/repos' : `/orgs/${encodeURIComponent(owner)}/repos`, body);
-  return { id: r.id, full_name: r.full_name, default_branch: r.default_branch || 'main', visibility: r.visibility, private: r.private };
+  const mine = !owner || owner === me;
+  const r = await sendAs(as, 'POST', mine ? '/user/repos' : `/orgs/${encodeURIComponent(owner)}/repos`, body);
+  return { id: r.id, full_name: r.full_name, default_branch: r.default_branch || 'main', visibility: r.visibility, private: r.private, mine };
 }
 // a repository renamed with the token `as` (Administration); GitHub sends the old name on to it
 /** @param {string} as @param {string} repo @param {string} name @returns {Promise<RepoMeta>} */

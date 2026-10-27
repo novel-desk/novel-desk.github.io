@@ -53,8 +53,11 @@ describe('passkey', () => {
   });
   // DESK-SEC-01: the passkey not opening the App's key
   test('openFailure: said no or timed out; a browser that cannot, by its error’s name (or the error itself)', () => {
-    expect(openFailure({ name: 'NotAllowedError' })).toBe('パスキーで開けませんでした（取り消されたか、時間切れです）');
-    expect(openFailure({ name: 'AbortError' })).toBe('パスキーで開けませんでした（取り消されたか、時間切れです）');
+    // (the passkey deleted is said no to as well: the way out said, logged out and the App made again)
+    const cancelled =
+      'パスキーで開けませんでした（取り消されたか、時間切れになりました）。パスワードの管理でパスキーを削除した場合は、もう開けません。「ログアウト」を押して、App を再作成してください';
+    expect(openFailure({ name: 'NotAllowedError' })).toBe(cancelled);
+    expect(openFailure({ name: 'AbortError' })).toBe(cancelled);
     expect(openFailure(new TypeError('x'))).toBe('パスキーを使えません（TypeError）');
     expect(openFailure('test')).toBe('パスキーを使えません（test）');
     expect(openFailure(undefined)).toBe('パスキーを使えません（undefined）');

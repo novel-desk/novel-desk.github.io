@@ -150,7 +150,9 @@ async function createWork(open, relist) {
       $('new-work-title').value = '';
       newDialog().close();
       toast(
-        `${made.full_name}（非公開）を作りました。GitHub App がこのリポジトリに入っていないので、まだ読めません。GitHub の App の設定の Install App で、このリポジトリを足してから、一覧から開いてください。開くと作品を始めます`,
+        made.mine
+          ? `${made.full_name}（非公開）を作りました。GitHub App がこのリポジトリにインストールされていないため、まだ読めません。設定の「App をインストールするリポジトリを選ぶ」で、このリポジトリを選んでから、一覧から開いてください。開くと作品を始めます`
+          : `${made.full_name}（非公開）を作りました。GitHub App は作成したアカウントのリポジトリにしかインストールできないため、組織のこのリポジトリは Novel Desk では開けません`,
       );
       await relist();
       return;

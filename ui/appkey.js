@@ -53,7 +53,7 @@ export function appOf(appId, key, author) {
       const i = await installationFor(url);
       if (!i)
         throw new gh.GitHubError(
-          'このリポジトリには GitHub App が入っていません（GitHub の App の設定の Install App で、作品のリポジトリに入れてください）',
+          'このリポジトリには GitHub App がインストールされていません。設定の「App をインストールするリポジトリを選ぶ」で、このリポジトリを選んでください',
           404,
         );
       return tokenOf(i.id, fresh);
@@ -65,6 +65,11 @@ export function appOf(appId, key, author) {
     who: async () => {
       const a = (await gh.requestAs(await jwt(), 'GET', '/app')).json;
       return { id: a.owner.id, login: a.owner.login, appIds: [String(a.id), String(a.client_id)] };
+    },
+    // where it is installed now, asked of GitHub again (uninstalled on GitHub meanwhile: none)
+    installedOn: async () => {
+      installations = [];
+      return listed();
     },
     // the repositories it is installed on, every page of each installation's (the App writes to them: Contents)
     repos: async () => {

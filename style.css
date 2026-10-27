@@ -105,9 +105,13 @@ input:focus { border-color: var(--accent); }
 .user button { font-size: 12px; padding: 4px 8px; }
 .add-user { display: grid; gap: 8px; }
 
-.toast { position: fixed; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom)); transform: translate(-50%, 10px); opacity: 0; z-index: 20;
-  background: var(--text); color: var(--bg); padding: 9px 16px; border-radius: 999px; font-size: 13px; transition: .2s; pointer-events: none; max-width: calc(100vw - 32px); }
-.toast.show { opacity: 1; transform: translate(-50%, 0); }
+/* 知らせ: iPhone の通知と同じく、画面の上に角の丸い四角で出す（2〜3 行になる文があるため。B5） */
+.toast { position: fixed; left: 16px; right: 16px; top: calc(12px + env(safe-area-inset-top)); max-width: 480px; margin: 0 auto; transform: translateY(-10px); opacity: 0; z-index: 20;
+  background: var(--paper); color: var(--text); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 6px 24px rgba(0,0,0,.18);
+  padding: 12px 14px; font-size: 13px; line-height: 1.6; text-align: left; transition: .2s; pointer-events: none; }
+.toast.show { opacity: 1; transform: none; }
+/* 読み込み中の画面の文（B4） */
+.loading-text { margin: 0; color: var(--muted); font-size: 14px; text-align: center; }
 
 /* phones: the table of contents slides in */
 @media (max-width: 760px) {

@@ -79,3 +79,23 @@ B3 html + #relink
 B3 html + #settings > main.settings-main > section.card:3 > details.leave
 B3 css + .leave summary
 B3 css + .leave[open] summary
+B3 html + #app-repos-link
+# B4. 作者が決めたもの: 読み込み中の表示
+B4 css + .loading-text
+# B5. 作者が決めたもの: 知らせ（トースト）の見た目
+B5 css .toast {left}
+B5 css .toast {bottom}
+B5 css .toast {transform}
+B5 css .toast {background}
+B5 css .toast {color}
+B5 css .toast {padding}
+B5 css .toast {border-radius}
+B5 css .toast {max-width}
+B5 css .toast {right}
+B5 css .toast {top}
+B5 css .toast {margin}
+B5 css .toast {border}
+B5 css .toast {box-shadow}
+B5 css .toast {line-height}
+B5 css .toast {text-align}
+B5 css .toast.show {transform}

@@ -1162,6 +1162,8 @@ export async function open(r) {
   // the work in the address (as the server version's #作品): the page loaded again opens it again
   history.replaceState(null, '', `#${encodeURIComponent(r.full_name)}`);
   $('body').value = '';
+  // (said where the text will be, large enough to be seen on a phone: B4)
+  /** @type {HTMLTextAreaElement} */ ($('body')).placeholder = '作品を読み込んでいます…';
   /** @type {HTMLTextAreaElement} */ ($('body')).disabled = true;
   $('episode-title').value = '';
   $('tree').innerHTML = '';
@@ -1189,6 +1191,7 @@ export async function open(r) {
     await reload();
   } finally {
     opening = false;
+    /** @type {HTMLTextAreaElement} */ ($('body')).placeholder = 'ここに書く';
   }
 }
 

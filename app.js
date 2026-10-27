@@ -56,13 +56,24 @@ async function openKey() {
   if (!a) return start();
   $('unlock-error').textContent = '';
   $('open-key').disabled = true;
+  $('open-key').textContent = 'パスキーで開いています…';
   try {
-    await withApp(a, await vault.openApp(a));
+    const key = await vault.openApp(a);
+    loading('作品を読み込んでいます…');
+    await withApp(a, key);
   } catch (err) {
+    show('unlock');
     $('unlock-error').textContent = err.message;
   } finally {
     $('open-key').disabled = false;
+    $('open-key').textContent = 'パスキーで開く';
   }
+}
+// the screen while something is done before the next one can be shown (what is being done said: B4)
+/** @param {string} text */
+function loading(text) {
+  $('loading-text').textContent = text;
+  show('loading');
 }
 // whose a GitHub App is (lib/appkey.js Who: the account that made it), null when GitHub does not say
 /** @param {import('./ui/github.js').App} app */
@@ -105,7 +116,7 @@ async function logOut() {
   hideNotice();
   kind = '';
   toast(
-    'ログアウトしました。GitHub App の秘密鍵と、この端末に残した作品の控えを消しました。パスキーはパスワードの管理に残っているので、要らなければそこで消してください',
+    'ログアウトしました。GitHub App の秘密鍵と、この端末に残した作品の控えを消しました。GitHub の App と、パスワードの管理のパスキーは残っています。使わないときは、それぞれ削除してください（App は GitHub の Settings → Developer settings → GitHub Apps）',
   );
   show('setup');
 }
@@ -151,12 +162,18 @@ async function openSettings() {
   // asked of GitHub (DESK-OPS-03): refused (the App deleted on GitHub), said so; GitHub not saying it (not reached,
   // failed), nothing said
   $('relink').hidden = true;
+  const app = /** @type {import('./ui/github.js').App} */ (appInUse);
   let who = null;
   try {
-    who = await /** @type {import('./ui/github.js').App} */ (appInUse).who();
+    who = await app.who();
+    // (installed nowhere: uninstalled on GitHub)
+    if (!(await app.installedOn()).length)
+      $('gh-state').textContent =
+        'GitHub App が、どのリポジトリにもインストールされていません。「App をインストールするリポジトリを選ぶ」で、作品のリポジトリを選んでください。';
   } catch (err) {
     if (err instanceof gh.GitHubError && (err.status === 401 || err.status === 404)) {
-      $('gh-state').textContent = 'GitHub App の連携が切れています。GitHub がこの App を断りました（GitHub で App を消したときも、こうなります）。';
+      $('gh-state').textContent =
+        'GitHub App との連携が無効になっています。GitHub がこの App の認証を拒否しました。GitHub で App を削除した場合も、この表示になります。';
       $('relink').hidden = false;
     }
   }
@@ -165,6 +182,7 @@ async function openSettings() {
 // 連携をやめるとき: an App made here, its own page to delete it on
 function showLeave() {
   const slug = appVault?.slug;
+  $('app-repos-link').setAttribute('href', slug ? installUrl(slug) : 'https://github.com/settings/installations');
   const link = $('leave-app-link');
   link.setAttribute('href', slug ? appSettingsUrl(slug) : 'https://github.com/settings/apps');
   link.textContent = slug ? `「${slug}」の Advanced のページ` : 'GitHub App の一覧';
@@ -219,16 +237,23 @@ async function withApp(v, key, app) {
 async function makeApp() {
   $('app-make-error').textContent = '';
   $('make-app').disabled = true;
+  $('make-app').textContent = 'パスキーを作成しています…';
   try {
     const seal = await vault.appPasskey();
     $('app-paste-form').hidden = false;
+    $('make-app').textContent = 'GitHub に移動しています…';
     await startManifest(seal);
   } catch (err) {
     $('app-make-error').textContent = err.message;
-  } finally {
-    $('make-app').disabled = false;
+    resetMakeApp();
   }
 }
+// (left as it was while the page leaves for GitHub; put back when the author comes back to it, as Safari keeps it)
+function resetMakeApp() {
+  $('make-app').disabled = false;
+  $('make-app').textContent = 'GitHub App を作って始める';
+}
+addEventListener('pageshow', resetMakeApp);
 // whether a flow started on this device is waited for (the field to paste its code in shown)
 async function showPaste() {
   /** @type {Pending | undefined} */
@@ -268,8 +293,8 @@ async function pasteCode(/** @type {SubmitEvent} */ e) {
 /** @param {string} code @param {Pending} p */
 async function finishApp(code, p) {
   await store.del('prefs', 'app-manifest');
-  show('setup');
   $('app-paste-form').hidden = true;
+  loading('GitHub App を受け取っています…');
   try {
     const { appId, slug, key, lock } = await madeApp(code, p.seal);
     await checkLogin(await whoseApp(appOf(appId, key, null)));
@@ -278,6 +303,7 @@ async function finishApp(code, p) {
     useApp(v, key);
     await installed(true);
   } catch (err) {
+    show('setup');
     $('app-make-error').textContent = `GitHub App を受け取れませんでした（${err.message}）`;
   }
 }

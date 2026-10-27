@@ -24,13 +24,28 @@ test('the App deleted on GitHub: the settings say the connection is gone; logged
   await expect(link).toHaveAttribute('href', `https://github.com/settings/apps/${slug}/advanced`);
   await expect(link).toHaveText(`「${slug}」の Advanced のページ`);
   await expect(page.locator('#leave-app')).toContainText('インストールも一緒に外れます');
+  // the repositories it is installed on chosen on GitHub, from here
+  await expect(page.locator('#app-repos-link')).toHaveAttribute('href', `https://github.com/apps/${slug}/installations/new`);
+  // uninstalled on GitHub: said when the settings are opened again
+  await page.getByRole('button', { name: '‹ 戻る' }).click();
+  const app = /** @type {NonNullable<typeof gh.app>} */ (gh.app);
+  const installations = app.installations;
+  app.installations = [];
+  await page.getByRole('button', { name: '設定', exact: true }).click();
+  await expect(page.locator('#gh-state')).toHaveText(/^GitHub App が、どのリポジトリにもインストールされていません。/);
+  await expect(page.locator('#relink')).toBeHidden();
+  // installed again: said as before
+  app.installations = installations;
+  await page.getByRole('button', { name: '‹ 戻る' }).click();
+  await page.getByRole('button', { name: '設定', exact: true }).click();
+  await expect(page.locator('#gh-state')).toHaveText('GitHub App で連携しています');
   // deleted on GitHub: said when the settings are opened again
   await page.getByRole('button', { name: '‹ 戻る' }).click();
   gh.app = null;
   await page.getByRole('button', { name: '設定', exact: true }).click();
-  await expect(page.locator('#gh-state')).toContainText('GitHub App の連携が切れています');
+  await expect(page.locator('#gh-state')).toContainText('GitHub App との連携が無効になっています');
   await expect(page.locator('#me')).toHaveText('');
-  await page.getByRole('button', { name: 'ログアウトして、App を作り直す' }).click();
+  await page.getByRole('button', { name: 'ログアウトして App を再作成' }).click();
   await expect(page.locator('#setup')).toBeVisible();
   await expect(page.getByRole('button', { name: 'GitHub App を作って始める' })).toBeVisible();
 });
@@ -101,6 +116,8 @@ test('logged out: the App’s key, the works’ copies and settings deleted; the
   page.on('dialog', d => void (answers.shift() ? d.accept() : d.dismiss()));
   await page.getByRole('button', { name: 'ログアウト' }).click();
   await expect(page.locator('#setup')).toBeVisible();
+  // (DESK-OPS-03: what logging out leaves said, the App on GitHub and the passkey)
+  await expect(page.locator('#toast')).toContainText('GitHub の App と、パスワードの管理のパスキーは残っています');
   expect(await stored(page, 'vault')).toEqual([]);
   expect(await stored(page, 'snapshots')).toEqual([]);
   expect(await stored(page, 'blobs')).toEqual([]);
@@ -177,4 +194,62 @@ test('logged out with the drafts kept, the App made again: their branch and mode
     })
     .toBe('# 第1話 はじまり\n\n枝の書きかけ\n');
   expect(work.text('chapters/01_first.md')).toBe(WORK_FILES['chapters/01_first.md']);
+});
+
+// DESK-OPS-05: GitHub App を作って始める: the button says what is being done until the page leaves for GitHub; back
+// from GitHub, the screen says the App is being taken (both held here until looked at)
+test('making the App: what is being done said on the button, and on the screen while the App is taken', async ({ page, gh }) => {
+  gh.installRepos = ['author/novel'];
+  await noPasskey(page);
+  await keepMoreOpen(page);
+  let release = () => {};
+  const gate = new Promise(r => (release = () => r(undefined)));
+  await page.route('https://github.com/settings/apps/new**', async route => {
+    await gate;
+    await route.fallback();
+  });
+  let releaseTaken = () => {};
+  const taken = new Promise(r => (releaseTaken = () => r(undefined)));
+  await page.route('https://api.github.com/app-manifests/**', async route => {
+    await taken;
+    await route.fallback();
+  });
+  await page.goto('./');
+  await page.getByRole('button', { name: 'GitHub App を作って始める' }).click();
+  // (the page leaves for GitHub once the form is sent: the button no longer to be seen, only the screen after)
+  release();
+  await expect(page.locator('#loading-text')).toHaveText('GitHub App を受け取っています…');
+  releaseTaken();
+  await expect(page.locator('#episode-title')).toHaveValue('はじまり');
+});
+
+// DESK-OPS-05: a work opened: said in the field of the text until it is read (the reading held here)
+test('a work opened: 作品を読み込んでいます… in the field of the text until it is read', async ({ page, gh }) => {
+  void gh;
+  await openWork(page);
+  await page.locator('#to-shelf').click();
+  let release = () => {};
+  const gate = new Promise(r => (release = () => r(undefined)));
+  await page.route('https://api.github.com/**', async route => {
+    await gate;
+    await route.fallback();
+  });
+  await page.locator('#works .work', { hasText: 'author/novel' }).click();
+  await expect(page.locator('#body')).toHaveAttribute('placeholder', '作品を読み込んでいます…');
+  release();
+  await expect(page.locator('#episode-title')).toHaveValue('はじまり');
+  await expect(page.locator('#body')).toHaveAttribute('placeholder', 'ここに書く');
+});
+
+// DESK-OPS-05: the passkey being made (waited for here, never answered): said on the button
+test('making the App: パスキーを作成しています… on the button while the passkey is made', async ({ page, gh, browserName }) => {
+  test.skip(browserName !== 'chromium', 'WebKit here says it has no PRF: no passkey is made');
+  void gh;
+  await page.addInitScript(() => {
+    navigator.credentials.create = () => new Promise(() => {});
+  });
+  await page.goto('./');
+  await page.getByRole('button', { name: 'GitHub App を作って始める' }).click();
+  await expect(page.locator('#make-app')).toHaveText('パスキーを作成しています…');
+  await expect(page.locator('#make-app')).toBeDisabled();
 });
