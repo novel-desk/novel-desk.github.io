@@ -54,6 +54,12 @@ describe('desk', () => {
     expect(footState({ ...s, draft: true })).toBe('端末に保存済み（未送信）');
     expect(footState({ ...s, draft: true, failed: true })).toBe('届けられず、端末に保存済み');
     expect(footState({ ...s, open: false })).toBe('');
+    // B6: a phone's width beside 「GitHub に送信」: in a word
+    expect(footState({ ...s, draft: true, short: true })).toBe('未送信');
+    expect(footState({ ...s, draft: true, failed: true, short: true })).toBe('送信失敗');
+    expect(footState({ ...s, short: true })).toBe('GitHub に保存済み');
+    expect(footState({ ...s, open: false, draft: true, short: true })).toBe('');
+    expect(footState({ ...s, text: CONFLICT_MARK, draft: true, short: true })).toMatch(/^両方の版が並んでいます/);
     expect(footState({ ...s, text: `前\n${CONFLICT_MARK}\n後`, draft: true })).toMatch(/^両方の版が並んでいます/);
     expect(hasConflict(`a${CONFLICT_MARK}`)).toBe(true);
     expect(hasConflict('a')).toBe(false);

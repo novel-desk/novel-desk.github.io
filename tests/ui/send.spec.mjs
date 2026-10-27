@@ -461,6 +461,16 @@ test('GitHub に送信 under the text: shown with something to send, sends as �
   expect(work.text('chapters/01_first.md')).toBe('# 第1話 はじまり\n\n下から送る。\n');
   await expect(foot).toBeHidden();
   await expect(page.locator('#save-state')).toHaveText('GitHub に保存済み');
+  // a phone's width: the state beside it in a word, back in full on a wider screen
+  await page.setViewportSize({ width: 375, height: 700 });
+  await page.locator('#body').fill('# 第1話 はじまり\n\n電話で書いた。\n');
+  await expect(foot).toBeVisible();
+  await expect(page.locator('#save-state')).toHaveText('未送信');
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await expect(page.locator('#save-state')).toHaveText('端末に保存済み（未送信）');
+  await page.setViewportSize({ width: 375, height: 700 });
+  await expect(page.locator('#save-state')).toHaveText('未送信');
+  await page.setViewportSize({ width: 1280, height: 800 });
   await page.locator('#sync-mode').selectOption('off');
   await write(page, '駅で', '# 第2話 駅で\n');
   await expect(foot).toBeHidden();

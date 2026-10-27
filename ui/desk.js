@@ -266,8 +266,11 @@ function showCounts() {
     draft: drafts.has(current),
     failed: failed.has(current),
     onGitHub: Boolean(w && !w.offline && mode !== 'off' && w.blobs[current]),
+    short: narrow.matches && sendButton({ busy, unsent: unsent(), stopped: Boolean(stopped), mode }).foot,
   });
 }
+// a phone's width (as style.css's): the foot's state said shorter beside 「GitHub に送信」 (B6)
+const narrow = matchMedia('(max-width: 760px)');
 // 最終更新 of an episode (lib/desk.js updatedOf)
 /** @param {string} path */
 const updated = path => updatedOf(drafts, /** @type {NonNullable<typeof work>} */ (work).blobs, changed, path);
@@ -1324,6 +1327,7 @@ export function wire(on) {
   wireDrag();
   $('send').addEventListener('click', () => void sendDrafts(true));
   $('send-foot').addEventListener('click', () => void sendDrafts(true));
+  narrow.addEventListener('change', showCounts);
   // 再読み込み: over the table of contents and over the text (the table of contents is closed on a phone: the one over
   // the text says it in the band, as the state under the table of contents is not seen there. DESK-OPS-05)
   /** @param {boolean} band */
