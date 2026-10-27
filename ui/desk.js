@@ -228,6 +228,9 @@ function renderToc() {
   const button = sendButton({ busy, unsent: unsent(), stopped: Boolean(stopped) });
   $('send').disabled = button.disabled;
   $('send').textContent = button.text;
+  // the same, under the text: shown only with something to send (A2)
+  $('send-foot').hidden = mode === 'off' || unsent() === 0;
+  /** @type {HTMLButtonElement} */ ($('send-foot')).disabled = button.disabled;
   $('sync-mode').value = mode;
   brief();
   for (const id of ['add-episode', 'add-chapter', 'toggle-reorder', 'trash-episode']) $(id).disabled = busy;
@@ -1187,6 +1190,7 @@ export async function open(r) {
   $('episode-chars').textContent = '0';
   $('episode-updated').textContent = '';
   $('episode-note').hidden = true;
+  $('send-foot').hidden = true;
   $('save-state').textContent = '読み込み中…';
   // (the operations wait until the work is read: renderToc)
   for (const id of ['add-episode', 'add-chapter', 'toggle-reorder', 'trash-episode', ...WORK_TOOLS]) $(id).disabled = true;
@@ -1312,6 +1316,7 @@ export function wire(on) {
   });
   wireDrag();
   $('send').addEventListener('click', () => void sendDrafts(true));
+  $('send-foot').addEventListener('click', () => void sendDrafts(true));
   // 再読み込み: over the table of contents and over the text (the table of contents is closed on a phone: the one over
   // the text says it in the band, as the state under the table of contents is not seen there. DESK-OPS-05)
   /** @param {boolean} band */
