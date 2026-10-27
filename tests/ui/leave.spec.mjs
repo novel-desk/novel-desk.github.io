@@ -205,12 +205,6 @@ test('making the App: what is being done said on the button, and on the screen w
   gh.installRepos = ['author/novel'];
   await noPasskey(page);
   await keepMoreOpen(page);
-  let release = () => {};
-  const gate = new Promise(r => (release = () => r(undefined)));
-  await page.route('https://github.com/settings/apps/new**', async route => {
-    await gate;
-    await route.fallback();
-  });
   let releaseTaken = () => {};
   const taken = new Promise(r => (releaseTaken = () => r(undefined)));
   await page.route('https://api.github.com/app-manifests/**', async route => {
@@ -218,9 +212,9 @@ test('making the App: what is being done said on the button, and on the screen w
     await route.fallback();
   });
   await page.goto('./');
+  // (the page leaves for GitHub once the form is sent: the button no longer to be seen, only the screen after. The way
+  // to GitHub is not held: a click waits for a navigation it starts, and would wait for one held until after it)
   await page.getByRole('button', { name: 'GitHub App を作成して始める' }).click();
-  // (the page leaves for GitHub once the form is sent: the button no longer to be seen, only the screen after)
-  release();
   await expect(page.locator('#loading-text')).toHaveText('GitHub App を受け取っています…');
   releaseTaken();
   await expect(page.locator('#episode-title')).toHaveValue('はじまり');

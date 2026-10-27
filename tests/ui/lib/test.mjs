@@ -2,6 +2,7 @@
 // tests start with (the GitHub App made, the work chosen). Every page's and service worker's counts of the app (istanbul,
 // coverage.mjs) are taken when its test ends (a page that goes away before keeps them for the page after it)
 import { test as base, expect } from '@playwright/test';
+import { createPrivateKey, createPublicKey, generateKeyPairSync } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { FakeGitHub, FakeRepo, TOKEN } from './fake-github.mjs';
@@ -237,13 +238,57 @@ export async function startApp(page, repos = ['author/novel', 'author/other']) {
   await page.goto('./');
   await page.getByRole('button', { name: 'GitHub App を作成して始める' }).click();
 }
-// The GitHub App made (without a passkey, installed on the author's two repositories), and the work chosen: the desk
+// the App's key pair kept by keptApp: made once for the worker (an RSA key takes a while to make)
+/** @type {ReturnType<typeof generateKeyPairSync<'pem', 'pem'>> | null} */
+let appKeys = null;
+// The GitHub App as the first screen leaves it made (without a passkey: kept as a key that cannot be taken out, its
+// slug, the author's account with the drafts; whose the commits are not known yet), put on the device and the fake
+// GitHub at once, the app opened again with it: installed on `repos`, as startApp does without going through GitHub's
+// pages (the flow itself in manifest.spec.mjs and appkey.spec.mjs). The tests that do not test the flow start here, so
+// that each does not make an App on the fake GitHub's pages first
+/** @param {import('@playwright/test').Page} page @param {string[]} [repos] */
+export async function keptApp(page, repos = ['author/novel', 'author/other']) {
+  const gh = fakes.get(page.context());
+  if (!gh) throw new Error('the test does not take the fake GitHub (gh)');
+  appKeys ??= generateKeyPairSync('rsa', {
+    modulusLength: 2048,
+    publicKeyEncoding: { type: 'spki', format: 'pem' },
+    privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+  });
+  gh.app = {
+    id: 'Iv23testclient1',
+    appId: 901,
+    owner: 'author',
+    publicKey: createPublicKey(appKeys.publicKey),
+    installations: [{ id: 8, account: 'author', repos }],
+  };
+  const der = [...createPrivateKey(appKeys.privateKey).export({ type: 'pkcs8', format: 'der' })];
+  await page.goto('./');
+  await expect(page.locator('#setup')).toBeVisible();
+  await page.evaluate(async der => {
+    const key = await crypto.subtle.importKey('pkcs8', new Uint8Array(der), { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['sign']);
+    await new Promise((resolve, reject) => {
+      const req = indexedDB.open('novel-writer-js');
+      req.onsuccess = () => {
+        const tx = req.result.transaction(['vault', 'prefs'], 'readwrite');
+        tx.objectStore('vault').put({ appId: 'Iv23testclient1', slug: 'novel-desk-test', author: null, kind: 'local', key }, 'app');
+        // (as the first screen keeps it: whose the drafts are, by the GitHub account's number)
+        tx.objectStore('prefs').put(1001, 'owner');
+        tx.oncomplete = () => resolve(null);
+        tx.onerror = () => reject(tx.error);
+      };
+      req.onerror = () => reject(req.error);
+    });
+  }, der);
+  await page.reload();
+}
+// The GitHub App kept (without a passkey, installed on the author's two repositories), and the work chosen: the desk
 // open on its first episode, whose the commits are taken as proposed (これでよい)
 /** @param {import('@playwright/test').Page} page @param {string | null} [first] the title of the first episode (null: none) */
 export async function openWork(page, first = 'はじまり') {
   await noPasskey(page);
   await keepMoreOpen(page);
-  await startApp(page);
+  await keptApp(page);
   // (installed on more than one: the list of works, with 「GitHub リポジトリをインポート」 opened by the app)
   await expect(page.locator('#shelf details.import')).toHaveAttribute('open', '');
   await openRepo(page, 'author/novel');

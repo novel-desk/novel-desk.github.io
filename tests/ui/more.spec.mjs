@@ -113,6 +113,8 @@ test('a chosen branch GitHub no longer has: the branch novel.toml names opened i
   await expect(page.getByRole('button', { name: /⎇ draft/ })).toBeVisible();
   await page.locator('#body').fill('書きかけ\n');
   await expect(page.locator('#send')).toHaveText('送る（1）');
+  // (kept on the device before the page is loaded again: a load within the moment it is written is not a person's)
+  await expect.poll(async () => (await stored(page, 'drafts')).length).toBe(1);
   delete work.refs.draft;
   await page.reload();
   await expect(page.getByRole('button', { name: /⎇ main/ })).toBeVisible();

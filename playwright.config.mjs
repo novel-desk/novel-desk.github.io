@@ -17,7 +17,7 @@ const webkitUse = { ...use, browserName: 'webkit', connectOptions: { wsEndpoint:
 export default defineConfig({
   testDir: 'tests/ui',
   testMatch: '*.spec.mjs',
-  workers: 2,
+  workers: 4,
   timeout: 60000,
   expect: { timeout: 10000 },
   reporter: [['list']],

@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# 手元で全部の点検と試験を実行する（push の前）。`npm run check:all`
-#   JS の整形（Prettier）、書き方（ESLint）、型（tsc。JSDoc の型）、lib の単体試験（vitest。行・分岐・関数・文とも 100%）、
+# 作業の途中で何回も実行する点検と試験。`npm run check:all`（画面の試験は check:ui。push の前に 1 回: tools/check_ui.sh）
+#   JS の整形（Prettier）、書き方（ESLint）、型（tsc。JSDoc の型）、
+#   サーバー版との違い（style.css と index.html を、~/novel-writer の決めた commit と比べる。docs/server-differences.md）、
+#   lib の単体試験（vitest。行・分岐・関数・文とも 100%）、
 #   性質の試験（fast-check。送る処理と読み込みの順番の組み合わせ、操作の列。種は固定）、
-#   画面の試験（Playwright。Chrome と WebKit。GitHub は偽物）、画面の JS のカバレッジ 100%（画面の試験と単体試験を合わせて。NFR-MAINT-02）、
-#   保存の処理の変異テスト 100%（Stryker。lib の changes、drafts、merge、sync。NFR-MAINT-02）、
-#   トレース検証（画面の試験の記録を formal/ のモデルの手順でたどれるか。TLC を java か podman のコンテナで実行する。NFR-MAINT-03）、
-#   サーバー版との違い（style.css と index.html を、~/novel-writer の決めた commit と比べる。docs/server-differences.md）
+#   保存の処理の変異テスト 100%（Stryker。lib の changes、drafts、merge、sync。NFR-MAINT-02）
 set -euo pipefail
 cd "$(dirname "$0")/.."
+start=$SECONDS
 echo "== JS の整形（Prettier）"
 npm run -s format:check
 echo "== JS の書き方（ESLint）"
@@ -20,12 +20,6 @@ echo "== lib の単体試験とカバレッジ（vitest。100% でなければ�
 npm run -s test:unit
 echo "== 性質の試験（fast-check。種は固定）"
 NW_PROPS_SEED=20261025 npm run -s test:props
-echo "== 画面の試験（Playwright。Chrome と WebKit）"
-npm run -s test:ui
-echo "== 画面の JS のカバレッジが 100% か（画面の試験と単体試験を合わせて）"
-node tools/coverage_all.mjs > /dev/null || { cat coverage/all/missing.txt; exit 1; }
 echo "== 保存の処理の変異テストが 100% か（lib の changes、drafts、merge、sync）"
 npm run -s test:mutation:save
-echo "== トレース検証（画面の試験の記録を、formal/ のモデルの手順でたどれるか）"
-node --no-warnings tools/trace_check.mjs
-echo "== 全部通りました"
+echo "== 全部通りました（$((SECONDS - start)) 秒。画面の試験は push の前に npm run check:ui）"

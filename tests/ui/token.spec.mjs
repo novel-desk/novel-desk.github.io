@@ -50,7 +50,9 @@ test('DESK-OPS-04: a device started with a token: the token deleted and said on 
   await expect(gone).toContainText('「GitHub App を作成して始める」で始め直してください');
   await expect(gone.getByRole('link', { name: 'トークンの一覧' })).toHaveAttribute('href', 'https://github.com/settings/personal-access-tokens');
   expect(await stored(page, 'vault')).toEqual([]);
-  expect(await stored(page, 'drafts')).toEqual(drafts);
+  // (the drafts, by their files and texts: the one written may be written once more meanwhile, with its time)
+  const texts = (/** @type {any[]} */ ds) => ds.map(d => [d.path, d.text]);
+  expect(texts(await stored(page, 'drafts'))).toEqual(texts(drafts));
   expect(await stored(page, 'snapshots')).toEqual(snapshots);
   expect(await stored(page, 'prefs')).toEqual(prefs);
   // opened again: the first screen, not said again (the token is gone)

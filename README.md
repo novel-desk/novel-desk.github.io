@@ -212,11 +212,12 @@ main に push すると、数分で https://novel-desk.github.io/ に反映さ�
 ```sh
 npm install
 npm run serve       # http://localhost:4173/ で開く
-npm run check:all   # 整形、書き方、型、サーバー版との違い、単体試験（lib は 100%）、画面の試験（Chrome と WebKit）、画面の JS のカバレッジ 100%、保存の処理の変異テスト、トレース検証
+npm run check:all   # 作業の途中で何回も: 整形、書き方、型、サーバー版との違い、単体試験（lib の C0・C1 100%）、性質の試験、保存の処理の変異テスト（2 分弱）
+npm run check:ui    # push の前に 1 回: 画面の試験（Chrome と WebKit、4 並列）、ブラウザーで動く JS の C0・C1 100%、トレース検証（7 分ほど）
 ```
 
 - 決める部分は `lib/` の純粋な関数にし、vitest で試験します（`tests/unit/`。行・分岐とも 100%）
-- 画面は Playwright で試験します（`tests/ui/`）。GitHub の API は偽物（`tests/ui/lib/fake-github.mjs`）で、本物の GitHub には通信しません
+- 画面は Playwright で試験します（`tests/ui/`）。GitHub の API は偽物（`tests/ui/lib/fake-github.mjs`）で、本物の GitHub には通信しません。GitHub App を作る流れは、それを確かめる試験だけが画面でたどり、ほかの試験は App を保存した状態を端末に入れてから始めます（`tests/ui/lib/test.mjs` の `keptApp`）
 - 画面の JS（`app.js`、`boot.js`、`sw.js`、`ui/`、`lib/`）は、画面の試験と単体試験を合わせて、全部の行と分岐を通します（NFR-MAINT-02）。画面の試験では、`tools/serve.mjs` がスクリプトを istanbul で計測できる形にして出し、`tools/coverage_all.mjs` が単体試験の記録と合わせます。通っていない所は `coverage/all/missing.txt` に出ます
 - 書いたものを残して送る処理（`lib/` の changes・drafts・merge・sync）は、Stryker の変異テストで、コードを少し変えた変異を単体試験が全部見つけることを確かめます（`npm run test:mutation:save`、NFR-MAINT-02）。`lib/` 全体の変異テストは `npm run test:mutation` で、結果は `reports/mutation/` に出ます（サーバー版と同じく、全体には止める基準を付けていません）
 - 送る処理と読み込みは、fast-check の性質の試験でも確かめます（`tests/props/`、`npm run test:props`）。本物の `ui/send.js`・`ui/work.js` と `lib/` を、画面の試験と同じ偽物の GitHub につなぎます。1 つは、GitHub の答えが返る順番を fast-check が選び、その間に打った文字とほかの所での書き込みを混ぜます。もう 1 つは、打つ・話の追加・名前の変更・削除・並べ替え・送る・読み直す・ほかの所での書き込みを、でたらめな順番で続けます。どちらも、書いた文字が消えないこと、手で書いた novel.toml の行がそのまま残ること、送る処理が意図しないファイルを消したり変えたりしないことを確かめます。check:all では種を固定して実行します
