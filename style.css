@@ -153,6 +153,12 @@ a.button.primary { background: var(--accent); color: #fff; font-weight: 600; }
 .preview h1 { font-size: 1.3em; } .preview h2 { font-size: 1.15em; } .preview h3, .preview h4 { font-size: 1.05em; }
 .preview img { display: block; max-width: 100%; max-height: 70vh; margin: 12px auto; border-radius: 8px; }
 .preview rt { font-size: .5em; }
+/* a wide screen: the text box and the preview as wide as the paper, so that their scrollbar is at its right edge (Chrome
+   shows it beside the text otherwise, in the middle of the screen); the text kept 46em wide in the middle by the padding */
+@media (min-width: 761px) {
+  .body { max-width: none; padding-left: max(22px, calc((100% - 46em) / 2 + 22px)); padding-right: max(22px, calc((100% - 46em) / 2 + 22px)); }
+  .preview { padding-left: max(20px, calc((100% - 46em) / 2 + 20px)); padding-right: max(20px, calc((100% - 46em) / 2 + 20px)); }
+}
 .notes-list { display: grid; gap: 6px; }
 .notes-list button { text-align: left; display: flex; justify-content: space-between; gap: 8px; }
 .notes-list small { color: var(--muted); }
