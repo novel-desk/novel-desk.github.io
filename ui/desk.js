@@ -171,7 +171,6 @@ async function discard(item) {
   if (open) await openEpisode(open);
   else openNone();
 }
-// how many files the changes not sent change (novel.toml counts once)
 const unsent = () => unsentCount(drafts, edits);
 
 // --- the table of contents
@@ -225,11 +224,11 @@ function renderToc() {
   // 送る and マージ: not shown when the work is not synced (as the server version's push and マージ); 「…」 while it sends
   $('send').hidden = $('gh-merge').hidden = mode === 'off';
   // (nothing to send: not pressed. It looks the same as the server version's push either way)
-  const button = sendButton({ busy, unsent: unsent(), stopped: Boolean(stopped) });
+  const button = sendButton({ busy, unsent: unsent(), stopped: Boolean(stopped), mode });
   $('send').disabled = button.disabled;
   $('send').textContent = button.text;
-  // the same, under the text: shown only with something to send (A2)
-  $('send-foot').hidden = mode === 'off' || unsent() === 0;
+  // the same, under the text (B6)
+  $('send-foot').hidden = !button.foot;
   /** @type {HTMLButtonElement} */ ($('send-foot')).disabled = button.disabled;
   $('sync-mode').value = mode;
   brief();
@@ -247,7 +246,13 @@ let folded = [];
 
 /** @param {number} d @returns {{ path: string, title: string } | null} */
 function neighbor(d) {
-  const e = findEpisode(neighborOf(episodePaths(), current, d));
+  const eps = episodes();
+  const path = neighborOf(
+    eps.map(e => e.path),
+    current,
+    d,
+  );
+  const e = eps.find(x => x.path === path);
   return e ? { path: e.path, title: titleAt(e.rel) } : null;
 }
 function showCounts() {
@@ -842,7 +847,9 @@ async function reload() {
   renderWork();
   void noteNow();
   const w = /** @type {NonNullable<typeof work>} */ (work);
-  const open = episodeToOpen(episodePaths(), current, await store.get('prefs', `episode:${w.repo}`));
+  // (the episode open read after the device answers: one chosen meanwhile is the one opened)
+  const last = await store.get('prefs', `episode:${w.repo}`);
+  const open = episodeToOpen(episodePaths(), current, last);
   if (open) await openEpisode(open, false);
   else openNone();
   if (place && place.path === current) await showPreviewAt(place.at);

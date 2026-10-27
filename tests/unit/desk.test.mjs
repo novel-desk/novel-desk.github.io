@@ -37,11 +37,15 @@ describe('desk', () => {
     expect(briefOf({ ...s, mode: 'manual', unsent: 1 })).toBe('・未送信');
   });
   // FR-GH-12: not pressed while another repository is under the work's name
-  test('sendButton: the number to send; not pressed with none, while sending, or stopped', () => {
-    expect(sendButton({ busy: false, unsent: 3, stopped: false })).toEqual({ disabled: false, text: '送る（3）' });
-    expect(sendButton({ busy: false, unsent: 0, stopped: false })).toEqual({ disabled: true, text: '送る' });
-    expect(sendButton({ busy: true, unsent: 3, stopped: false })).toEqual({ disabled: true, text: '…' });
-    expect(sendButton({ busy: false, unsent: 3, stopped: true })).toEqual({ disabled: true, text: '送る（3）' });
+  // B6: 「GitHub に送信」 under the text, only when something can go
+  test('sendButton: the number to send; not pressed with none, while sending, or stopped; the one under the text', () => {
+    const s = { busy: false, unsent: 3, stopped: false, mode: /** @type {const} */ ('auto') };
+    expect(sendButton(s)).toEqual({ disabled: false, text: '送る（3）', foot: true });
+    expect(sendButton({ ...s, unsent: 0 })).toEqual({ disabled: true, text: '送る', foot: false });
+    expect(sendButton({ ...s, busy: true })).toEqual({ disabled: true, text: '…', foot: true });
+    expect(sendButton({ ...s, stopped: true })).toEqual({ disabled: true, text: '送る（3）', foot: false });
+    expect(sendButton({ ...s, mode: 'manual' }).foot).toBe(true);
+    expect(sendButton({ ...s, mode: 'off' }).foot).toBe(false);
   });
   // FR-SAVE-07
   test('footState: both versions side by side first; where the open episode is kept; nothing with none open', () => {

@@ -104,5 +104,5 @@ B5 css .toast.show {transform}
 # B6. 作者が決めたもの: 本文の下の「GitHub に送信」
 B6 html + #send-foot
 # B7. 作者が決めたもの: 幅の広い画面で、本文のスクロールバーを右端に出す
-B7 css + @media (min-width: 761px) .body
-B7 css + @media (min-width: 761px) .preview
+B7 css + @media (min-width: 761px) #body
+B7 css + @media (min-width: 761px) #preview
