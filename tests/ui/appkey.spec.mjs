@@ -1,4 +1,4 @@
-// GitHub App の秘密鍵 (FR-GH-01, NFR-SEC-15, NFR-SEC-16): a GitHub App's private key in place of a token, kept when
+// GitHub App の秘密鍵 (FR-GH-01, NFR-SEC-15, NFR-SEC-16): the GitHub App's private key, kept when
 // the App is made from the first screen (GitHub App を作って始める; the flow itself in manifest.spec.mjs). The key is
 // made by the fake GitHub for the test (never a real one); it checks the App's JWTs with its public key, gives its
 // installation tokens for a while, and takes them until they end or are revoked
@@ -72,7 +72,7 @@ const keptKey = page =>
       }),
   );
 /** @param {import('./lib/fake-github.mjs').FakeGitHub} gh */
-const tokensAsked = gh => gh.calls.filter(c => /^POST \/app\/installations\/\d+\/access_tokens$/.test(c)).length;
+const tokensAsked = gh => gh.appCalls.filter(c => /^POST \/app\/installations\/\d+\/access_tokens$/.test(c)).length;
 
 // FR-GH-01, NFR-SEC-15, NFR-SEC-16: kept as a key that cannot be taken out; the repositories it is installed on
 // offered; the commits written as the author; opened again without asking (no passkey here); gone on logging out
@@ -116,7 +116,7 @@ test('started with the App’s private key: kept so that it cannot be taken out;
   // opened again: straight in
   await page.reload();
   await expect(page.locator('#episode-title')).toHaveValue('はじまり');
-  // logged out: the key gone with the token's place
+  // logged out: the key gone
   page.once('dialog', d => void d.accept());
   await toSettings(page);
   await page.getByRole('button', { name: 'ログアウト' }).click();
@@ -149,14 +149,13 @@ test('the installation’s token: asked for again before it ends and when refuse
   await expect(page.locator('#sync-state')).toHaveText(/^送りました（/);
   expect(tokensAsked(gh)).toBe(asked + 1);
   await expect(page.locator('#token-notice')).toBeHidden();
-  // tokens GitHub refuses at once (the App's key deleted, say): said, without the token's way
+  // tokens GitHub refuses at once (the App's key deleted, say): said, with what to do
   gh.appTokenLife = 0;
   gh.appTokens.clear();
   await page.locator('#reload-work').click();
   await expect(page.locator('#token-notice-text')).toHaveText(
     /^GitHub が GitHub App のトークンを断りました.*ログアウトしてから「GitHub App を作って始める」で App を作り直してください/,
   );
-  await expect(page.locator('#token-notice-token')).toBeHidden();
 });
 
 // FR-GH-01, NFR-USE-01: a repository of an owner the App is not installed on (listed on its installation): said, not
@@ -173,10 +172,10 @@ test('a repository it is not on: said; not opened', async ({ page, gh }) => {
   await expect(page.locator('#toast')).toHaveText(/^作品を開けませんでした: このリポジトリには GitHub App が入っていません/);
 });
 
-// NFR-SEC-16: the drafts a token's user left on this device: an App of the same account (by the account's number) is
-// the same person, nothing asked, the drafts kept; an App of another account: asked, and the key not kept unless the
-// drafts are deleted
-test('drafts left by a token’s user: the same account’s App, its own; another account’s, not deleted unless asked, the key not kept then', async ({
+// NFR-SEC-16: the drafts an account's App left on this device: an App made again by the same account (by the
+// account's number) is the same person, nothing asked, the drafts kept; an App of another account: asked, and the key
+// not kept unless the drafts are deleted
+test('drafts left by an account’s App: the same account’s App made again, its own; another account’s, not deleted unless asked, the key not kept then', async ({
   page,
   gh,
 }) => {
@@ -200,7 +199,7 @@ test('drafts left by a token’s user: the same account’s App, its own; anothe
   expect(asked).toHaveLength(2);
   expect(await keptKey(page)).toBeNull();
   expect(await stored(page, 'drafts')).toHaveLength(1);
-  // the token's user's own App (the token's user kept by number)
+  // the same account's App made again (the account kept by number)
   gh.makeOwner = 'author';
   await startApp(page, gh, ['author/novel', 'author/other']);
   await expect(page.locator('#shelf')).toBeVisible();
@@ -208,6 +207,53 @@ test('drafts left by a token’s user: the same account’s App, its own; anothe
   expect(await keptKey(page)).not.toBeNull();
   await openRepo(page, 'author/novel');
   await expect(page.locator('#body')).toHaveValue('# 第1話 はじまり\n\n前のユーザー\n');
+});
+
+// NFR-SEC-16: the drafts an account's App left, and another account's App made: the drafts deleted when the author says
+// so, and that App's key kept
+test('drafts left by an account’s App, another account’s App made: the drafts deleted as asked, its key kept', async ({ page, gh }) => {
+  await openWork(page);
+  await page.locator('#body').fill('# 第1話 はじまり\n\n前のユーザー\n');
+  await expect.poll(async () => (await stored(page, 'drafts')).length).toBe(1);
+  /** @type {string[]} */
+  const asked = [];
+  const answers = [false, true];
+  page.on('dialog', d => {
+    asked.push(d.message());
+    void (answers.shift() ? d.accept() : d.dismiss());
+  });
+  await toSettings(page);
+  await page.getByRole('button', { name: 'ログアウト' }).click();
+  await expect(page.locator('#setup')).toBeVisible();
+  gh.makeOwner = 'someone';
+  await startApp(page, gh, ['author/novel', 'author/other']);
+  await expect(page.locator('#shelf')).toBeVisible();
+  expect(asked).toHaveLength(2);
+  expect(asked[1]).toMatch(/^この端末に、前にログインしていた人の未送信の書きかけが 1 件あります。削除して続けますか？/);
+  expect(await keptKey(page)).not.toBeNull();
+  expect(await stored(page, 'drafts')).toEqual([]);
+});
+
+// FR-GH-01: whose the commits are not known yet (the latest commit not read yet when the author sends): written as the
+// App, as GitHub writes them; then proposed as before
+test('whose the commits are not known yet: written as the App; then proposed', async ({ page, gh, work }) => {
+  /** @type {import('@playwright/test').Route[]} */
+  const held = [];
+  await page.route(
+    url => url.pathname === '/repos/author/novel/commits' && url.search === '?per_page=1',
+    route => void held.push(route),
+  );
+  await noPasskey(page);
+  await startApp(page, gh);
+  await expect(page.locator('#episode-title')).toHaveValue('はじまり');
+  await page.locator('#body').fill('# 第1話 はじまり\n\nまだ決まっていない\n');
+  await page.getByRole('button', { name: '送る（1）' }).click();
+  await expect(page.locator('#sync-state')).toHaveText(/^送りました（/);
+  expect(work.text('chapters/01_first.md')).toBe('# 第1話 はじまり\n\nまだ決まっていない\n');
+  expect(gh.written.at(-1)).toEqual({});
+  await expect.poll(() => held.length).toBeGreaterThan(0);
+  for (const r of held) await r.fallback();
+  await expect(page.locator('#author-notice')).toBeVisible();
 });
 
 // NFR-SEC-16: GitHub not saying whose the App is (its /app not answered): kept as before, whose the drafts are not
@@ -349,12 +395,66 @@ test.describe('with a passkey', () => {
     await openRepo(page, 'author/novel');
     await expect(page.locator('#episode-title')).toHaveValue('はじまり');
   });
-  // DESK-SEC-01, NFR-USE-01: the passkey not opening the App's key: why, in the token's words; another passkey's PRF
+  // FR-GH-01, DESK-SEC-01: whether the browser has PRF, said in other ways (or not said): a passkey is tried all the same,
+  // and the App's key encrypted with it
+  for (const [said, caps] of /** @type {const} */ ([
+    ['not asked (no getClientCapabilities)', 'none'],
+    ['not said', 'silent'],
+    ['the question failing', 'throws'],
+  ]))
+    test(`DESK-SEC-01: PRF ${said}: the passkey tried, and the App’s key kept with it`, async ({ page, gh }) => {
+      await page.addInitScript(how => {
+        const PKC = /** @type {any} */ (window.PublicKeyCredential);
+        PKC.getClientCapabilities = how === 'none' ? undefined : how === 'silent' ? async () => ({}) : async () => Promise.reject(new Error('test'));
+      }, caps);
+      await authenticator(page, true);
+      await startApp(page, gh, ['author/novel', 'author/other']);
+      await page.getByRole('button', { name: 'パスキーで開く' }).click();
+      await expect(page.locator('#shelf')).toBeVisible();
+      expect((await keptAppForm(page))?.kind).toBe('prf');
+    });
+
+  // FR-GH-01, DESK-SEC-01: an authenticator that gives PRF's output only on a get, or not at all, or no passkey, or a
+  // browser that cannot: the App's key encrypted with the passkey when its output comes, else kept as a key that
+  // cannot be taken out
+  for (const [what, create, get, kind] of /** @type {const} */ ([
+    ['the output given on a get', 'later', '', 'prf'],
+    ['the output not given on the get either', 'later', 'none', 'local'],
+    ['no passkey back from the get', 'later', 'null', 'local'],
+    ['no passkey made', 'null', '', 'local'],
+    ['the browser cannot make one', 'error', '', 'local'],
+  ]))
+    test(`DESK-SEC-01: a passkey made, ${what}: the App’s key kept as ${kind}`, async ({ page, gh }) => {
+      await otherAnswers(page);
+      await authenticator(page, true);
+      await keepMoreOpen(page);
+      gh.installRepos = ['author/novel', 'author/other'];
+      await page.goto('./');
+      await answering(page, 'nw-create', create);
+      await answering(page, 'nw-get', get);
+      await page.getByRole('button', { name: 'GitHub App を作って始める' }).click();
+      if (kind === 'prf') await page.getByRole('button', { name: 'パスキーで開く' }).click();
+      await expect(page.locator('#shelf')).toBeVisible();
+      expect((await keptAppForm(page))?.kind).toBe(kind);
+    });
+
+  // NFR-USE-01, FR-AUTH-07: logged out in another tab while this one waits for the passkey: the first screen again
+  test('logged out elsewhere while the passkey is asked for: the first screen', async ({ page, context, gh }) => {
+    await authenticator(page, true);
+    await startApp(page, gh, ['author/novel', 'author/other']);
+    await expect(page.locator('#unlock')).toBeVisible();
+    const other = await context.newPage();
+    await other.goto('./');
+    // (nothing not sent: logged out without asking, as the server version's)
+    await other.getByRole('button', { name: 'ログアウト' }).click();
+    await expect(other.locator('#setup')).toBeVisible();
+    await page.getByRole('button', { name: 'パスキーで開く' }).click();
+    await expect(page.locator('#setup')).toBeVisible();
+  });
+
+  // DESK-SEC-01, NFR-USE-01: the passkey not opening the App's key: why; another passkey's PRF
   // output (the key from it opens nothing): said; opened once the passkey answers
-  test('DESK-SEC-01: the passkey not opening the App’s key: said as for the token; another passkey: not decrypted; opened once it answers', async ({
-    page,
-    gh,
-  }) => {
+  test('DESK-SEC-01: the passkey not opening the App’s key: said why; another passkey: not decrypted; opened once it answers', async ({ page, gh }) => {
     await otherAnswers(page);
     await authenticator(page, true);
     await startApp(page, gh, ['author/novel', 'author/other']);
@@ -393,7 +493,7 @@ test.describe('with a passkey', () => {
     await expect(page.locator('#shelf')).toBeVisible();
   });
   // DESK-SEC-01: one kept by the version before with a passkey (not encrypted; it cannot be now): opened with the
-  // passkey as before, the refusal said in the token's words; that it is not encrypted, and what to do, said in the
+  // passkey as before, the refusal said as for one kept now; that it is not encrypted, and what to do, said in the
   // settings only (not on opening it, nor in a toast)
   test('DESK-SEC-01: the App’s key kept by the version before: opened with its passkey as before; the settings only say it is not encrypted and how to have it so', async ({
     page,

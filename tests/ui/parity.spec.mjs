@@ -33,7 +33,7 @@ test('設定: the colours with the browser’s bar; the account from GitHub, or 
   await toSettings(page);
   await expect(page.locator('#settings > header strong')).toHaveText('設定');
   await expect(page.locator('#me')).toHaveText('GitHub の author');
-  await expect(page.locator('#gh-state')).toHaveText('トークンで連携しています');
+  await expect(page.locator('#gh-state')).toHaveText('GitHub App で連携しています');
   const colours = () => page.locator('meta[name="theme-color"]').evaluateAll(m => m.map(x => /** @type {HTMLMetaElement} */ (x).content));
   await page.getByRole('button', { name: '黒' }).click();
   expect(await colours()).toEqual(['#16171a', '#16171a']);
@@ -43,7 +43,10 @@ test('設定: the colours with the browser’s bar; the account from GitHub, or 
   expect(await colours()).toEqual(['#f2eee6', '#16171a']);
   await page.getByRole('button', { name: '‹ 戻る' }).click();
   await expect(page.locator('#shelf')).toBeVisible();
-  gh.fail = (method, path) => (path === '/user' ? 500 : undefined);
+  // (GitHub not saying whose the App is)
+  await page.route('https://api.github.com/app', route =>
+    route.fulfill({ status: 500, headers: { 'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json' }, body: '{"message":"test"}' }),
+  );
   await page.getByRole('button', { name: '設定', exact: true }).click();
   await expect(page.locator('#me')).toHaveText('');
 });

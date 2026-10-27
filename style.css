@@ -337,7 +337,7 @@ html { overscroll-behavior-x: none; }
 .history-tabs button { white-space: nowrap; padding: 6px 4px; }
 
 /* ---- Novel Desk だけにある部品（サーバーが無いために同じにできない所。docs/server-differences.md） ---- */
-/* 始める画面: ホーム画面に追加、GitHub App、トークンのカードを縦に並べる（A1） */
+/* 始める画面: ホーム画面に追加と GitHub App のカードを縦に並べる（A1） */
 #setup.auth { align-content: center; gap: 12px; }
 .paste-form { display: grid; gap: 12px; }
 .install h2 { margin: 0; font-size: 15px; } .install ol { margin: 0; padding-left: 1.4em; display: grid; gap: 4px; }
@@ -347,14 +347,13 @@ html { overscroll-behavior-x: none; }
 /* 連携をやめるとき: 閉じておき、開くと手順の番号付きの項目（B3） */
 .leave summary { cursor: pointer; color: var(--muted); font-size: 13px; }
 .leave[open] summary { margin-bottom: 8px; }
-/* トークンの期限・GitHub がトークンを断った・GitHub App のコミットの作者の知らせ（A1） */
+/* GitHub が GitHub App のトークンを断った・GitHub App のコミットの作者の知らせ（A1） */
 .token-notice { position: fixed; top: env(safe-area-inset-top); left: 0; right: 0; z-index: 15; background: var(--paper); border-bottom: 1px solid var(--error); color: var(--error); padding: 8px 16px; font-size: 13px; display: grid; gap: 6px; }
 .token-notice p { margin: 0; }
 .token-notice-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.token-notice a { color: var(--accent); }
 .author-notice { border-bottom-color: var(--line); color: var(--text); }
 .author-notice label { display: grid; gap: 2px; font-size: 12px; color: var(--muted); }
-/* トークンの入れ替え・リポジトリを作る・名前を変えるダイアログ（A1、A4） */
+/* リポジトリを作る・名前を変えるダイアログ（A4） */
 .replace-form { display: grid; gap: 10px; padding: 12px 16px 16px; }
 .replace-form label { display: grid; gap: 4px; font-size: 13px; }
 /* novel.toml の読めない所（A6） */

@@ -3,7 +3,7 @@ commit e9a7cf6
 #
 # 理由のある違い: docs/server-differences.md の番号と、tools/server_diff.mjs が出す鍵（node tools/server_diff.mjs --list）
 #
-# A1. 始め方（GitHub App・トークン・パスキー）
+# A1. 始め方（GitHub App・パスキー）
 A1 html - #auth
 A1 html + #loading
 A1 html + #setup
@@ -11,7 +11,6 @@ A1 html + #app-install
 A1 html + #unlock
 A1 html + #author-notice
 A1 html + #token-notice
-A1 html + #token-replace
 A1 html - #admin
 A1 html - #settings > main.settings-main > section.card:3 > div.gh-actions
 A1 css + #setup.auth
@@ -21,7 +20,6 @@ A1 css + .install ol
 A1 css + .token-notice
 A1 css + .token-notice p
 A1 css + .token-notice-row
-A1 css + .token-notice a
 A1 css + .author-notice
 A1 css + .author-notice label
 # A2. 端末にためて「送る」でまとめて送る

@@ -4,7 +4,7 @@
 // in as the works are read, a few at a time. A work's summary is kept by the refs it was read at: when they have not
 // moved, a later visit costs one ref request a work; when they have, the work is read again (the tree, novel.toml, the
 // episodes' blobs, which the device keeps by sha). Another repository is opened from 「GitHub リポジトリをインポート」
-// (FR-WORK-03): its name typed, with the ones the token can write to offered (GitHub's listing read when it is opened).
+// (FR-WORK-03): its name typed, with the ones the GitHub App can write to offered (GitHub's listing read when it is opened).
 // The list and the summaries are this module's
 import { esc, n, whenLong } from '../lib/format.js';
 import { viewOf } from '../lib/view.js';
@@ -114,7 +114,7 @@ export function wireWorks(on) {
     void importWork(on.open);
   });
 }
-// the repositories the token can write to that the list does not show, offered for the field
+// the repositories the GitHub App can write to that the list does not show, offered for the field
 async function offer() {
   /** @type {any[]} */
   let all;
@@ -147,7 +147,7 @@ async function importWork(open) {
   } catch (err) {
     return toast(err.message);
   }
-  if (!r) return toast(`${name} が見つかりません（owner/リポジトリ名 で入れてください。トークンか GitHub App で読めるリポジトリだけを開けます）`);
+  if (!r) return toast(`${name} が見つかりません（owner/リポジトリ名 で入れてください。GitHub App で読めるリポジトリだけを開けます）`);
   $('import-repo').value = '';
   toast('インポートしました');
   await open({ full_name: r.full_name, default_branch: r.default_branch, visibility: r.visibility });

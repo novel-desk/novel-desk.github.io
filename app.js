@@ -1,6 +1,5 @@
-// The app: the token (put in once, opened with a passkey each time), the repository chosen, and the desk. No server:
-// the page talks to GitHub's API only, and keeps what it needs on this device
-import { dayAfter, endOf, expiryNotice } from './lib/expiry.js';
+// The app: the GitHub App (made once, its key opened with a passkey each time), the repository chosen, and the desk. No
+// server: the page talks to GitHub's API only, and keeps what it needs on this device
 import { installHint, isIos, switchNow } from './lib/install.js';
 import { $, show, toast } from './ui/dom.js';
 import * as store from './ui/db.js';
@@ -23,12 +22,9 @@ try {
 /** @typedef {import('./ui/vault.js').AppVault} AppVault */
 /** @typedef {import('./lib/appkey.js').Pending} Pending */
 
-// what the screen says of how the token is kept ('' none kept yet)
+// what the screen says of how the App's key is kept ('' none kept yet)
 const KINDS = {
   '': '',
-  prf: 'トークンはパスキー（PRF）から作った鍵で暗号化して、この端末に置いています。開くたびにパスキーを使います。',
-  local:
-    'このブラウザーはパスキーの PRF に対応していないため、トークンはこの端末の取り出せない鍵（WebCrypto）で暗号化して置いています。パスキーは使いません。この端末でこのブラウザーを開ける人は、トークンを使えます。',
   'app-prf': 'GitHub App の秘密鍵はパスキー（PRF）から作った鍵で暗号化して、この端末に置いています。開くたびにパスキーを使います。',
   'app-local':
     'このブラウザーはパスキーの PRF に対応していないため、GitHub App の秘密鍵は暗号化せず、この端末の取り出せない鍵（WebCrypto）として置いています。パスキーは使いません。この端末でこのブラウザーを開ける人は、作品を読み書きできます。',
@@ -41,14 +37,12 @@ const KINDS = {
 const UNLOCK_APP = { 'app-prf': KINDS['app-prf'], 'app-old': 'GitHub App の秘密鍵は、開くたびにパスキーを使います。' };
 /** @type {keyof typeof KINDS} */
 let kind = '';
-/** @type {string} the token in use ('' none yet) */
-let using = '';
 /** @type {AppVault | null} the GitHub App in use, as kept */
 let appVault = null;
 /** @type {import('./ui/github.js').App | null} the GitHub App in use */
 let appInUse = null;
 
-// --- the token
+// --- the App's key kept, opened, forgotten
 
 // The browser asked to keep this device's store (the key, the drafts) for good, the first time a key is kept: without
 // it, a browser short of room, or Safari after days unopened, may delete it. What it answers changes nothing here
@@ -57,106 +51,62 @@ async function keepStore() {
     await navigator.storage.persist();
   } catch {}
 }
-async function keepToken(/** @type {SubmitEvent} */ e) {
-  e.preventDefault();
-  const token = $('token').value.trim();
-  $('setup-error').textContent = '';
-  if (!token) return;
-  $('keep-token').disabled = true;
-  try {
-    await checkOwner(token);
-    kind = await vault.keep(token);
-    void keepStore();
-    await keepExpiry($('token-expires').value);
-    $('token').value = '';
-    if (kind === 'local') toast('PRF に対応していないため、パスキーなしで保管しました');
-    await withToken(token);
-  } catch (err) {
-    $('setup-error').textContent = err.message;
-  } finally {
-    $('keep-token').disabled = false;
-  }
-}
-async function openToken() {
+async function openKey() {
   const a = await vault.keptApp();
-  const v = await vault.kept();
-  if (!a && !v) return start();
+  if (!a) return start();
   $('unlock-error').textContent = '';
-  $('open-token').disabled = true;
+  $('open-key').disabled = true;
   try {
-    if (a) await withApp(a, await vault.openApp(a));
-    else await withToken(await vault.open(/** @type {import('./ui/vault.js').Vault} */ (v)));
+    await withApp(a, await vault.openApp(a));
   } catch (err) {
     $('unlock-error').textContent = err.message;
   } finally {
-    $('open-token').disabled = false;
-  }
-}
-// The GitHub account the token is of (its user), kept with the drafts. A token of another account put in where drafts
-// of the one before are left (a device shared): asked, without showing them, whether to delete them; if not, the token
-// is not kept (NFR-SEC-16)
-/** @param {string} token */
-async function checkOwner(token) {
-  gh.useToken(token);
-  /** @type {import('./lib/appkey.js').Who | null} */
-  let who = null;
-  try {
-    const u = await gh.getJson('/user');
-    // (GitHub not saying the account's number: not known)
-    if (typeof u.id === 'number') who = { id: u.id, login: u.login };
-  } catch {}
-  try {
-    await checkLogin(who, 'このトークン');
-  } catch (err) {
-    gh.useToken(using);
-    throw err;
+    $('open-key').disabled = false;
   }
 }
 // whose a GitHub App is (lib/appkey.js Who: the account that made it), null when GitHub does not say
 /** @param {import('./ui/github.js').App} app */
 const whoseApp = app => app.who().catch(() => null);
-// The drafts left on this device by another account (a token's user, or an App's owner: compared by the account's
-// number, lib/appkey.js sameOwner), deleted only when the author says so; otherwise what is put in is not kept
-// (throws). The account kept with the drafts, by its number
-/** @param {import('./lib/appkey.js').Who | null} who (null: not known) @param {string} what what is put in (このトークン, この秘密鍵) */
-async function checkLogin(who, what) {
+// The drafts left on this device by another account (an App's owner: compared by the account's number, lib/appkey.js
+// sameOwner; one kept by a token's user before is compared as well), deleted only when the author says so; otherwise
+// the App is not kept (throws). The account kept with the drafts, by its number (NFR-SEC-16)
+/** @param {import('./lib/appkey.js').Who | null} who (null: not known) */
+async function checkLogin(who) {
   const owner = await store.get('prefs', 'owner');
   const left = (await store.all('drafts')).length;
   if (left && who && !sameOwner(owner, who)) {
     if (
       !confirm(
-        `この端末に、前にログインしていた人の未送信の書きかけが ${left} 件あります。削除して続けますか？（中身は表示しません。キャンセルすると、${what}を保管しません）`,
+        `この端末に、前にログインしていた人の未送信の書きかけが ${left} 件あります。削除して続けますか？（中身は表示しません。キャンセルすると、この GitHub Appを保管しません）`,
       )
     )
-      throw new Error(`前のユーザーの書きかけを残すため、${what}を保管しませんでした。前のユーザーがトークンを入れ直すと送れます`);
+      throw new Error('前のユーザーの書きかけを残すため、この GitHub Appを保管しませんでした。前のユーザーが自分の GitHub App で始め直すと送れます');
     await forgetDevice(false);
   }
   if (who) await store.put('prefs', 'owner', who.id);
 }
-// The token forgotten (NFR-SEC-16): with it, what the device keeps of the works (the works last read, the blobs, the
-// settings, the versions kept); the drafts not sent too, when the author says so
+// Logged out (NFR-SEC-16): the App's key forgotten, with what the device keeps of the works (the works last read, the
+// blobs, the settings, the versions kept); the drafts not sent too, when the author says so
 // As the server version's: asked only when something is not sent. Unlike it, the drafts can be kept (logging out is
 // how a GitHub App's key made again is put in: the drafts go with the new one)
-async function forgetToken() {
+async function logOut() {
   await desk.settled();
   const left = (await store.all('drafts')).length;
   const dropDrafts =
     left > 0 &&
     confirm(
-      `未送信の書きかけが ${left} 件あります。ログアウトするとき、この端末から削除しますか？（「キャンセル」なら書きかけだけ残します。同じ GitHub のユーザーのトークンか GitHub App で始め直すと送れます）`,
+      `未送信の書きかけが ${left} 件あります。ログアウトするとき、この端末から削除しますか？（「キャンセル」なら書きかけだけ残します。同じ GitHub のユーザーの GitHub App で始め直すと送れます）`,
     );
-  await vault.forget();
   await vault.forgetApp();
   gh.useApp(null);
   appVault = appInUse = null;
   $('author-notice').hidden = true;
   await forgetDevice(left > 0 && !dropDrafts);
-  await store.del('prefs', 'token-expires');
   hideNotice();
-  gh.useToken('');
-  using = '';
   kind = '';
-  toast('ログアウトしました。トークンと、この端末に残した作品の控えを消しました。パスキーはパスワードの管理に残っているので、要らなければそこで消してください');
+  toast(
+    'ログアウトしました。GitHub App の秘密鍵と、この端末に残した作品の控えを消しました。パスキーはパスワードの管理に残っているので、要らなければそこで消してください',
+  );
   show('setup');
 }
 
@@ -189,7 +139,7 @@ async function chooseRepo() {
   await showWorks();
   switchSoon();
 }
-// 設定 (as the server version's): the screen's colors, the account, GitHub (how the token or the App is kept)
+// 設定 (as the server version's): the screen's colors, the account, GitHub (how the App's key is kept)
 async function openSettings() {
   await desk.settled();
   desk.leave();
@@ -197,30 +147,23 @@ async function openSettings() {
   $('screen-info').textContent = screenInfo();
   $('gh-help').textContent = KINDS[kind];
   showLeave();
-  const app = using === 'app';
-  $('gh-state').textContent = app ? 'GitHub App で連携しています' : 'トークンで連携しています';
-  // asked of GitHub: refused (deleted on GitHub, or the token's time over), said so; GitHub not saying it (not reached,
+  $('gh-state').textContent = 'GitHub App で連携しています';
+  // asked of GitHub (DESK-OPS-03): refused (the App deleted on GitHub), said so; GitHub not saying it (not reached,
   // failed), nothing said
   $('relink').hidden = true;
   let who = null;
   try {
-    who = app ? await /** @type {import('./ui/github.js').App} */ (appInUse).who() : await gh.getJson('/user');
+    who = await /** @type {import('./ui/github.js').App} */ (appInUse).who();
   } catch (err) {
     if (err instanceof gh.GitHubError && (err.status === 401 || err.status === 404)) {
-      $('gh-state').textContent = app
-        ? 'GitHub App の連携が切れています。GitHub がこの App を断りました（GitHub で App を消したときも、こうなります）。'
-        : 'トークンの連携が切れています。GitHub がこのトークンを断りました（期限が切れたときや、GitHub でトークンを消したときも、こうなります）。';
-      $('relink').textContent = app ? 'ログアウトして、App を作り直す' : '新しいトークンを入れる';
+      $('gh-state').textContent = 'GitHub App の連携が切れています。GitHub がこの App を断りました（GitHub で App を消したときも、こうなります）。';
       $('relink').hidden = false;
     }
   }
   $('me').textContent = who ? `GitHub の ${who.login}` : '';
 }
-// 連携をやめるとき: the steps for the way it is connected; an App made here, its own page to delete it on
+// 連携をやめるとき: an App made here, its own page to delete it on
 function showLeave() {
-  const app = using === 'app';
-  $('leave-app').hidden = !app;
-  $('leave-token').hidden = app;
   const slug = appVault?.slug;
   const link = $('leave-app-link');
   link.setAttribute('href', slug ? appSettingsUrl(slug) : 'https://github.com/settings/apps');
@@ -230,79 +173,18 @@ function showLeave() {
     : 'でこの端末の App を開き、Advanced の「Delete GitHub App」を押して、App の名前を入れます。';
 }
 
-// --- the token's expiry, said from 14 days before (GitHub does not let the page read it: the author says it), and a
-// token GitHub refuses (401): either way, a new one put in its place (FR-GH-01, NFR-USE-01)
+// --- the App's installation tokens refused by GitHub (401, asked for again): said, with what to do (the App made
+// again). Nothing the device keeps of the works is deleted until the author logs out (DESK-SEC-03)
 
-/** @param {string} day the date input's value ('' none) */
-const keepExpiry = day => store.put('prefs', 'token-expires', endOf(day));
-/** @param {string} text */
-function showNotice(text) {
-  $('token-notice-text').textContent =
-    using === 'app'
-      ? `${text} ログアウトしてから「GitHub App を作って始める」で App を作り直してください。書いたものはこの端末に残っています。`
-      : `${text} GitHub のトークンの一覧でトークンを作り直し（Regenerate token）、新しい値を入れてください。書いたものはこの端末に残っています。`;
-  $('token-notice-token').hidden = using === 'app';
-  $('token-notice').hidden = false;
-}
 function hideNotice() {
   $('token-notice').hidden = true;
 }
-async function checkExpiry() {
-  const text = expiryNotice(await store.get('prefs', 'token-expires'), Date.now());
-  if (text) showNotice(text);
-  else hideNotice();
-}
-// a token GitHub refuses: said, with the way to put a new one in. Nothing the device keeps of the works is deleted
-// (their settings, the branch chosen, the repositories' IDs, the records, the copies, the drafts): only the token is
-// put in again, and the work goes on as it was (what is not sent goes where and how it was written)
 gh.onRefused(() => {
-  if (!using) return;
-  showNotice(
-    using === 'app'
-      ? 'GitHub が GitHub App のトークンを断りました（秘密鍵が消されたか、App が外されたかもしれません）。'
-      : 'GitHub がトークンを断りました（期限が切れたか、消されたかもしれません）。',
-  );
+  $('token-notice-text').textContent =
+    'GitHub が GitHub App のトークンを断りました（秘密鍵が消されたか、App が外されたかもしれません）。ログアウトしてから「GitHub App を作って始める」で App を作り直してください。書いたものはこの端末に残っています。';
+  $('token-notice').hidden = false;
 });
-async function replaceToken(/** @type {SubmitEvent} */ e) {
-  e.preventDefault();
-  const token = $('new-token').value.trim();
-  $('token-replace-error').textContent = '';
-  if (!token) return;
-  $('keep-new-token').disabled = true;
-  const before = using;
-  try {
-    gh.useToken(token);
-    try {
-      await gh.check();
-    } catch (err) {
-      throw new Error(`このトークンは使えません: ${err.message}`, { cause: err });
-    }
-    kind = await vault.keep(token);
-    await keepExpiry($('new-token-expires').value);
-    using = token;
-    $('new-token').value = '';
-    /** @type {HTMLDialogElement} */ (/** @type {unknown} */ ($('token-replace'))).close();
-    hideNotice();
-    toast('新しいトークンを保管しました');
-    // (the notice that opens this is shown on the screens of the work and on the list of works only)
-    if (desk.onWork()) await api.reload();
-    else await chooseRepo();
-  } catch (err) {
-    gh.useToken(before);
-    $('token-replace-error').textContent = err.message;
-  } finally {
-    $('keep-new-token').disabled = false;
-  }
-}
 
-/** @param {string} token */
-async function withToken(token) {
-  gh.useApp(null);
-  gh.useToken(token);
-  using = token;
-  await checkExpiry();
-  await openFirst();
-}
 // the work in the address (#owner/name, as the server version's #作品: the page loaded again opens it again), else
 // the list of works
 async function openFirst() {
@@ -316,9 +198,7 @@ async function openFirst() {
 /** @param {AppVault} v as kept @param {CryptoKey} key its key to sign with (opened) @param {import('./ui/github.js').App} [app] the one it was checked with */
 function useApp(v, key, app = appOf(v.appId, key, v.author)) {
   kind = `app-${appFormOf(v)}`;
-  gh.useToken('');
   gh.useApp(app);
-  using = 'app';
   appVault = v;
   appInUse = app;
   hideNotice();
@@ -392,10 +272,9 @@ async function finishApp(code, p) {
   $('app-paste-form').hidden = true;
   try {
     const { appId, slug, key, lock } = await madeApp(code, p.seal);
-    await checkLogin(await whoseApp(appOf(appId, key, null)), 'この GitHub App');
+    await checkLogin(await whoseApp(appOf(appId, key, null)));
     const v = await vault.keepApp({ appId, slug, author: null, ...lock });
     void keepStore();
-    await vault.forget();
     useApp(v, key);
     await installed(true);
   } catch (err) {
@@ -463,8 +342,8 @@ async function changeAuthor(/** @type {SubmitEvent} */ e) {
   $('author-notice').hidden = true;
 }
 
-// 利用規約 (DESK-OPS-02): agreed to on this device on starting (the button pressed to make the App or keep the
-// token), and by one started before, when it is opened and they changed (their 版, data-version). Agreed to while this
+// 利用規約 (DESK-OPS-02): agreed to on this device on starting (the button pressed to make the App), and by one started
+// before, when it is opened and they changed (their 版, data-version). Agreed to while this
 // device's storage cannot be written: for this time the page is open
 const TERMS = $('terms').dataset.version;
 let agreedNow = false;
@@ -513,44 +392,28 @@ async function start() {
   if (location.search) history.replaceState(null, '', location.pathname);
   // (back from GitHub: agreed to where it was started; the page it came back to may be another one, as Safari)
   if (back) return cameBack(back);
+  // (a device started with a token, before that way was taken away: the token deleted, said, and the first screen;
+  // the drafts and the copies of the works kept, for the App made again by the same account, DESK-OPS-04)
+  if (await vault.dropOldToken()) $('token-gone').hidden = false;
   const a = await vault.keptApp();
-  const v = a ? undefined : await vault.kept();
-  // (started before the 利用規約 were agreed to here, or before they changed)
-  if ((a || v) && !agreed()) return showTerms(() => void start(), null);
-  if (a) {
-    const form = appFormOf(a);
-    // (kept without a passkey: opened at once)
-    if (form === 'local') return withApp(a, await vault.openApp(a));
-    kind = `app-${form}`;
-    $('unlock-note').textContent = UNLOCK_APP[kind];
-    return show('unlock');
-  }
-  kind = v?.kind ?? '';
-  if (!v) {
+  if (!a) {
     show('setup');
     return showPaste();
   }
-  if (v.kind === 'local') {
-    try {
-      return await withToken(await vault.open(v));
-    } catch (err) {
-      show('unlock');
-      $('unlock-error').textContent = err.message;
-      return;
-    }
-  }
-  $('unlock-note').textContent = KINDS.prf;
+  // (started before the 利用規約 were agreed to here, or before they changed)
+  if (!agreed()) return showTerms(() => void start(), null);
+  const form = appFormOf(a);
+  // (kept without a passkey: opened at once)
+  if (form === 'local') return withApp(a, await vault.openApp(a));
+  kind = `app-${form}`;
+  $('unlock-note').textContent = UNLOCK_APP[kind];
   show('unlock');
 }
 
-$('setup-form').addEventListener('submit', e => {
-  e.preventDefault();
-  agreeFirst(() => void keepToken(/** @type {SubmitEvent} */ (e)));
-});
 $('make-app').addEventListener('click', () => agreeFirst(() => void makeApp()));
 $('app-paste-form').addEventListener('submit', e => void pasteCode(/** @type {SubmitEvent} */ (e)));
 $('author-notice').addEventListener('submit', e => void changeAuthor(/** @type {SubmitEvent} */ (e)));
-$('forget-token-install').addEventListener('click', () => void forgetToken());
+$('logout-install').addEventListener('click', () => void logOut());
 $('copy-bridge').addEventListener('click', () =>
   navigator.clipboard.writeText($('app-bridge-code').value).then(
     () => toast('コードを写しました。始めた Novel Desk に戻って貼ってください'),
@@ -561,9 +424,9 @@ $('copy-bridge').addEventListener('click', () =>
   ),
 );
 document.addEventListener('visibilitychange', () => void recheck());
-$('open-token').addEventListener('click', () => void openToken());
-$('logout').addEventListener('click', () => void forgetToken());
-$('forget-token-unlock').addEventListener('click', () => void forgetToken());
+$('open-key').addEventListener('click', () => void openKey());
+$('logout').addEventListener('click', () => void logOut());
+$('logout-unlock').addEventListener('click', () => void logOut());
 $('open-settings').addEventListener('click', () => void openSettings());
 $('close-settings').addEventListener('click', () => void chooseRepo());
 $('agree-terms').addEventListener('click', agree);
@@ -571,19 +434,10 @@ $('open-terms').addEventListener('click', () => showTerms(null, () => void openS
 $('close-terms').addEventListener('click', () => backFromTerms?.());
 wireWorks({ open: openRepo });
 desk.wire({ changeRepo: () => void chooseRepo(), open: openRepo, relist: chooseRepo });
-$('token-replace-form').addEventListener('submit', e => void replaceToken(/** @type {SubmitEvent} */ (e)));
-function openReplace() {
-  $('new-token-expires').value = dayAfter(Date.now());
-  $('token-replace-error').textContent = '';
-  /** @type {HTMLDialogElement} */ (/** @type {unknown} */ ($('token-replace'))).showModal();
-}
-$('token-replace-open').addEventListener('click', openReplace);
-// the connection refused, said in the settings: an App, logged out to make it again (on the first screen: the passkey
-// is made by the button pressed there); a token, a new one put in
-$('relink').addEventListener('click', () => (using === 'app' ? void forgetToken() : openReplace()));
-$('close-token-replace').addEventListener('click', () => /** @type {HTMLDialogElement} */ (/** @type {unknown} */ ($('token-replace'))).close());
+// the connection refused, said in the settings: logged out to make the App again (on the first screen: the passkey is
+// made by the button pressed there)
+$('relink').addEventListener('click', () => void logOut());
 $('token-notice-close').addEventListener('click', hideNotice);
-$('token-expires').value = dayAfter(Date.now());
 
 // --- adding the app to the home screen (FR-APP-03): said on the first screen only, never once opened from there
 /** @type {any} the browser's offer to install the app (Chrome), kept for the button */
@@ -659,5 +513,5 @@ if ('serviceWorker' in navigator) {
 // (this device's store cannot be opened: a newer version of the app made it, or the browser does not allow it)
 void start().catch(err => {
   show('setup');
-  $('setup-error').textContent = `この端末の保存場所を開けません（${err.message}）`;
+  $('app-make-error').textContent = `この端末の保存場所を開けません（${err.message}）`;
 });

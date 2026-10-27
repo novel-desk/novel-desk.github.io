@@ -1,15 +1,14 @@
-// The requests to GitHub's REST API, with the token (in memory only). Every address is under api.github.com: the page's
-// CSP lets nothing else be reached
+// The requests to GitHub's REST API, with the GitHub App's installation tokens (in memory only). Every address is under
+// api.github.com: the page's CSP lets nothing else be reached
 import { API, failure, nextPage } from '../lib/github.js';
 
-/** @type {string} */
-let token = '';
-// told when GitHub refuses the token (401: expired, or deleted): app.js listens
+// told when GitHub refuses the App's installation token, asked for again (401: the App's key deleted, or the App
+// removed): app.js listens
 const refusals = new EventTarget();
 /** @param {() => void} f */
 export const onRefused = f => refusals.addEventListener('refused', f);
 /**
- * A GitHub App in use in place of the token (ui/appkey.js): the installation's token for a request (`fresh`: asked
+ * The GitHub App in use (ui/appkey.js): the installation's token for a request (`fresh`: asked
  * for again, the one before refused), the repositories it is installed on, and who the commits are written by
  * @typedef {{ tokenFor: (url: string, fresh: boolean) => Promise<string>, repos: () => Promise<any[]>, account: (url: string) => Promise<{ login: string, id: number } | undefined>, who: () => Promise<import('../lib/appkey.js').Who>, author: { name: string, email: string } | null }} App
  */
@@ -18,10 +17,6 @@ let app = null;
 /** @param {App | null} a */
 export const useApp = a => {
   app = a;
-};
-/** @param {string} t */
-export const useToken = t => {
-  token = t;
 };
 
 // A request that fails: why, said for the screen; `status` 0 when GitHub was not reached (offline)
@@ -32,12 +27,12 @@ export class GitHubError extends Error {
     this.status = status;
   }
 }
-/** @param {string} url @param {RequestInit} [init] @param {string} [as] another token than the one in use (the one with
- * Administration, for one request: not kept, and a refusal of it is not the token in use refused) */
+/** @param {string} url @param {RequestInit} [init] @param {string} [as] another token than the App's (the one with
+ * Administration, for one request: not kept, and a refusal of it is not the App refused; or the App's JWT) */
 async function request(url, init = {}, as = '') {
-  let res = await attempt(url, init, as || (app ? await app.tokenFor(url, false) : token));
+  let res = await attempt(url, init, as || (await /** @type {App} */ (app).tokenFor(url, false)));
   // (an App's installation token refused: asked for again, once)
-  if (res.status === 401 && !as && app) res = await attempt(url, init, await app.tokenFor(url, true));
+  if (res.status === 401 && !as) res = await attempt(url, init, await /** @type {App} */ (app).tokenFor(url, true));
   if (res.status === 401 && !as) refusals.dispatchEvent(new Event('refused'));
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
@@ -58,27 +53,13 @@ async function attempt(url, init, bearer) {
   }
 }
 /** @param {string} path @returns {Promise<any>} */
-export const getJson = async path => (await request(path)).json();
+const getJson = async path => (await request(path)).json();
 /** @param {string} method @param {string} path @param {unknown} body @returns {Promise<any>} */
 export const send = async (method, path, body) =>
   (await request(path, { method, body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' } })).json();
 
-// whether GitHub takes the token (a GitHubError when it does not)
-export const check = () => getJson('/user/repos?per_page=1');
-// the repositories the token can read, every page of them (an App: the ones it is installed on)
-export async function repos() {
-  if (app) return app.repos();
-  /** @type {any[]} */
-  const found = [];
-  /** @type {string | null} */
-  let url = '/user/repos?per_page=100&sort=updated';
-  while (url) {
-    const res = await request(url);
-    found.push(...(await res.json()));
-    url = nextPage(res.headers.get('Link'));
-  }
-  return found;
-}
+// the repositories the App is installed on, every page of them
+export const repos = () => /** @type {App} */ (app).repos();
 /** @param {string} repo 「owner/name」 */
 const repoPath = repo => repo.split('/').map(encodeURIComponent).join('/');
 /** @param {string} branch */
@@ -185,8 +166,8 @@ export const newTree = async (repo, base, tree) => (await send('POST', `/repos/$
 /** @param {string} repo @param {string} message @param {string} tree @param {string} parent */
 export const newCommit = async (repo, message, tree, parent) =>
   (await send('POST', `/repos/${repoPath(repo)}/git/commits`, { message, tree, parents: [parent], ...writtenBy() })).sha;
-// who a commit is written by: an App's commits, the author (GitHub would write them as the App; so it does when the
-// author is not known yet); a token's, its user
+// who a commit is written by: the author (GitHub would write it as the App; so it does when the author is not known
+// yet)
 const writtenBy = () => (app?.author ? { author: app.author, committer: app.author } : {});
 // moves the branch onto the commit, only forward (a branch moved on elsewhere since: GitHubError 422)
 /** @param {string} repo @param {string} branch @param {string} commit */
@@ -215,8 +196,8 @@ export const repoById = id => metaAt(`/repositories/${id}`);
 export const putFile = async (repo, path, base64, message) =>
   (await send('PUT', `/repos/${repoPath(repo)}/contents/${path.split('/').map(encodeURIComponent).join('/')}`, { message, content: base64, ...writtenBy() }))
     .commit.sha;
-// a request with another token than the one in use (`as`: the one with Administration, an App's JWT or an
-// installation's token), its answer and the next page's address
+// a request with another token than the App's for the repository (`as`: the one with Administration, the App's JWT or
+// an installation's token), its answer and the next page's address
 /** @param {string} as @param {string} method @param {string} path @param {unknown} [body] @returns {Promise<{ json: any, next: string | null }>} */
 export async function requestAs(as, method, path, body) {
   const res = await request(

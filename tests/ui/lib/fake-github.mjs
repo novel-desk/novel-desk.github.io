@@ -211,8 +211,13 @@ export class FakeGitHub {
     this.adminCalls = [];
     /** @type {string[]} the requests made to anything but this page's server and the API (refused) */
     this.outside = [];
-    /** @type {string[]} the API requests, 「GET /path」 */
+    /** @type {string[]} the API requests, 「GET /path」, but the GitHub App's own (below) */
     this.calls = [];
+    /** @type {string[]} the GitHub App's own requests (made from its manifest, its installations, their tokens, itself), 「POST /path」 */
+    this.appCalls = [];
+    // how far the page's clock is set from this machine's (ms; a test that sets the page's clock): the App's JWTs and
+    // its installations' tokens are judged by the page's time
+    this.timeOffset = 0;
     /** @type {((method: string, path: string) => number | undefined) | null} a status to answer instead, for a test */
     this.fail = null;
     // the repositories' listing comes in pages of this many
@@ -326,7 +331,11 @@ export class FakeGitHub {
     if (!verify('sha256', Buffer.from(`${h}.${c}`), this.app.publicKey, Buffer.from(s, 'base64url'))) return false;
     const claims = JSON.parse(Buffer.from(c, 'base64url').toString());
     // (GitHub takes the App's Client ID or its number)
-    return (claims.iss === this.app.id || claims.iss === String(this.app.appId)) && claims.exp * 1000 > Date.now() && claims.exp - claims.iat <= 660;
+    return (claims.iss === this.app.id || claims.iss === String(this.app.appId)) && claims.exp * 1000 > this.now() && claims.exp - claims.iat <= 660;
+  }
+  // the time as the page's clock says it
+  now() {
+    return Date.now() + this.timeOffset;
   }
   // a GitHub account's number (one not known yet given the next)
   /** @param {string} login */
@@ -338,7 +347,7 @@ export class FakeGitHub {
   /** @param {string | undefined} auth */
   installationOf(auth) {
     const t = this.appTokens.get(String(auth).replace(/^Bearer /, ''));
-    return t && t.expires > Date.now() ? t.installation : undefined;
+    return t && t.expires > this.now() ? t.installation : undefined;
   }
   // the App's own requests: its installations, a token for one, the repositories of one
   /** @param {string} method @param {URL} url @param {string | undefined} auth @param {(status: number, body: unknown, headers?: Record<string, string>) => Promise<void>} reply */
@@ -371,7 +380,7 @@ export class FakeGitHub {
     const m = /^\/app\/installations\/(\d+)\/access_tokens$/.exec(url.pathname);
     if (m && method === 'POST' && app.installations.some(i => i.id === Number(m[1]))) {
       const token = `ghs_test_${this.appTokens.size + 1}`;
-      const expires = Date.now() + this.appTokenLife;
+      const expires = this.now() + this.appTokenLife;
       this.appTokens.set(token, { installation: Number(m[1]), expires });
       return reply(201, { token, expires_at: new Date(expires).toISOString() });
     }
@@ -406,7 +415,8 @@ export class FakeGitHub {
     if (method === 'OPTIONS') return route.fulfill({ status: 204, headers: CORS });
     if (this.down) return route.abort('internetdisconnected');
     const url = new URL(req.url());
-    this.calls.push(`${method} ${url.pathname}${url.search}`);
+    const own = url.pathname === '/app' || url.pathname.startsWith('/app/') || url.pathname.startsWith('/app-manifests/');
+    (own ? this.appCalls : this.calls).push(`${method} ${url.pathname}${url.search}`);
     this.before?.(method, url.pathname);
     /** @type {(status: number, body: unknown, headers?: Record<string, string>) => Promise<void>} */
     const reply = (status, body, headers = {}) =>

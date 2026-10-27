@@ -1,8 +1,8 @@
 // 作品の一覧 (FR-WORK-01): the repositories opened on this device, each with its work summed up, the latest changed first
 // (as the server version's shelf), the summaries kept by the refs they were read at; another one opened from 「GitHub
-// リポジトリをインポート」 (FR-WORK-03: only the ones the token can write to offered, by name, nothing read of them); the
+// リポジトリをインポート」 (FR-WORK-03: only the ones the GitHub App is installed on offered, by name, nothing read of them); the
 // repository's visibility, 公開 standing out (FR-GH-11)
-import { test, expect, openImport, openRepo, openWork, stored, FakeRepo } from './lib/test.mjs';
+import { test, expect, keepMoreOpen, noPasskey, openImport, openRepo, openWork, startApp, stored, FakeRepo } from './lib/test.mjs';
 
 /** @param {import('@playwright/test').Page} page */
 const rows = page => page.locator('#works .work small');
@@ -73,9 +73,9 @@ test('shown at once from what was kept; GitHub not reached: what was kept stays,
   // (the names offered: none read)
 });
 
-// FR-WORK-01, FR-WORK-03: a public repository the token can only read (tools, say) is not a work: not offered, nothing
-// read of it; the ones on the list not offered again
-test('GitHub リポジトリをインポート: only the repositories the token can write to and the list does not show, by name; nothing read of them', async ({
+// FR-WORK-01, FR-WORK-03: a repository the GitHub App is not installed on (someone's public tools, say) is not a work:
+// not offered, nothing read of it; the ones on the list not offered again
+test('GitHub リポジトリをインポート: only the repositories the App is installed on and the list does not show, by name; nothing read of them', async ({
   page,
   gh,
 }) => {
@@ -88,14 +88,14 @@ test('GitHub リポジトリをインポート: only the repositories the token 
   gh.calls.length = 0;
   await openImport(page);
   await expect.poll(() => offered(page)).toEqual(['author/other']);
-  expect(gh.calls).toEqual(['GET /user/repos?per_page=100&sort=updated']);
+  expect(gh.calls).toEqual(['GET /installation/repositories?per_page=100']);
   await expect(page.locator('#works .work b')).toHaveText(['試験の作品']);
-  // every one the token can write to on the list: none offered
+  // every one the App is installed on on the list: none offered
   await openRepo(page, 'author/other');
   await toShelf(page);
   await openImport(page);
   // (read again: the list shown again)
-  await expect.poll(() => gh.calls.filter(c => c.startsWith('GET /user/repos')).length).toBe(2);
+  await expect.poll(() => gh.calls.filter(c => c.startsWith('GET /installation/repositories')).length).toBe(2);
   await expect.poll(() => offered(page)).toEqual([]);
   expect(gh.calls.some(c => c.includes('someone/tools'))).toBe(false);
 });
@@ -204,6 +204,22 @@ test('deleted: 送ってから削除 sends first; GitHub keeps the repository; �
   await expect(page.locator('#episode-title')).toHaveValue('はじまり');
   await toShelf(page);
   await expect(page.locator('#works .work b')).toHaveText(['試験の作品']);
+});
+
+// FR-WORK-05, FR-WORK-08: a work deleted right after typing: the record of the day not written for it once it is gone
+test('deleted right after typing: the record of the day not written for it once it is gone', async ({ page, gh }) => {
+  void gh;
+  await page.clock.install();
+  await openWork(page);
+  // (the clock held: the record noted 2 seconds after typing, only when the clock is moved on)
+  await page.clock.pauseAt(Date.now() + 60000);
+  await page.locator('#body').fill('# 第1話 はじまり\n\n消す前に\n');
+  await expect.poll(async () => (await stored(page, 'drafts')).length).toBe(1);
+  await page.getByRole('button', { name: 'この作品を削除' }).click();
+  await page.getByRole('button', { name: '送らずに削除' }).click();
+  await expect(page.locator('#shelf')).toBeVisible();
+  await page.clock.runFor(3000);
+  expect(JSON.stringify(await stored(page, 'prefs'))).not.toContain('"days"');
 });
 
 // FR-WORK-05: not sent, and given up (送らずに削除); a work not synced asked once
@@ -352,4 +368,51 @@ test('the list shown again while the one before was still reading: only the new 
   await page.evaluate(() => new Promise(r => setTimeout(r, 100)));
   await expect(page.locator('#works .work b')).toHaveText(['試験の作品', 'other', 'third', 'fourth']);
   await expect(rows(page).first()).toHaveText(/^37 字 ・ 3 話 /);
+});
+
+// FR-WORK-03: GitHub リポジトリをインポート (as the server version's): the names offered are the repositories the GitHub App
+// is installed on (every page of GitHub's listing) that the list does not show; the one typed is opened, put on the
+// list, and opened again by the address; a name not found, and GitHub refusing, said
+test('GitHub リポジトリをインポート: every page offered; the ones on the list not offered; the one typed is remembered; a name not found and a refusal said', async ({
+  page,
+  gh,
+}) => {
+  gh.installationPerPage = 1;
+  await noPasskey(page);
+  await keepMoreOpen(page);
+  await startApp(page);
+  // (the list of works, with 「GitHub リポジトリをインポート」 opened by the app)
+  await expect(page.locator('#shelf details.import')).toHaveAttribute('open', '');
+  await openImport(page);
+  await expect.poll(() => offered(page)).toEqual(['author/novel', 'author/other']);
+  await openRepo(page, 'author/novel');
+  await expect(page.locator('#toast')).toHaveText('インポートしました');
+  await expect(page.locator('#episode-title')).toHaveValue('はじまり');
+  await page.getByRole('button', { name: 'これでよい' }).click();
+  await toShelf(page);
+  await expect(page.locator('#works .work b')).toHaveText(['試験の作品']);
+  // (the names read again when the import is opened again)
+  await openImport(page);
+  // (read again: the list shown again)
+  await expect.poll(() => offered(page)).toEqual(['author/other']);
+  await openRepo(page, 'author/other');
+  await expect(page.locator('#work-repo a')).toHaveText('author/other');
+  await toShelf(page);
+  await expect(page.locator('#works .work b')).toHaveText(['試験の作品', 'other']);
+  await expect(rows(page)).toHaveText([/GitHub author\/novel（main） 非公開$/, /GitHub author\/other（main） 公開$/]);
+  // the list again when the page is loaded again there; a work opened again by the address
+  await page.reload();
+  await expect(page.locator('#shelf')).toBeVisible();
+  await page.locator('#works .work', { hasText: 'other' }).click();
+  await expect(page.locator('#work-repo a')).toHaveText('author/other');
+  await page.reload();
+  await expect(page.locator('#work-repo a')).toHaveText('author/other');
+  await toShelf(page);
+  await openRepo(page, 'author/none');
+  await expect(page.locator('#toast')).toHaveText(
+    'author/none が見つかりません（owner/リポジトリ名 で入れてください。GitHub App で読めるリポジトリだけを開けます）',
+  );
+  gh.fail = () => 401;
+  await openRepo(page, 'author/novel');
+  await expect(page.locator('#toast')).toHaveText('トークンが使えません（期限切れか、消されたかもしれません）: test failure');
 });

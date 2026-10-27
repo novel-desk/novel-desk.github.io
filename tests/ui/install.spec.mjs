@@ -1,5 +1,5 @@
 // Adding the app to the home screen (FR-APP-03): the first screen says how on an iPhone in a tab of Safari, and why the
-// token goes in only after; a browser that offers to install it gets a button; opened from the home screen, nothing
+// App is made only after; a browser that offers to install it gets a button; opened from the home screen, nothing
 import { test, expect, noPasskey } from './lib/test.mjs';
 
 const IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
@@ -20,14 +20,14 @@ test.describe('an iPhone', () => {
     await noPasskey(page);
     await page.addInitScript(() => Object.defineProperty(navigator, 'standalone', { value: true, configurable: true }));
     await page.goto('./');
-    await expect(page.getByLabel('トークン', { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'GitHub App を作って始める' })).toBeVisible();
     await expect(page.locator('#install-ios')).toBeHidden();
   });
 });
 test('a browser that offers to install the app: a button that asks it; nothing before the offer', async ({ page, gh }) => {
   await noPasskey(page);
   await page.goto('./');
-  await expect(page.getByLabel('トークン', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'GitHub App を作って始める' })).toBeVisible();
   await expect(page.locator('#install-app')).toBeHidden();
   await expect(page.locator('#install-ios')).toBeHidden();
   await page.evaluate(() => {
@@ -45,7 +45,7 @@ test('a browser that offers to install the app: a button that asks it; nothing b
 test('installed from the browser’s menu after the offer: the button goes', async ({ page, gh }) => {
   await noPasskey(page);
   await page.goto('./');
-  await expect(page.getByLabel('トークン', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'GitHub App を作って始める' })).toBeVisible();
   await page.evaluate(() => dispatchEvent(Object.assign(new Event('beforeinstallprompt', { cancelable: true }), { prompt: async () => {} })));
   await expect(page.locator('#install-app')).toBeVisible();
   await page.evaluate(() => dispatchEvent(new Event('appinstalled')));

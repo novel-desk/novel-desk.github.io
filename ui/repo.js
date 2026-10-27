@@ -1,8 +1,8 @@
 // 作品のリポジトリ: a new work (FR-WORK-02, FR-GH-02: a private repository made, and an empty one started as a work),
 // the repository renamed (FR-GH-10), where it is now (renamed or moved on GitHub: followed; another repository under
 // its name: not sent to until the author says so, FR-GH-12), and what this device keeps of a work moved to the new
-// name. Making and renaming a repository needs Administration, which the token in use does not have: a separate
-// token is put in for it each time, used for that one request and not kept
+// name. Making and renaming a repository needs Administration, which the GitHub App does not have: a token with it is
+// put in each time, used for that one request and not kept
 import { adminFailure, isWorkKey, keptAfterForget, movedKey, newWorkFiles, repoName, whereIs, withWork } from '../lib/works.js';
 import { $, toast } from './dom.js';
 import * as store from './db.js';
@@ -14,7 +14,7 @@ import * as gh from './github.js';
 const base64 = text => btoa(Array.from(new TextEncoder().encode(text), c => String.fromCharCode(c)).join(''));
 
 // この端末の作品の一覧 (FR-WORK-01): the repositories opened on this device. A device that kept none yet starts from the
-// work it had open; the listing of every repository the token reads, kept before, is no longer used
+// work it had open; the listing of every repository it could read, kept before, is no longer used
 /** @returns {Promise<Repo[]>} */
 export async function worksHere() {
   /** @type {Repo[] | undefined} */
@@ -73,7 +73,7 @@ export async function forgetWork(repo) {
   const off = await offList();
   if (!off.includes(repo)) await store.put('prefs', 'off-list', [...off, repo]);
 }
-// The token forgotten (NFR-SEC-16): what the device keeps of the works deleted (the works last read, the blobs, the
+// Logged out (NFR-SEC-16): what the device keeps of the works deleted (the works last read, the blobs, the
 // settings and the versions kept), and the drafts too unless the author keeps them (with what they need to be sent)
 /** @param {boolean} draftsKept */
 export async function forgetDevice(draftsKept) {
@@ -121,7 +121,7 @@ export const titleFor = async repo => (await store.get('prefs', `new-title:${rep
 const said = err => (err instanceof gh.GitHubError && err.status !== 0 ? adminFailure(err.status, err.message) : /** @type {Error} */ (err).message);
 
 // 新しい作品: a private repository made (with the token that has Administration), then started as a work when the
-// token in use can read it; else the author is told to add it to that token's Repository access
+// GitHub App can read it; else the author is told to install the App on it
 /** @param {(r: Repo) => Promise<void>} open @param {() => Promise<void>} relist */
 async function createWork(open, relist) {
   const title = $('new-work-title').value.trim();
@@ -150,7 +150,7 @@ async function createWork(open, relist) {
       $('new-work-title').value = '';
       newDialog().close();
       toast(
-        `${made.full_name}（非公開）を作りました。いまのトークンではまだ読めないので、GitHub のトークンの一覧でいまのトークンを開き（Edit）、Repository access にこのリポジトリを足してから、一覧から開いてください。開くと作品を始めます`,
+        `${made.full_name}（非公開）を作りました。GitHub App がこのリポジトリに入っていないので、まだ読めません。GitHub の App の設定の Install App で、このリポジトリを足してから、一覧から開いてください。開くと作品を始めます`,
       );
       await relist();
       return;

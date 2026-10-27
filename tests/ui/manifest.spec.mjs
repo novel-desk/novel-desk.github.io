@@ -77,7 +77,7 @@ const everything = page =>
     return { texts: texts.join('\n'), bytes };
   });
 /** @param {import('./lib/fake-github.mjs').FakeGitHub} gh */
-const conversions = gh => gh.calls.filter(c => c.startsWith('POST /app-manifests/'));
+const conversions = gh => gh.appCalls.filter(c => c.startsWith('POST /app-manifests/'));
 /** @param {import('@playwright/test').Page} page */
 const makeApp = page => page.getByRole('button', { name: 'GitHub App を作って始める' }).click();
 /** @param {import('@playwright/test').Page} page */
@@ -329,7 +329,7 @@ test('GitHub not reached on the screen of installing: said; logged out from ther
   await page.goto('./');
   await expect(page.locator('#app-install-error')).toHaveText('GitHub につながりません（オフラインかもしれません）');
   page.once('dialog', d => void d.accept());
-  await page.locator('#forget-token-install').click();
+  await page.locator('#logout-install').click();
   await expect(page.locator('#setup')).toBeVisible();
   expect(await keptApp(page)).toBeNull();
   expect(await stored(page, 'vault')).toEqual([]);

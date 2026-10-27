@@ -96,7 +96,8 @@ export class Device {
     this.at = 0;
   }
   async open() {
-    gh.useToken(TOKEN);
+    // (the GitHub App in use: every request with the fake's token, the App's own requests not made here)
+    gh.useApp(/** @type {any} */ ({ tokenFor: async () => TOKEN, author: null }));
     this.work = await load(this.repo.fullName, this.repo.defaultBranch, '');
     return this;
   }

@@ -1,22 +1,19 @@
-// The token, kept on this device encrypted: with a key from a passkey's PRF output (iPhone: Face ID each time it is
-// opened), or where PRF is not there, with a WebCrypto key that cannot be taken out of IndexedDB. The token itself is
-// only in this page's memory while it is open. A GitHub App's private key is kept in the same way (below)
-import { APP_KEY_INFO, createOptions, getOptions, KEY_INFO, openFailure, passkeyName, prfOf, webauthnFailure } from '../lib/passkey.js';
+// The GitHub App's private key, kept on this device: encrypted with a key from a passkey's PRF output (iPhone: Face ID
+// each time it is opened), or where PRF is not there, as a WebCrypto key that cannot be taken out of IndexedDB (below)
+import { APP_KEY_INFO, createOptions, getOptions, openFailure, passkeyName, prfOf, webauthnFailure } from '../lib/passkey.js';
 import { pkcs8Of } from '../lib/appkey.js';
 import * as store from './db.js';
 
-/**
- * @typedef {{ kind: 'prf', credentialId: Uint8Array, salt: Uint8Array, iv: Uint8Array, data: ArrayBuffer }} PrfVault
- * @typedef {{ kind: 'local', key: CryptoKey, iv: Uint8Array, data: ArrayBuffer }} LocalVault
- * @typedef {PrfVault | LocalVault} Vault
- */
-const KEY = 'token';
 /** @param {number} n */
 const random = n => crypto.getRandomValues(new Uint8Array(n));
 
-/** @returns {Promise<Vault | undefined>} */
-export const kept = () => store.get('vault', KEY);
-export const forget = () => store.del('vault', KEY);
+// A token kept by the versions that could start with one (DESK-OPS-04): deleted, and whether one was there. Nothing
+// else is deleted with it (the drafts not sent and the copies of the works stay, for the App made again)
+export async function dropOldToken() {
+  if ((await store.get('vault', 'token')) === undefined) return false;
+  await store.del('vault', 'token');
+  return true;
+}
 
 // The AES-GCM key from a PRF output (HKDF, SHA-256, the salt kept with it; info: what it is for)
 /** @param {BufferSource} output @param {Uint8Array} salt @param {string} what */
@@ -54,14 +51,14 @@ async function saysPrf() {
     return null;
   }
 }
-// A passkey made for the token or the App's key, and its PRF output (null when the authenticator has no PRF: the
-// passkey is left unused)
-/** @param {'token' | 'app'} kind @param {Uint8Array} salt @returns {Promise<{ credentialId: Uint8Array, output: BufferSource } | null>} */
-async function makePasskey(kind, salt) {
+// A passkey made for the App's key, and its PRF output (null when the authenticator has no PRF: the passkey is left
+// unused)
+/** @param {Uint8Array} salt @returns {Promise<{ credentialId: Uint8Array, output: BufferSource } | null>} */
+async function makePasskey(salt) {
   const rpId = location.hostname;
   const cred = /** @type {PublicKeyCredential | null} */ (
     await navigator.credentials.create({
-      publicKey: createOptions({ rpId, userId: random(16), challenge: random(32), salt, name: passkeyName(kind, new Date()) }),
+      publicKey: createOptions({ rpId, userId: random(16), challenge: random(32), salt, name: passkeyName(new Date()) }),
     })
   );
   if (!cred) return null;
@@ -82,21 +79,21 @@ async function passkeyOutput(credentialId, salt) {
 }
 // A passkey with PRF made, when this browser has it (null: it has not, or the authenticator has not). Throws when the
 // author said no to it
-/** @param {'token' | 'app'} kind @param {Uint8Array} salt */
-async function newPasskey(kind, salt) {
+/** @param {Uint8Array} salt */
+async function newPasskey(salt) {
   if ((await saysPrf()) === false) return null;
   try {
-    return await makePasskey(kind, salt);
+    return await makePasskey(salt);
   } catch (err) {
     if (webauthnFailure(err) === 'cancelled')
       throw new Error('パスキーが作られませんでした（取り消されたか、時間切れです）。もう一度押してください', { cause: err });
     return null;
   }
 }
-// What is kept with a passkey, decrypted: the author verified by it. `what` is what the screen calls it. Throws when it
-// cannot be (the same words for the token and the App's key: lib/passkey.js openFailure)
-/** @param {{ credentialId: Uint8Array, salt: Uint8Array, iv: Uint8Array, data: ArrayBuffer }} v @param {string} info @param {string} what */
-async function opened(v, info, what) {
+// What is kept with a passkey, decrypted: the author verified by it. Throws when it cannot be (lib/passkey.js
+// openFailure)
+/** @param {{ credentialId: Uint8Array, salt: Uint8Array, iv: Uint8Array, data: ArrayBuffer }} v */
+async function opened(v) {
   /** @type {BufferSource | null} */
   let output;
   try {
@@ -106,38 +103,14 @@ async function opened(v, info, what) {
   }
   if (!output) throw new Error('パスキーが PRF の値を返しませんでした');
   try {
-    return await decrypt(await prfKey(output, v.salt, info), v.iv, v.data);
+    return await decrypt(await prfKey(output, v.salt, APP_KEY_INFO), v.iv, v.data);
   } catch (err) {
-    throw new Error(`${what}を復号できませんでした（作ったときと違うパスキーかもしれません）`, { cause: err });
+    throw new Error('GitHub App の秘密鍵を復号できませんでした（作ったときと違うパスキーかもしれません）', { cause: err });
   }
 }
 
-// Keeps the token: with a passkey when this browser has PRF, else with a key that cannot be taken out. Returns the
-// kind kept. Throws when the author said no to the passkey (nothing is kept then)
-/** @param {string} token @returns {Promise<'prf' | 'local'>} */
-export async function keep(token) {
-  const salt = random(32);
-  const passkey = await newPasskey('token', salt);
-  const bytes = new TextEncoder().encode(token);
-  if (passkey) {
-    const { iv, data } = await encrypt(await prfKey(passkey.output, salt, KEY_INFO), bytes);
-    await store.put('vault', KEY, { kind: 'prf', credentialId: passkey.credentialId, salt, iv, data });
-    return 'prf';
-  }
-  const key = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
-  const { iv, data } = await encrypt(key, bytes);
-  await store.put('vault', KEY, { kind: 'local', key, iv, data });
-  return 'local';
-}
-// The token, opened (a passkey's: the author verified by it). Throws when it cannot be
-/** @param {Vault} v @returns {Promise<string>} */
-export async function open(v) {
-  return new TextDecoder().decode(v.kind === 'local' ? await decrypt(v.key, v.iv, v.data) : await opened(v, KEY_INFO, 'トークン'));
-}
-
-// --- a GitHub App's private key (ui/appkey.js), kept in place of a token (DESK-SEC-01). As the token: its PKCS#8
-// bytes encrypted (AES-GCM) with a key from the PRF output of a passkey made for it; opened each time with the passkey,
-// made at once into WebCrypto's key that cannot be taken out (extractable: false), held in memory only, the bytes
+// --- the GitHub App's private key (ui/appkey.js, DESK-SEC-01): its PKCS#8 bytes encrypted (AES-GCM) with a key from
+// the PRF output of a passkey made for it; opened each time with the passkey, made at once into WebCrypto's key that cannot be taken out (extractable: false), held in memory only, the bytes
 // zeroed. Where PRF is not there: the key that cannot be taken out kept as it is, no passkey (anyone who can open this
 // browser can sign with it: the screen says so). One kept as it is by the version before, with a passkey that encrypts
 // nothing ('old'), cannot be encrypted now (it cannot be taken out): opened as before, and the settings say how to
@@ -161,7 +134,7 @@ export const forgetApp = () => store.del('vault', APP);
 /** @returns {Promise<AppSeal | null>} */
 export async function appPasskey() {
   const salt = random(32);
-  const passkey = await newPasskey('app', salt);
+  const passkey = await newPasskey(salt);
   return passkey && { credentialId: passkey.credentialId, salt, key: await prfKey(passkey.output, salt, APP_KEY_INFO) };
 }
 // the key to sign with, from PKCS#8 bytes, that cannot be taken out
@@ -194,7 +167,7 @@ export async function keepApp(v) {
 /** @param {AppVault} v @returns {Promise<CryptoKey>} */
 export async function openApp(v) {
   if (v.kind === 'prf') {
-    const pkcs8 = await opened(v, APP_KEY_INFO, 'GitHub App の秘密鍵');
+    const pkcs8 = await opened(v);
     try {
       return await signingKey(pkcs8);
     } finally {

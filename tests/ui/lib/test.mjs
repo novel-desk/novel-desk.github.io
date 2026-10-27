@@ -1,5 +1,5 @@
 // The fixtures of the screen tests: a fake GitHub for each test (`gh`, with the work `work`), and the steps that most
-// tests start with (the token kept, the work chosen). Every page's and service worker's counts of the app (istanbul,
+// tests start with (the GitHub App made, the work chosen). Every page's and service worker's counts of the app (istanbul,
 // coverage.mjs) are taken when its test ends (a page that goes away before keeps them for the page after it)
 import { test as base, expect } from '@playwright/test';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -39,6 +39,9 @@ export const WORK_FILES = {
 };
 
 /** @typedef {{ gh: FakeGitHub, work: FakeRepo }} Fixtures */
+// the fake GitHub of each context (for the steps that take only the page: openWork)
+/** @type {WeakMap<import('@playwright/test').BrowserContext, FakeGitHub>} */
+const fakes = new WeakMap();
 export const test = base.extend(
   /** @type {any} */ ({
     // the counts taken in this worker, written for global-teardown.mjs when the worker ends
@@ -66,6 +69,7 @@ export const test = base.extend(
     gh: async ({ context, work, baseURL }, use) => {
       const gh = new FakeGitHub([work, new FakeRepo('author/other', { 'README.md': '# ほか\n' }, { private: false })]);
       await gh.install(context, new URL(baseURL).origin);
+      fakes.set(context, gh);
       await use(gh);
       // nothing went anywhere but this page's server and the (fake) API
       expect(gh.outside).toEqual([]);
@@ -84,7 +88,7 @@ export async function takeAll(context, taken) {
   }
 }
 
-// This browser has no passkey: the token is kept with a key that cannot be taken out (the path of a browser without
+// This browser has no passkey: the App's key is kept as a key that cannot be taken out (the path of a browser without
 // PRF; WebKit here has no authenticator to test with)
 /** @param {import('@playwright/test').Page} page */
 export async function noPasskey(page) {
@@ -223,16 +227,29 @@ export const today = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
-// The token put in (without a passkey), and the work chosen: the desk open on its first episode
+// The GitHub App made from the first screen (GitHub App を作って始める, on the fake GitHub's pages; no passkey), installed
+// on `repos` there: one, its work opened at once; more, the list of works
+/** @param {import('@playwright/test').Page} page @param {string[]} [repos] */
+export async function startApp(page, repos = ['author/novel', 'author/other']) {
+  const gh = fakes.get(page.context());
+  if (!gh) throw new Error('the test does not take the fake GitHub (gh)');
+  gh.installRepos = repos;
+  await page.goto('./');
+  await page.getByRole('button', { name: 'GitHub App を作って始める' }).click();
+}
+// The GitHub App made (without a passkey, installed on the author's two repositories), and the work chosen: the desk
+// open on its first episode, whose the commits are taken as proposed (これでよい)
 /** @param {import('@playwright/test').Page} page @param {string | null} [first] the title of the first episode (null: none) */
 export async function openWork(page, first = 'はじまり') {
   await noPasskey(page);
   await keepMoreOpen(page);
-  await page.goto('./');
-  await page.getByLabel('トークン', { exact: true }).fill(TOKEN);
-  await page.getByRole('button', { name: 'パスキーで保管する' }).click();
+  await startApp(page);
+  // (installed on more than one: the list of works, with 「GitHub リポジトリをインポート」 opened by the app)
+  await expect(page.locator('#shelf details.import')).toHaveAttribute('open', '');
   await openRepo(page, 'author/novel');
   if (first !== null) await expect(page.locator('#episode-title')).toHaveValue(first);
+  await page.getByRole('button', { name: 'これでよい' }).click();
+  await expect(page.locator('#author-notice')).toBeHidden();
 }
 // 設定 (as the server version's: from the list of works), from the desk or the list
 /** @param {import('@playwright/test').Page} page */

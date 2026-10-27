@@ -59,8 +59,8 @@ test('a new work refused: the permission needed is said; a name GitHub would not
   expect([...gh.repos.keys()]).toEqual(['author/novel', 'author/other']);
 });
 
-// FR-WORK-02, FR-GH-02, FR-WORK-01: made, but the token in use cannot read it yet: said what to do; on this device's
-// list once made, and once the token can read it, opened from the list and started as a work. An empty repository made
+// FR-WORK-02, FR-GH-02, FR-WORK-01: made, but the GitHub App cannot read it yet (not installed on it): said what to
+// do; on this device's list once made, and once the App can read it, opened from the list and started as a work. An empty repository made
 // on GitHub is started the same way
 test('made but not readable yet: said; then, and an empty repository made elsewhere, started from the list', async ({ page, gh }) => {
   gh.adminTokens = [ADMIN];
@@ -83,7 +83,7 @@ test('made but not readable yet: said; then, and an empty repository made elsewh
   await expect(page.locator('#works .work', { hasText: 'author/empty' })).toContainText('空のリポジトリです（開くと作品として始められます）');
   await create(page, { title: '試験の新作', repo: 'later', token: ADMIN });
   await expect(page.locator('#toast')).toHaveText(
-    /^author\/later（非公開）を作りました。いまのトークンではまだ読めないので、.*Repository access にこのリポジトリを足して/,
+    /^author\/later（非公開）を作りました。GitHub App がこのリポジトリに入っていないので、まだ読めません。.*Install App で、このリポジトリを足して/,
   );
   await expect(page.locator('#new-repo')).toBeHidden();
   expect(gh.repos.get('author/later')?.empty).toBe(true);
@@ -128,14 +128,15 @@ test('the repository renamed from the app: with the separate token; the work and
   await expect(page.locator('#work-repo a')).toHaveText('author/novel-renamed');
 });
 
-// FR-GH-10: renamed or moved on GitHub: followed when the work is read, its changes not sent with it
+// FR-GH-10: renamed on GitHub (on the account the GitHub App is installed on): followed when the work is read, its
+// changes not sent with it
 test('renamed on GitHub: followed when read, the changes not sent with it', async ({ page, gh, work }) => {
   await openWork(page);
   await page.locator('#body').fill('# 第1話 はじまり\n\nここで\n');
-  gh.rename('author/novel', 'someone/novel-moved');
+  gh.rename('author/novel', 'author/novel-moved');
   await page.locator('#reload-work').click();
-  await expect(page.locator('#toast')).toHaveText('GitHub でリポジトリが someone/novel-moved に変わっていたので、合わせました');
-  await expect(page.locator('#work-repo a')).toHaveText('someone/novel-moved');
+  await expect(page.locator('#toast')).toHaveText('GitHub でリポジトリが author/novel-moved に変わっていたので、合わせました');
+  await expect(page.locator('#work-repo a')).toHaveText('author/novel-moved');
   await expect(page.locator('#body')).toHaveValue('# 第1話 はじまり\n\nここで\n');
   await page.getByRole('button', { name: '送る（1）' }).click();
   await expect(page.locator('#sync-state')).toHaveText(/^送りました（/);
@@ -183,16 +184,13 @@ test('a new work: no title or no token said first; GitHub not reached said; the 
   expect([...gh.repos.keys()]).toEqual(['author/novel', 'author/other']);
 });
 
-// FR-WORK-02: the owner named: its own user (made as its own), or an organisation (made there); GitHub not saying the
-// new repository's default branch: main
+// FR-WORK-02: the owner named: its own user (made as its own; GitHub not saying the new repository's default branch:
+// main), or an organisation (made there; the GitHub App, installed on its own account only, cannot read it: said)
 test('a new work for the user named, and for an organisation; the default branch not said: main', async ({ page, gh }) => {
   gh.adminTokens = [ADMIN];
   await openWork(page);
   await page.getByRole('button', { name: '‹ 作品' }).click();
-  await create(page, { title: '自分の作品', repo: 'mine', token: ADMIN, owner: 'author' });
-  await expect(page.locator('#work-repo')).toContainText('author/mine');
-  await page.getByRole('button', { name: '‹ 作品' }).click();
-  await page.route('https://api.github.com/orgs/novel-org/repos', route =>
+  await page.route('https://api.github.com/user/repos', route =>
     route.request().method() !== 'POST'
       ? route.fallback()
       : gh.answer(
@@ -203,10 +201,15 @@ test('a new work for the user named, and for an organisation; the default branch
           }),
         ),
   );
+  await create(page, { title: '自分の作品', repo: 'mine', token: ADMIN, owner: 'author' });
+  await expect(page.locator('#work-repo')).toContainText('author/mine');
+  await expect(page.locator('#work-branch')).toHaveText('main');
+  expect(gh.repos.get('author/mine')?.text('novel.toml')).toContain('title = "自分の作品"');
+  await page.getByRole('button', { name: '‹ 作品' }).click();
   await create(page, { title: '組織の作品', repo: 'shared', token: ADMIN, owner: 'novel-org' });
-  await expect(page.locator('#work-repo')).toContainText('novel-org/shared');
+  await expect(page.locator('#toast')).toHaveText(/^novel-org\/shared（非公開）を作りました。GitHub App がこのリポジトリに入っていないので、まだ読めません。/);
   expect(gh.adminCalls).toEqual(['GET /user', 'POST /user/repos', 'GET /user', 'POST /orgs/novel-org/repos']);
-  expect(gh.repos.get('novel-org/shared')?.text('novel.toml')).toContain('title = "組織の作品"');
+  expect(gh.repos.get('novel-org/shared')?.empty).toBe(true);
 });
 
 // FR-GH-10, NFR-USE-01: the rename dialog: a name GitHub would not take and no token said; the same name, or closing

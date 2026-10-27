@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest';
-import { APP_KEY_INFO, KEY_INFO, createOptions, getOptions, openFailure, passkeyName, prfOf, webauthnFailure } from '../../lib/passkey.js';
+import { APP_KEY_INFO, createOptions, getOptions, openFailure, passkeyName, prfOf, webauthnFailure } from '../../lib/passkey.js';
 
 const bytes = n => new Uint8Array(n).fill(7);
 
@@ -10,10 +10,10 @@ describe('passkey', () => {
       userId: bytes(16),
       challenge: bytes(32),
       salt: bytes(32),
-      name: 'Novel Desk トークン 2026-10-25',
+      name: 'Novel Desk GitHub App 2026-10-25',
     });
     expect(o.rp).toEqual({ id: 'kurogane255.github.io', name: 'Novel Desk' });
-    expect([o.user.name, o.user.displayName]).toEqual(['Novel Desk トークン 2026-10-25', 'Novel Desk トークン 2026-10-25']);
+    expect([o.user.name, o.user.displayName]).toEqual(['Novel Desk GitHub App 2026-10-25', 'Novel Desk GitHub App 2026-10-25']);
     expect(o.user.id).toEqual(bytes(16));
     expect(o.challenge).toEqual(bytes(32));
     expect(o.authenticatorSelection).toEqual({ residentKey: 'preferred', userVerification: 'required' });
@@ -21,11 +21,11 @@ describe('passkey', () => {
     expect(o.extensions).toEqual({ prf: { eval: { first: bytes(32) } } });
   });
   // NFR-SEC-15: the passkey's name in the passwords' list says what it opens and the day it was made
-  test('passkeyName: the token or the GitHub App, and the day made', () => {
-    expect(passkeyName('token', new Date(2026, 9, 25, 23, 59))).toBe('Novel Desk トークン 2026-10-25');
-    expect(passkeyName('app', new Date(2026, 0, 5))).toBe('Novel Desk GitHub App 2026-01-05');
+  test('passkeyName: the GitHub App, and the day made', () => {
+    expect(passkeyName(new Date(2026, 9, 25, 23, 59))).toBe('Novel Desk GitHub App 2026-10-25');
+    expect(passkeyName(new Date(2026, 0, 5))).toBe('Novel Desk GitHub App 2026-01-05');
   });
-  test('getOptions: only the passkey made for the token, verified, the same salt', () => {
+  test('getOptions: only the passkey made for the App’s key, verified, the same salt', () => {
     const o = getOptions({ rpId: 'localhost', credentialId: bytes(20), challenge: bytes(32), salt: bytes(32) });
     expect(o.rpId).toBe('localhost');
     expect(o.allowCredentials).toEqual([{ type: 'public-key', id: bytes(20) }]);
@@ -47,12 +47,11 @@ describe('passkey', () => {
     expect(webauthnFailure({})).toBe('unsupported');
     expect(webauthnFailure(undefined)).toBe('unsupported');
   });
-  // DESK-SEC-01: the token's key and the GitHub App's key are told apart by what they are for
-  test('KEY_INFO, APP_KEY_INFO: name what the key is for, and its version', () => {
-    expect(KEY_INFO).toBe('novel-writer-js token v1');
+  // DESK-SEC-01: the key from the PRF output names what it is for (the GitHub App's key)
+  test('APP_KEY_INFO: names what the key is for, and its version', () => {
     expect(APP_KEY_INFO).toBe('novel-writer-js app key v1');
   });
-  // DESK-SEC-01: the passkey not opening the token or the App's key: the same words for both
+  // DESK-SEC-01: the passkey not opening the App's key
   test('openFailure: said no or timed out; a browser that cannot, by its error’s name (or the error itself)', () => {
     expect(openFailure({ name: 'NotAllowedError' })).toBe('パスキーで開けませんでした（取り消されたか、時間切れです）');
     expect(openFailure({ name: 'AbortError' })).toBe('パスキーで開けませんでした（取り消されたか、時間切れです）');

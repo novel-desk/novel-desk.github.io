@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<!-- the token is in this page: no script but the app's own, and nothing sent anywhere but GitHub's API (and the one
+<!-- the GitHub App's tokens are in this page: no script but the app's own, and nothing sent anywhere but GitHub's API (and the one
      form, the GitHub App's manifest, to github.com) -->
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; connect-src https://api.github.com; img-src 'self' blob: data:; object-src 'none'; base-uri 'none'; form-action https://github.com">
 <meta name="referrer" content="no-referrer">
@@ -49,7 +49,7 @@
   </div>
 </section>
 
-<!-- 始める: ホーム画面に追加（いちばん上）、GitHub App を作る、トークン。押すと、同意していなければ先に利用規約を出す -->
+<!-- 始める: ホーム画面に追加（いちばん上）、GitHub App を作る。押すと、同意していなければ先に利用規約を出す -->
 <section id="setup" class="auth" hidden>
   <!-- ホーム画面に追加: iPhone の Safari のタブ（手順と、先に追加する理由）、またはインストールを勧めるブラウザー -->
   <div class="auth-card install" id="install-ios" hidden>
@@ -67,6 +67,8 @@
   </div>
   <div class="auth-card" id="app-make">
     <h1>Novel Desk</h1>
+    <!-- 前にトークンで始めた端末: トークンを消したことと、始め直し方（DESK-OPS-04） -->
+    <p id="token-gone" class="error" role="alert" hidden>トークンで始める方法は無くなりました。この端末に保管していたトークンは消しました。「GitHub App を作って始める」で始め直してください。送っていない書きかけがあれば残してあり、同じ GitHub のアカウントで App を作ると送れます。前のトークンは、GitHub の<a href="https://github.com/settings/personal-access-tokens" target="_blank" rel="noopener noreferrer">トークンの一覧</a>で消してください。</p>
     <p class="muted small">GitHub に Novel Desk 専用の GitHub App を作って始めます。GitHub の画面で「Create GitHub App」を押し、続けて作品のリポジトリを選んで「Install」を押すと、作品を開けます。鍵のファイルや設定を扱うことはありません。秘密鍵はこの端末の取り出せない鍵として置きます。</p>
     <button class="primary" id="make-app">GitHub App を作って始める</button>
     <p id="app-make-error" class="error" role="alert"></p>
@@ -84,17 +86,6 @@
     <input id="app-bridge-code" readonly aria-label="コード">
     <button class="primary" id="copy-bridge">コードを写す</button>
   </div>
-  <form class="auth-card" id="setup-form">
-    <h2>トークンで始める</h2>
-    <p class="muted small">GitHub で作った fine-grained トークンを入れてください（作品のリポジトリだけ、Contents の読み書きと Metadata の読み）。トークンはこの端末の中に暗号化して置き、GitHub の API にだけ送ります。</p>
-    <a class="button" id="make-token" href="https://github.com/settings/personal-access-tokens/new?name=Novel+Desk&amp;description=For+novel-desk.github.io&amp;expires_in=90&amp;contents=write" target="_blank" rel="noopener noreferrer">GitHub でトークンを作る</a>
-    <p class="muted small">開いた画面で、Repository access の「Only select repositories」から作品のリポジトリを選び、Generate token を押して、出たトークンを下に貼ってください（名前、期限、Contents の読み書きは入れてあります）。</p>
-    <label>トークン<input id="token" type="password" autocomplete="off" spellcheck="false" placeholder="github_pat_…" required></label>
-    <label>トークンの期限<input id="token-expires" type="date"></label>
-    <p class="muted small">GitHub で選んだ期限の日です（「GitHub でトークンを作る」で作ったなら 90 日後）。期限なしのトークンなら空にしてください。GitHub はアプリにトークンの期限を教えないので、ここで覚えておき、切れる 14 日前から知らせます。</p>
-    <button class="primary" id="keep-token">パスキーで保管する</button>
-    <p id="setup-error" class="error" role="alert"></p>
-  </form>
 </section>
 
 <!-- GitHub App を作ったあと、作品のリポジトリに入れる -->
@@ -103,18 +94,18 @@
     <h1>Novel Desk</h1>
     <p class="muted small">GitHub App ができました。GitHub の画面で作品のリポジトリを選び、「Install」を押してください。戻ると、作品を開けます。</p>
     <a class="button primary" id="app-install-link" href="./">GitHub で作品のリポジトリを選ぶ</a>
-    <button class="ghost" id="forget-token-install">ログアウト</button>
+    <button class="ghost" id="logout-install">ログアウト</button>
     <p id="app-install-error" class="error" role="alert"></p>
   </div>
 </section>
 
-<!-- パスキーで開く -->
+<!-- パスキーで開く（GitHub App の秘密鍵） -->
 <section id="unlock" class="auth" hidden>
   <div class="auth-card">
     <h1>Novel Desk</h1>
-    <p id="unlock-note" class="muted small">トークンはパスキーで暗号化してあります。</p>
-    <button class="primary" id="open-token">パスキーで開く</button>
-    <button class="ghost" id="forget-token-unlock">ログアウト</button>
+    <p id="unlock-note" class="muted small">GitHub App の秘密鍵はパスキーで暗号化してあります。</p>
+    <button class="primary" id="open-key">パスキーで開く</button>
+    <button class="ghost" id="logout-unlock">ログアウト</button>
     <p id="unlock-error" class="error" role="alert"></p>
   </div>
 </section>
@@ -332,14 +323,13 @@
       <h2>GitHub</h2>
       <p id="gh-state" class="muted"></p>
       <p class="muted small" id="gh-help"></p>
-      <button id="relink" hidden></button>
+      <button id="relink" hidden>ログアウトして、App を作り直す</button>
       <details class="leave">
         <summary>連携をやめるとき</summary>
         <ol class="terms-list">
           <li>送っていない書きかけがあれば、先に送ります（作品の「リリース・GitHub・その他」の「未送信の一覧」で確かめられます）。GitHub で連携を消すと、この端末からは送れなくなります。</li>
-          <li>右上の「ログアウト」を押します。この端末から、トークンや App の秘密鍵と、作品の控えを消します。</li>
+          <li>右上の「ログアウト」を押します。この端末から、App の秘密鍵と、作品の控えを消します。</li>
           <li id="leave-app">GitHub で App を消します。<a id="leave-app-link" href="https://github.com/settings/apps" target="_blank" rel="noopener noreferrer">GitHub App の一覧</a><span id="leave-app-then"></span>App を消すと、リポジトリへのインストールも一緒に外れます。</li>
-          <li id="leave-token">GitHub の<a href="https://github.com/settings/personal-access-tokens" target="_blank" rel="noopener noreferrer">トークンの一覧</a>で、このトークンを消します（Delete）。</li>
           <li>パスキーを、パスワードの管理（iPhone なら「パスワード」アプリ）で消します。名前は novel-desk.github.io です。</li>
         </ol>
         <p class="muted small">GitHub のリポジトリと、送った原稿は残ります。また使うときは、最初の画面からもう一度始めます。</p>
@@ -371,7 +361,6 @@
   <div id="versions-body"></div>
 </dialog>
 
-<!-- トークンの期限が近い、または GitHub がトークンを断った: 作り直して入れ替える -->
 <!-- GitHub App のコミットの作者（作品を初めて開いたときに、最新のコミットから決めて出す） -->
 <form id="author-notice" class="token-notice author-notice" hidden>
   <p id="author-notice-text">GitHub App で送るコミットの作者を、このリポジトリの最新のコミットと同じにします。変えるときは書き換えてください。</p>
@@ -381,28 +370,15 @@
     <button id="author-ok">これでよい</button>
   </div>
 </form>
+<!-- GitHub が GitHub App のトークンを断った: App を作り直す -->
 <div id="token-notice" class="token-notice" role="alert" hidden>
   <p id="token-notice-text"></p>
   <div class="token-notice-row">
-    <span id="token-notice-token" class="token-notice-row">
-      <a href="https://github.com/settings/personal-access-tokens" target="_blank" rel="noopener noreferrer">GitHub のトークンの一覧</a>
-      <button id="token-replace-open">新しいトークンを入れる</button>
-    </span>
     <button class="ghost" id="token-notice-close">あとで</button>
   </div>
 </div>
-<dialog id="token-replace" class="versions" aria-labelledby="token-replace-title">
-  <header><strong id="token-replace-title">新しいトークンを入れる</strong><button class="ghost" id="close-token-replace">閉じる</button></header>
-  <form id="token-replace-form" class="replace-form">
-    <p class="muted small">GitHub のトークンの一覧でトークンを開き、Regenerate token で作り直すか、新しく作って、出た値を貼ってください。今のトークンと入れ替え、最初と同じようにパスキーで暗号化して、この端末に置きます。未送信の書きかけは残ります。</p>
-    <label>新しいトークン<input id="new-token" type="password" autocomplete="off" spellcheck="false" placeholder="github_pat_…" required></label>
-    <label>トークンの期限<input id="new-token-expires" type="date"></label>
-    <button class="primary" id="keep-new-token">パスキーで保管する</button>
-    <p id="token-replace-error" class="error" role="alert"></p>
-  </form>
-</dialog>
 
-<!-- 新しい作品: GitHub に作るリポジトリ（Administration の権限があるトークンで） -->
+<!-- 新しい作品: GitHub に作るリポジトリ（Administration の権限があるトークンで。その 1 回だけ使う） -->
 <dialog id="new-repo" class="versions" aria-labelledby="new-repo-title">
   <header><strong id="new-repo-title">新しい作品</strong><button class="ghost" id="close-new-repo">閉じる</button></header>
   <form id="new-repo-form" class="replace-form">
@@ -410,7 +386,7 @@
     <label>リポジトリ名（英数字と . _ -）<input id="new-work-repo" autocapitalize="none" autocomplete="off" spellcheck="false" placeholder="my-novel"></label>
     <label>持ち主（空なら自分。組織に作るときは組織の名前）<input id="new-work-owner" autocapitalize="none" autocomplete="off" spellcheck="false"></label>
     <label>Administration の権限があるトークン<input id="admin-token" type="password" autocomplete="off" spellcheck="false" placeholder="github_pat_…"></label>
-    <p class="muted small">リポジトリを作るには、いつものトークン（Contents だけ）とは別に、Repository access を All repositories にし、Repository permissions の Administration を Read and write にしたトークンが要ります。いつものトークンには付けないでください。このトークンは作るときだけ使い、この端末には残しません（期限を短くして作り、使い終わったら GitHub で消してください）。いつものトークンで作ったリポジトリを読めないときは、いつものトークンの Repository access にそのリポジトリを足してください。</p>
+    <p class="muted small">リポジトリを作るには、GitHub の fine-grained トークンで、Repository access を All repositories にし、Repository permissions の Administration を Read and write にしたものが要ります。このトークンは作るときだけ使い、この端末には残しません（期限を短くして作り、使い終わったら GitHub で消してください）。作ったリポジトリを開くには、GitHub App をそのリポジトリにも入れてください（GitHub の App の設定の Install App で、リポジトリを足します）。</p>
     <button class="primary" id="create-work">作成</button>
     <p id="new-work-state" class="muted small" role="status"></p>
   </form>
@@ -422,7 +398,7 @@
   <form id="rename-repo-form" class="replace-form">
     <label>新しい名前（英数字と . _ -）<input id="rename-repo-name" autocapitalize="none" autocomplete="off" spellcheck="false"></label>
     <label>Administration の権限があるトークン<input id="rename-admin-token" type="password" autocomplete="off" spellcheck="false" placeholder="github_pat_…"></label>
-    <p class="muted small">名前を変えるには、いつものトークン（Contents だけ）とは別に、このリポジトリの Repository permissions の Administration を Read and write にしたトークンが要ります。いつものトークンには付けないでください。このトークンは名前を変えるときだけ使い、この端末には残しません。GitHub は古い名前を新しい名前へ送るので、いつものトークンはそのまま使えます。</p>
+    <p class="muted small">名前を変えるには、GitHub の fine-grained トークンで、このリポジトリの Repository permissions の Administration を Read and write にしたものが要ります。このトークンは名前を変えるときだけ使い、この端末には残しません。GitHub App は、名前を変えたリポジトリにもそのまま入っています。</p>
     <button class="primary" id="rename-repo-go">名前を変更</button>
     <p id="rename-repo-error" class="error" role="alert"></p>
   </form>

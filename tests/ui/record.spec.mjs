@@ -48,6 +48,8 @@ test("GitHub's commits not read (offline): the days of this device only, said", 
 // an episode no encoding reads counts as nothing
 test('a day noted here before GitHub was read: kept as noted; an episode not in UTF-8 counted as nothing', async ({ page, gh, work }) => {
   await page.clock.install({ time: new Date('2026-10-05T12:00:00+09:00') });
+  // (the GitHub App's JWTs and tokens judged by the page's clock)
+  gh.timeOffset = Date.parse('2026-10-05T12:00:00+09:00') - Date.now();
   work.clock = Date.parse('2026-10-03T03:00:00Z');
   work.push({ 'chapters/02_second.md': /** @type {any} */ (Buffer.from([0x82, 0xff, 0xff])) });
   work.clock = Date.parse('2026-10-05T01:00:00Z');

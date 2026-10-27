@@ -1,4 +1,4 @@
-// A GitHub App's private key in use in place of a token (FR-GH-01: no token to make again every 90 days). The key is
+// A GitHub App's private key, the way in (FR-GH-01: no token to make again by hand every 90 days). The key is
 // WebCrypto's, made from the .pem so that it cannot be taken out (extractable: false), and kept encrypted with a
 // passkey (DESK-SEC-01: ui/vault.js lockApp, openApp). It signs a JWT for 9 minutes; with it, GitHub gives each
 // installation of the App a token for an hour, used for the requests about that installation's repositories, and

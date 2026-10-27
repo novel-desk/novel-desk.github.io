@@ -1,4 +1,4 @@
-// The app's store on this device (IndexedDB): the token (encrypted), the texts not sent yet, the blobs read from
+// The app's store on this device (IndexedDB): the GitHub App's private key, the texts not sent yet, the blobs read from
 // GitHub (by their sha, which names their content), the last tree read of each work, and what was chosen
 const NAME = 'novel-writer-js';
 export const STORES = /** @type {const} */ (['vault', 'drafts', 'blobs', 'snapshots', 'prefs']);

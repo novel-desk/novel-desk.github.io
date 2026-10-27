@@ -966,7 +966,7 @@ export function leave() {
 // the screens of the work open: the desk, and the ones over it (資料, プロット, キャラ, 記録)
 const WORK_SCREENS = ['desk', 'notes', 'plot', 'characters', 'record'];
 // whether one of them is shown (not the list of works, nor the first screens)
-export const onWork = () => WORK_SCREENS.some(id => !$(id).hidden);
+const onWork = () => WORK_SCREENS.some(id => !$(id).hidden);
 // the screen over the desk shown again with the work as it is now (read in, or sent): the note open keeps its draft,
 // else shows what the branch has, the caret where it was (FR-SAVE-08); the plot and the characters drawn again
 async function refreshScreens() {

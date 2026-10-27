@@ -1,7 +1,7 @@
 // The app's page itself: the colour and the screen's size on 設定 (FR-APP-01, FR-APP-05) where the
 // browser keeps nothing for it, a browser without a service worker or one that will not take it (FR-APP-02), and this
 // device's store that cannot be opened or is full (NFR-USE-01)
-import { test, expect, keepMoreOpen, noPasskey, openRepo, openWork, toSettings, TOKEN } from './lib/test.mjs';
+import { test, expect, keepMoreOpen, noPasskey, openRepo, openWork, toSettings } from './lib/test.mjs';
 
 // FR-APP-01: a browser that lets the page keep nothing (localStorage refused): the colour 自動, and one chosen still
 // shown; a tap between the buttons changes nothing
@@ -16,12 +16,16 @@ test('the colour where the browser keeps nothing for the page: 自動, and one c
   // (the 利用規約 agreed to, not kept: asked on starting)
   await noPasskey(page);
   await keepMoreOpen(page);
+  gh.installRepos = ['author/novel', 'author/other'];
   await page.goto('./');
-  await page.getByLabel('トークン', { exact: true }).fill(TOKEN);
-  await page.getByRole('button', { name: 'パスキーで保管する' }).click();
+  await page.getByRole('button', { name: 'GitHub App を作って始める' }).click();
   await page.getByRole('button', { name: '同意して始める' }).click();
+  // (back from installing it on GitHub, a page loaded again: agreed to only while a page is open, so asked again)
+  await page.getByRole('button', { name: '同意して始める' }).click();
+  await expect(page.locator('#shelf details.import')).toHaveAttribute('open', '');
   await openRepo(page, 'author/novel');
   await expect(page.locator('#episode-title')).toHaveValue('はじまり');
+  await page.getByRole('button', { name: 'これでよい' }).click();
   await toSettings(page);
   await expect(page.locator('[data-theme-pick=""]')).toHaveClass(/on/);
   await page.locator('[data-theme-pick="dark"]').click();
@@ -79,7 +83,7 @@ test('the store on this device cannot be opened: said on the first screen', asyn
   );
   await page.goto('./');
   await expect(page.locator('#setup')).toBeVisible();
-  await expect(page.locator('#setup-error')).toHaveText(/^この端末の保存場所を開けません（.+）$/);
+  await expect(page.locator('#app-make-error')).toHaveText(/^この端末の保存場所を開けません（.+）$/);
 });
 
 // NFR-USE-01, FR-SAVE-01: this device's storage full (a write's transaction aborted with QuotaExceededError, as the
@@ -101,4 +105,21 @@ test('this device’s storage full: what is typed stays on the screen, and not b
   await page.locator('#body').fill('# 第1話 はじまり\n\n満杯\n');
   await expect(page.locator('#sync-state')).toHaveText('この端末に保存できませんでした（test）');
   await expect(page.locator('#body')).toHaveValue('# 第1話 はじまり\n\n満杯\n');
+});
+
+// NFR-SEC-08: the CSP: no script but the app's own, nothing reached but GitHub's API
+test('the CSP: no script but the app’s, nothing reached but GitHub’s API', async ({ page, gh }) => {
+  void gh;
+  await openWork(page);
+  const ran = await page.evaluate(async () => {
+    const s = document.createElement('script');
+    s.textContent = 'window.injected = true';
+    document.head.append(s);
+    const reached = await fetch('https://example.com/').then(
+      () => true,
+      () => false,
+    );
+    return { injected: 'injected' in window, reached };
+  });
+  expect(ran).toEqual({ injected: false, reached: false });
 });

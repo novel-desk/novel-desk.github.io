@@ -31,8 +31,8 @@ test('the table of contents: titles from the headings, the chapter folder, other
   await expect(page.locator('#body')).toHaveValue(WORK_FILES['chapters/01_first.md']);
   await expect(page.locator('#episode-chars')).toHaveText('13');
   await expect(page.locator('#sync-state')).toHaveText(/GitHub から読みました/);
-  // only the API, with the token
-  expect(gh.calls.every(c => /^GET \/(user\/repos|user$|repos\/author\/(novel|other)(\/git\/|\/commits\?|$))/.test(c))).toBe(true);
+  // only the API: the repositories the GitHub App is installed on, and the work's (the App's own requests apart)
+  expect(gh.calls.filter(c => !/^GET \/(installation\/repositories\?|repos\/author\/(novel|other)(\/git\/|\/commits\?|$))/.test(c))).toEqual([]);
 });
 
 test('typing keeps a draft on the device with the blob it was written from; the episode shows it as not sent, after a reload too', async ({

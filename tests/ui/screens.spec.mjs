@@ -127,31 +127,3 @@ test('自動 on the record screen: what was written on the desk goes when the ap
   await leave(page);
   await expect.poll(() => work.text('chapters/01_first.md')).toBe('# 第1話 はじまり\n\n記録の画面から届く\n');
 });
-
-// FR-GH-01, NFR-USE-01: GitHub refusing the token while a note is written: the new token put in there, the notes
-// screen stays, and what was written goes
-test('a token refused on the notes screen: the new token put in there; the notes screen stays, the note goes', async ({ page, gh, work }) => {
-  work.push(NOTES);
-  await page.clock.install();
-  await openWork(page);
-  await openNote(page, '世界観');
-  await page.locator('#note-body').fill('# 世界観\n\n断られても届く。\n');
-  gh.tokens = ['new-test-token-not-real'];
-  await page.clock.fastForward(61000);
-  await expect(page.locator('#token-notice-text')).toHaveText(/^GitHub がトークンを断りました/);
-  await page.getByRole('button', { name: '新しいトークンを入れる' }).click();
-  await page.getByLabel('新しいトークン', { exact: true }).fill('new-test-token-not-real');
-  await page.getByRole('button', { name: 'パスキーで保管する' }).click();
-  await expect(page.locator('#token-notice')).toBeHidden();
-  // (the work read again with the new token, behind the notes screen)
-  await expect(page.locator('#sync-state')).toHaveText(/GitHub から読みました/);
-  await expect(page.locator('#notes')).toBeVisible();
-  await expect(page.locator('#note-body')).toHaveValue('# 世界観\n\n断られても届く。\n');
-  // (a minute at a time, the reading still going on when the clock moves)
-  await expect
-    .poll(async () => {
-      await page.clock.fastForward(61000);
-      return work.text('notes/world.md');
-    })
-    .toBe('# 世界観\n\n断られても届く。\n');
-});
