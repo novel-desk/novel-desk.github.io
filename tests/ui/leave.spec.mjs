@@ -89,6 +89,9 @@ test('the App’s tokens refused: said; nothing the device keeps deleted; taken 
   expect(await stored(page, 'snapshots')).toEqual(snapshots);
   expect(await stored(page, 'blobs')).toEqual(blobs);
   expect((await stored(page, 'drafts')).map(d => d.text)).toEqual(['# 第1話 はじまり\n\n断られても残る\n']);
+  // (the reading in over first: a request of it refused after the notice is put off would say it again)
+  await expect(page.locator('#sync-state')).not.toHaveText('読み込み中…');
+  await expect(page.locator('#reload-work')).toBeEnabled();
   await page.getByRole('button', { name: 'あとで' }).click();
   await expect(page.locator('#token-notice')).toBeHidden();
   // taken again (opened again): the draft, the branch chosen and the mode kept; sent only when pressed, to that branch
