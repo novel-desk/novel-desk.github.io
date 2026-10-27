@@ -16,7 +16,7 @@ echo "== JS の型（tsc）"
 npm run -s check:types
 echo "== サーバー版との違い（style.css と index.html。理由は docs/server-differences.md）"
 npm run -s check:server
-echo "== lib の単体試験とカバレッジ（vitest。100% でなければ止まる）"
+echo "== lib の単体試験と C0・C1（vitest。100% でなければ止まる）"
 npm run -s test:unit
 echo "== 性質の試験（fast-check。種は固定）"
 NW_PROPS_SEED=20261025 npm run -s test:props
