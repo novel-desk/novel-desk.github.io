@@ -97,6 +97,8 @@ input:focus { border-color: var(--accent); }
 /* settings */
 .card { background: var(--paper); border: 1px solid var(--line); border-radius: 12px; padding: 16px; display: grid; gap: 10px; }
 .card h2 { margin: 0; font-size: 15px; }
+/* 文の上下の既定の余白（1em）を 0 にし、カードの中の間隔を gap の 10px だけにする */
+.card p { margin: 0; }
 .card form { display: grid; gap: 10px; }
 .check { display: flex !important; align-items: center; gap: 8px; color: var(--text) !important; font-size: 14px !important; }
 .users { display: grid; gap: 8px; }

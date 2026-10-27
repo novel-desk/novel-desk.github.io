@@ -1,5 +1,5 @@
 # サーバー版（~/novel-writer）と比べる相手の commit。サーバー版を直して合わせたら、ここを進める
-commit e9a7cf6
+commit bc2e1d0
 #
 # 理由のある違い: docs/server-differences.md の番号と、tools/server_diff.mjs が出す鍵（node tools/server_diff.mjs --list）
 #

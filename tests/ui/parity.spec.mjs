@@ -33,6 +33,10 @@ test('設定: the colours with the browser’s bar; the account from GitHub, or 
   await toSettings(page);
   await expect(page.locator('#settings > header strong')).toHaveText('設定');
   await expect(page.locator('#me')).toHaveText('GitHub の author');
+  // the card's lines 10px apart, as the server version's (its gap only: no margin of a paragraph added to it)
+  const box = async (/** @type {string} */ id) => /** @type {{ y: number, height: number }} */ (await page.locator(id).boundingBox());
+  const me = await box('#me');
+  expect(Math.round((await box('#screen-info')).y - (me.y + me.height))).toBe(10);
   await expect(page.locator('#gh-state')).toHaveText('GitHub App で連携しています');
   const colours = () => page.locator('meta[name="theme-color"]').evaluateAll(m => m.map(x => /** @type {HTMLMetaElement} */ (x).content));
   await page.getByRole('button', { name: '黒' }).click();
