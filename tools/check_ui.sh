@@ -26,4 +26,6 @@ echo "== ブラウザーで動く JS の C0・C1 が 100% か（画面の試験�
 node tools/coverage_all.mjs > /dev/null || { cat coverage/all/missing.txt; exit 1; }
 echo "== トレース検証（画面の試験の記録を、formal/ のモデルの手順でたどれるか）"
 node --no-warnings tools/trace_check.mjs
-echo "== 全部通りました（$((SECONDS - start)) 秒）"
+elapsed=$((SECONDS - start))
+tools/check_time.sh check-ui "$elapsed"
+echo "== 全部通りました（$elapsed 秒）"

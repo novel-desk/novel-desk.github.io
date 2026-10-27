@@ -22,4 +22,6 @@ echo "== 性質の試験（fast-check。種は固定）"
 NW_PROPS_SEED=20261025 npm run -s test:props
 echo "== 保存の処理の変異テストが 100% か（lib の changes、drafts、merge、sync）"
 npm run -s test:mutation:save
-echo "== 全部通りました（$((SECONDS - start)) 秒。画面の試験は push の前に npm run check:ui）"
+elapsed=$((SECONDS - start))
+tools/check_time.sh check-all "$elapsed"
+echo "== 全部通りました（$elapsed 秒。画面の試験は push の前に npm run check:ui）"
