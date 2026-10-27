@@ -9,10 +9,26 @@ import { imageType } from '../lib/github.js';
 import { episodesOf, isEpisode, titleOf } from '../lib/layout.js';
 import { isNote } from '../lib/notes.js';
 import { picturePaths, relPath, renderMd } from '../lib/markdown.js';
-import { CONFLICT_MARK, keptBoth } from '../lib/merge.js';
+import { keptBoth } from '../lib/merge.js';
 import { noteHeading } from '../lib/notes.js';
 import { editToml } from '../lib/tomledit.js';
-import { AUTO_WAIT, keptMode, onOtherBranch, saveState, sendsItself, stamped, syncMode, writtenOn } from '../lib/sync.js';
+import { AUTO_WAIT, keptMode, onOtherBranch, sendsItself, stamped, syncMode, writtenOn } from '../lib/sync.js';
+import {
+  afterTrash,
+  briefOf,
+  changedKey,
+  episodeAfter,
+  episodeToOpen,
+  footState,
+  hasConflict,
+  neighborOf,
+  readSaid,
+  readText,
+  sendButton,
+  shownText,
+  unsentCount,
+  updatedOf,
+} from '../lib/desk.js';
 import { viewOf } from '../lib/view.js';
 import { visibilityTag } from '../lib/works.js';
 import { $, busy as withBand, show, toast } from './dom.js';
@@ -88,13 +104,13 @@ function brief() {
   const b = $('sync-brief');
   const bad = $('sync-state').classList.contains('err') || failed.size > 0;
   b.className = bad ? 'small err' : 'muted small';
-  b.textContent = !work || mode === 'off' ? '' : bad ? '・送信失敗' : unsent() ? '・未送信' : '・送信済み';
+  b.textContent = briefOf({ read: Boolean(work), mode, bad, unsent: unsent() });
 }
-const hasConflict = (/** @type {string} */ text) => text.includes(CONFLICT_MARK);
 const shown = () => /** @type {import('../lib/view.js').View} */ (view);
 /** @param {string} path */
 const textOf = path => shown().texts[path] ?? null;
 const episodes = () => episodesOf(shown().toc);
+const episodePaths = () => episodes().map(e => e.path);
 /** @param {string} rel */
 const titleAt = rel => titleOf(shown().layout, rel, shown().headings);
 /** @param {string} path */
@@ -151,12 +167,11 @@ async function discard(item) {
     keep(next);
   }
   renderWork();
-  const open = findEpisode(current) ? current : (episodes()[0]?.path ?? '');
+  const open = episodeToOpen(episodePaths(), current);
   if (open) await openEpisode(open);
   else openNone();
 }
-// how many files the changes not sent change (novel.toml counts once)
-const unsent = () => drafts.size + (edits.length && !drafts.has('novel.toml') ? 1 : 0);
+const unsent = () => unsentCount(drafts, edits);
 
 // --- the table of contents
 
@@ -209,8 +224,12 @@ function renderToc() {
   // 送る and マージ: not shown when the work is not synced (as the server version's push and マージ); 「…」 while it sends
   $('send').hidden = $('gh-merge').hidden = mode === 'off';
   // (nothing to send: not pressed. It looks the same as the server version's push either way)
-  $('send').disabled = busy || unsent() === 0 || Boolean(stopped);
-  $('send').textContent = busy ? '…' : unsent() ? `送る（${unsent()}）` : '送る';
+  const button = sendButton({ busy, unsent: unsent(), stopped: Boolean(stopped), mode });
+  $('send').disabled = button.disabled;
+  $('send').textContent = button.text;
+  // the same, under the text (B6)
+  $('send-foot').hidden = !button.foot;
+  /** @type {HTMLButtonElement} */ ($('send-foot')).disabled = button.disabled;
   $('sync-mode').value = mode;
   brief();
   for (const id of ['add-episode', 'add-chapter', 'toggle-reorder', 'trash-episode']) $(id).disabled = busy;
@@ -227,9 +246,13 @@ let folded = [];
 
 /** @param {number} d @returns {{ path: string, title: string } | null} */
 function neighbor(d) {
-  const eps = episodes(),
-    i = eps.findIndex(e => e.path === current);
-  const e = i < 0 ? null : eps[i + d];
+  const eps = episodes();
+  const path = neighborOf(
+    eps.map(e => e.path),
+    current,
+    d,
+  );
+  const e = eps.find(x => x.path === path);
   return e ? { path: e.path, title: titleAt(e.rel) } : null;
 }
 function showCounts() {
@@ -237,35 +260,29 @@ function showCounts() {
   $('episode-chars').textContent = current ? n(charsOf(text)) : '0';
   const w = work;
   // (both versions side by side: said there instead, as the server version's)
-  $('save-state').textContent = hasConflict(text)
-    ? '両方の版が並んでいます。「――― ここから」の行を探して整理してください'
-    : current
-      ? saveState({
-          draft: drafts.has(current),
-          failed: failed.has(current),
-          onGitHub: Boolean(w && !w.offline && mode !== 'off' && w.blobs[current]),
-        })
-      : '';
+  $('save-state').textContent = footState({
+    text,
+    open: Boolean(current),
+    draft: drafts.has(current),
+    failed: failed.has(current),
+    onGitHub: Boolean(w && !w.offline && mode !== 'off' && w.blobs[current]),
+    short: narrow.matches && sendButton({ busy, unsent: unsent(), stopped: Boolean(stopped), mode }).foot,
+  });
 }
-/** @param {string} path @param {string} sha */
-const changedKey = (path, sha) => `${path}\n${sha}`;
-// 最終更新 of an episode: when this device wrote it (not sent), else its last commit on GitHub (0: not known yet)
+// a phone's width (as style.css's): the foot's state said shorter beside 「GitHub に送信」 (B6)
+const narrow = matchMedia('(max-width: 760px)');
+// 最終更新 of an episode (lib/desk.js updatedOf)
 /** @param {string} path */
-function updatedOf(path) {
-  const d = drafts.get(path);
-  if (d) return d.at;
-  const b = /** @type {NonNullable<typeof work>} */ (work).blobs[path];
-  return b ? (changed.get(changedKey(path, b.sha)) ?? 0) : 0;
-}
+const updated = path => updatedOf(drafts, /** @type {NonNullable<typeof work>} */ (work).blobs, changed, path);
 // 最終更新 of the open episode (FR-EDIT-02), asked of GitHub when it is not known yet
 function showUpdated() {
-  const ms = updatedOf(current);
+  const ms = updated(current);
   $('episode-updated').textContent = current && ms ? `最終更新 ${whenLong(ms)}` : '';
   if (current && !ms) ask(current);
 }
 // 最終更新 on the rows of the table of contents, where it tells one row from the others (as the server version's)
 function paintTimes() {
-  const said = rowTimes(Object.fromEntries(episodes().map(e => [e.path, updatedOf(e.path)])));
+  const said = rowTimes(Object.fromEntries(episodes().map(e => [e.path, updated(e.path)])));
   for (const u of /** @type {NodeListOf<HTMLElement>} */ ($('tree').querySelectorAll('.node.episode .u')))
     u.textContent = said[/** @type {string} */ (/** @type {HTMLElement} */ (u.parentElement).dataset.path)];
   showUpdated();
@@ -311,7 +328,7 @@ let sight = null;
 function watchRows() {
   sight?.disconnect();
   for (const row of /** @type {NodeListOf<HTMLElement>} */ ($('tree').querySelectorAll('.node.episode')))
-    if (!updatedOf(/** @type {string} */ (row.dataset.path))) sight?.observe(row);
+    if (!updated(/** @type {string} */ (row.dataset.path))) sight?.observe(row);
 }
 // (`shut`: the table of contents, a drawer on a phone, closed: the author chose the episode. A work read again, or
 // read in, opens it without closing the drawer, which the author may have opened meanwhile: tests/ui/touch.spec.mjs)
@@ -403,8 +420,7 @@ const noteNow = async () => {
 // the text of a file as read from GitHub ('' when it is not there, or not read)
 /** @param {string} path */
 function remoteText(path) {
-  const w = /** @type {NonNullable<typeof work>} */ (work);
-  return w.texts[path] ?? w.shaTexts[w.blobs[path]?.sha ?? ''] ?? '';
+  return readText(/** @type {NonNullable<typeof work>} */ (work), path);
 }
 // 履歴: a version of the episode kept on this device every 10 minutes of writing (or `force`: before one is put back)
 /** @type {Map<string, import('../lib/history.js').Snapshot[]>} */
@@ -496,7 +512,7 @@ async function apply(plan, open, stay = false) {
     return true;
   }
   const moved = plan.moves.find(m => m[0] === current)?.[1];
-  const next = open ?? (moved && findEpisode(moved) ? moved : findEpisode(current) ? current : '');
+  const next = episodeAfter({ paths: episodePaths(), current, open, moved });
   // the episode open is still the one open (it or others renamed, moved, added): the preview open stays, where it was
   // read (as the server version's renderToc)
   const place = reading() && (next === current || next === moved) ? previewPlace() : null;
@@ -552,12 +568,10 @@ async function trashEpisode() {
     )
   )
     return;
-  const i = episodes().indexOf(e);
+  const next = afterTrash(episodePaths(), current);
   const plan = plans.trash(forPlans(), current, Date.now());
-  const rest = episodes().filter(x => x !== e);
-  const next = rest[Math.max(0, i - 1)];
   // (no key of novel.toml to set that it could not take: the trash only takes away the titles novel.toml has)
-  if (await apply(plan, next?.path ?? '')) toast('削除しました（_trash/ に移動。送るまではこの端末だけの変更です）');
+  if (await apply(plan, next)) toast('削除しました（_trash/ に移動。送るまではこの端末だけの変更です）');
 }
 /** @param {import('../lib/episodes.js').OrderItem[] | null} want */
 async function sendOrder(want) {
@@ -611,13 +625,7 @@ async function texts(paths) {
   );
   /** @type {Record<string, string | null>} */
   const out = {};
-  for (const p of paths) {
-    const c = drafts.get(p);
-    if (!files[p]) out[p] = null;
-    // (a text file's change: its text, or the blob it moved)
-    else if (c) out[p] = c.text ?? w.shaTexts[/** @type {string} */ (c.sha)] ?? null;
-    else out[p] = w.texts[p] ?? w.shaTexts[files[p].sha] ?? null;
-  }
+  for (const p of paths) out[p] = shownText(w, files, drafts, p);
   return out;
 }
 // a picture added to the open episode where the caret is: made small, put in the pictures folder, ![](…) written
@@ -636,12 +644,10 @@ function insertImage() {
 // --- reading and sending
 
 /** @param {string} when */
-const readState = when =>
-  mode === 'off'
-    ? syncState('同期しない設定です。GitHub へ送ることも、GitHub から取り込むこともしません（この端末で前に読んだ版に書きます）')
-    : work?.offline
-      ? syncState('オフラインです。前に読んだ版を出しています（送るのはつながってから）', 'err')
-      : syncState(`GitHub から読みました（${when}）`, 'ok');
+const readState = when => {
+  const said = readSaid({ mode, offline: Boolean(work?.offline), when });
+  syncState(said.text, said.kind);
+};
 const now = () => new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
 
 function renderWork() {
@@ -843,10 +849,10 @@ async function reload() {
   await keepConverted();
   renderWork();
   void noteNow();
-  const paths = episodes().map(e => e.path);
   const w = /** @type {NonNullable<typeof work>} */ (work);
+  // (the episode open read after the device answers: one chosen meanwhile is the one opened)
   const last = await store.get('prefs', `episode:${w.repo}`);
-  const open = paths.includes(current) ? current : paths.includes(last) ? last : (paths[0] ?? '');
+  const open = episodeToOpen(episodePaths(), current, last);
   if (open) await openEpisode(open, false);
   else openNone();
   if (place && place.path === current) await showPreviewAt(place.at);
@@ -1194,6 +1200,7 @@ export async function open(r) {
   $('episode-chars').textContent = '0';
   $('episode-updated').textContent = '';
   $('episode-note').hidden = true;
+  $('send-foot').hidden = true;
   $('save-state').textContent = '読み込み中…';
   // (the operations wait until the work is read: renderToc)
   for (const id of ['add-episode', 'add-chapter', 'toggle-reorder', 'trash-episode', ...WORK_TOOLS]) $(id).disabled = true;
@@ -1319,6 +1326,8 @@ export function wire(on) {
   });
   wireDrag();
   $('send').addEventListener('click', () => void sendDrafts(true));
+  $('send-foot').addEventListener('click', () => void sendDrafts(true));
+  narrow.addEventListener('change', showCounts);
   // 再読み込み: over the table of contents and over the text (the table of contents is closed on a phone: the one over
   // the text says it in the band, as the state under the table of contents is not seen there. DESK-OPS-05)
   /** @param {boolean} band */

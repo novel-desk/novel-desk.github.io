@@ -84,7 +84,7 @@ B3 html + #app-repos-link
 B4 css + .loading-text
 B4 css + .busy
 B4 html + #busy
-# B5. 作者が決めたもの: 知らせ（トースト）の見た目
+# B5. 作者が決めたもの: 通知（トースト）の見た目
 B5 css .toast {left}
 B5 css .toast {bottom}
 B5 css .toast {transform}
@@ -101,3 +101,8 @@ B5 css .toast {box-shadow}
 B5 css .toast {line-height}
 B5 css .toast {text-align}
 B5 css .toast.show {transform}
+# B6. 作者が決めたもの: 本文の下の「GitHub に送信」
+B6 html + #send-foot
+# B7. 作者が決めたもの: 幅の広い画面で、本文のスクロールバーを右端に出す
+B7 css + @media (min-width: 761px) #body
+B7 css + @media (min-width: 761px) #preview
