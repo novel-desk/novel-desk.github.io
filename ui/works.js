@@ -156,7 +156,7 @@ async function importWork(open) {
   }
   if (!r) return toast(`${name} が見つかりません（owner/リポジトリ名 で入れてください。GitHub App で読めるリポジトリだけを開けます）`);
   $('import-repo').value = '';
-  toast('インポートしました');
+  toast(`${r.full_name} をインポートしました`);
   await open({ full_name: r.full_name, default_branch: r.default_branch, visibility: r.visibility });
 }
 

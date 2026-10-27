@@ -457,6 +457,8 @@ test('GitHub に送信 under the text: shown with something to send, sends as �
   await h.came;
   await expect(foot).toBeDisabled();
   h.release();
+  // what went said where the author is (the state above 送る is not in sight under the text)
+  await expect(page.locator('#toast')).toHaveText(/^GitHub に送りました（\d+\/\d+ はじまり ＋\d+字）$/);
   await expect(page.locator('#sync-state')).toHaveText(/^送りました（/);
   expect(work.text('chapters/01_first.md')).toBe('# 第1話 はじまり\n\n下から送る。\n');
   await expect(foot).toBeHidden();
@@ -472,6 +474,7 @@ test('GitHub に送信 under the text: shown with something to send, sends as �
   await expect(page.locator('#save-state')).toHaveText('未送信');
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.locator('#sync-mode').selectOption('off');
+  await expect(page.locator('#toast')).toHaveText('同期の設定を「同期しない」にしました');
   await write(page, '駅で', '# 第2話 駅で\n');
   await expect(foot).toBeHidden();
 });

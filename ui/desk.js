@@ -16,15 +16,18 @@ import { AUTO_WAIT, keptMode, onOtherBranch, sendsItself, stamped, syncMode, wri
 import {
   afterTrash,
   briefOf,
+  changedEpisodes,
   changedKey,
   episodeAfter,
   episodeToOpen,
   footState,
   hasConflict,
   neighborOf,
+  readInSaid,
   readSaid,
   readText,
   sendButton,
+  sentSaid,
   shownText,
   unsentCount,
   updatedOf,
@@ -957,7 +960,7 @@ async function deleteWork() {
   drafts = new Map();
   parked = [];
   edits = [];
-  toast('作品を削除しました');
+  toast(`作品「${title}」を削除しました`);
   changeRepo();
 }
 // the changes typed, written to the device (before the page is loaded again: FR-APP-02)
@@ -1030,7 +1033,16 @@ async function readIn() {
   renderWork();
   await showOpen();
   // (what was set aside is said instead)
-  if (!set) toast('ほかの端末の更新を読み込みました');
+  if (!set) {
+    const changed = changedEpisodes(w.blobs, next.blobs, episodePaths());
+    toast(
+      readInSaid(
+        episodes()
+          .filter(e => changed.includes(e.path))
+          .map(e => titleAt(e.rel)),
+      ),
+    );
+  }
   await refreshScreens();
   await trace('ReadIn');
 }
@@ -1139,11 +1151,8 @@ async function sendDrafts(pressed = false) {
     const titles = episodes()
       .filter(e => sides.has(e.path))
       .map(e => titleAt(e.rel));
-    if (sides.size) {
-      syncState(`送りました。${titles.join('、')}はほかでも書き換えられていたので、両方の版を並べました（${result.message}）`, 'err');
-      toast('ほかでも書き換えられていた話があります。両方の版を並べました');
-    } else if (result.message) syncState(`送りました（${result.message}）`, 'ok');
-    else syncState('送る変更はありませんでした（GitHub にもう同じ内容があります）', 'ok');
+    const said = sentSaid({ message: result.message, both: sides.size ? titles : [] });
+    syncState(said.text, said.kind);
     renderWork();
     void noteNow();
     await showOpen();
@@ -1152,7 +1161,7 @@ async function sendDrafts(pressed = false) {
     showCounts();
     showUpdated();
     thenWrite(() => store.del('prefs', `failed:${w.repo}`));
-    if (pressed) toast('送りました');
+    if (pressed || sides.size) toast(said.toast);
     await trace('Sent');
   } catch (err) {
     void traceFailed(err);
@@ -1287,7 +1296,8 @@ async function setMode(value) {
   keep(new Map([...drafts].map(([path, d]) => [path, { ...d, sync: mode }])));
   renderToc();
   readState(now());
-  toast('同期の設定を変更しました');
+  // (said with what it is now: the select is folded away under the text)
+  toast(`同期の設定を「${/** @type {HTMLSelectElement} */ (/** @type {unknown} */ ($('sync-mode'))).selectedOptions[0].text}」にしました`);
   sendSoon();
 }
 

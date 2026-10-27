@@ -2,15 +2,18 @@ import { describe, test, expect } from 'vitest';
 import {
   afterTrash,
   briefOf,
+  changedEpisodes,
   changedKey,
   episodeAfter,
   episodeToOpen,
   footState,
   hasConflict,
   neighborOf,
+  readInSaid,
   readSaid,
   readText,
   sendButton,
+  sentSaid,
   shownText,
   unsentCount,
   updatedOf,
@@ -26,6 +29,37 @@ describe('desk', () => {
     expect(unsentCount(changes({ 'a.md': {}, 'b.md': {} }), [])).toBe(2);
     expect(unsentCount(changes({ 'a.md': {} }), [{ key: ['title'] }])).toBe(2);
     expect(unsentCount(changes({ 'novel.toml': {} }), [{ key: ['title'] }, { key: ['x'] }])).toBe(1);
+  });
+  // what was read in from elsewhere names the episodes it changed
+  test('changedEpisodes: the episodes whose blob is not the one before, added ones too', () => {
+    const before = { 'a.md': { sha: '1', mode: '100644' }, 'b.md': { sha: '2', mode: '100644' } };
+    const after = { 'a.md': { sha: '1', mode: '100644' }, 'b.md': { sha: '3', mode: '100644' }, 'c.md': { sha: '4', mode: '100644' } };
+    expect(changedEpisodes(before, after, ['a.md', 'b.md', 'c.md'])).toEqual(['b.md', 'c.md']);
+    expect(changedEpisodes(before, before, ['a.md', 'b.md'])).toEqual([]);
+  });
+  test('readInSaid: the titles, three at most; no episode changed said', () => {
+    expect(readInSaid([])).toBe('ほかの端末の更新を読み込みました（話の本文は変わっていません）');
+    expect(readInSaid(['はじまり'])).toBe('ほかの端末の更新を読み込みました（はじまり）');
+    expect(readInSaid(['一', '二', '三'])).toBe('ほかの端末の更新を読み込みました（一、二、三）');
+    expect(readInSaid(['一', '二', '三', '四'])).toBe('ほかの端末の更新を読み込みました（一、二 ほか 2 話）');
+  });
+  // B6: what went said in the toast too (pressed under the text, the state above 送る is not in sight)
+  test('sentSaid: what went, in the state and in the toast; nothing to send; both versions side by side', () => {
+    expect(sentSaid({ message: '10/27 はじまり ＋5字', both: [] })).toEqual({
+      text: '送りました（10/27 はじまり ＋5字）',
+      kind: 'ok',
+      toast: 'GitHub に送りました（10/27 はじまり ＋5字）',
+    });
+    expect(sentSaid({ message: '', both: [] })).toEqual({
+      text: '送る変更はありませんでした（GitHub にもう同じ内容があります）',
+      kind: 'ok',
+      toast: '送る変更はありませんでした（GitHub にもう同じ内容があります）',
+    });
+    expect(sentSaid({ message: '10/27 はじまり ＋5字、駅で ＋1字', both: ['はじまり', '駅で'] })).toEqual({
+      text: '送りました。はじまり、駅ではほかでも書き換えられていたので、両方の版を並べました（10/27 はじまり ＋5字、駅で ＋1字）',
+      kind: 'err',
+      toast: '送りました（10/27 はじまり ＋5字、駅で ＋1字）。はじまり、駅ではほかでも書き換えられていたので、両方の版を並べました',
+    });
   });
   test('briefOf: nothing without a work or not synced; 送信失敗, 未送信, 送信済み', () => {
     const s = { read: true, mode: /** @type {const} */ ('auto'), bad: false, unsent: 0 };

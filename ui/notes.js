@@ -137,7 +137,7 @@ export async function readInNotes() {
     setKeepingCaret(area(), text);
     // (the preview open drawn again, as the server version's)
     if (!$('note-preview').hidden) $('note-preview').innerHTML = await previewHtml();
-    toast('ほかの端末の更新を読み込みました');
+    toast(`資料「${$('note-name').textContent}」に、ほかの端末の更新を読み込みました`);
   }
   showState();
 }

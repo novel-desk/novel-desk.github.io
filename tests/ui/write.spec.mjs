@@ -283,7 +283,7 @@ test('written elsewhere read in while the work’s title is typed: what is typed
   await page.locator('#work-title').fill('打ちかけの題');
   work.push({ 'chapters/02_second.md': '# 第2話 駅で\n\nほかで\n' });
   await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
-  await expect(page.locator('#toast')).toHaveText('ほかの端末の更新を読み込みました');
+  await expect(page.locator('#toast')).toHaveText('ほかの端末の更新を読み込みました（駅で）');
   await expect(page.locator('#work-title')).toHaveValue('打ちかけの題');
   await expect(page.locator('#work-title')).toBeFocused();
 });

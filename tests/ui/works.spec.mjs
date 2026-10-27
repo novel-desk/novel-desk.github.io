@@ -190,7 +190,7 @@ test('deleted: 送ってから削除 sends first; GitHub keeps the repository; �
   await page.getByRole('button', { name: 'この作品を削除' }).click();
   await page.getByRole('button', { name: '送ってから削除' }).click();
   await expect(page.locator('#shelf')).toBeVisible();
-  await expect(page.locator('#toast')).toHaveText('作品を削除しました');
+  await expect(page.locator('#toast')).toHaveText('作品「試験の作品」を削除しました');
   expect(work.text('chapters/01_first.md')).toBe('# 第1話 はじまり\n\n外す前に書いた\n');
   await expect(page.locator('#works .work')).toHaveCount(0);
   await expect(page.locator('#works')).toHaveText(
@@ -386,7 +386,7 @@ test('GitHub リポジトリをインポート: every page offered; the ones on 
   await openImport(page);
   await expect.poll(() => offered(page)).toEqual(['author/novel', 'author/other']);
   await openRepo(page, 'author/novel');
-  await expect(page.locator('#toast')).toHaveText('インポートしました');
+  await expect(page.locator('#toast')).toHaveText('author/novel をインポートしました');
   await expect(page.locator('#episode-title')).toHaveValue('はじまり');
   await page.getByRole('button', { name: 'これでよい' }).click();
   await toShelf(page);
