@@ -293,7 +293,6 @@ test('the page left while a send of 「送るを押したときだけ」 is on i
   await page.locator('#sync-mode').selectOption('auto');
   await page.getByRole('button', { name: '送る（1）' }).click();
   await expect(page.locator('#sync-state')).toHaveText(/^送りました（/);
-  await page.unrouteAll();
   h = await holdOnce(page, 'GET', '/git/trees/');
   await page.locator('#reload-work').click();
   await h.came;
