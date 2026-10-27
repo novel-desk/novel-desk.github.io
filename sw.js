@@ -21,6 +21,7 @@ const FILES = [
   'lib/changes.js',
   'lib/characters.js',
   'lib/commit.js',
+  'lib/desk.js',
   'lib/diff.js',
   'lib/drafts.js',
   'lib/episodes.js',
