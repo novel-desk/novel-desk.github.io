@@ -8,7 +8,7 @@ import { picturePaths, renderMd } from '../lib/markdown.js';
 import { groupNotes } from '../lib/notelist.js';
 import { noteHeading, notesList } from '../lib/notes.js';
 import { plotPathOf } from '../lib/plot.js';
-import { $ } from './dom.js';
+import { $, busy } from './dom.js';
 import * as store from './db.js';
 import { api } from './shared.js';
 
@@ -99,10 +99,13 @@ export async function renderSideNote() {
     `<div class="preview side-note-body">${renderMd(text, path, p => urls[p])}</div>`;
   /** @type {HTMLElement} */ ($('side-note').querySelector('.side-note-body')).scrollTop = top;
 }
+// (said in the band while the notes and their pictures are read: DESK-OPS-05)
 /** @param {string | null} path a note, '' the list, null the panel closed */
 async function showSide(path) {
-  await keep(api.work().repo, path);
-  await renderSideNote();
+  await busy('読み込んでいます…', async () => {
+    await keep(api.work().repo, path);
+    await renderSideNote();
+  });
 }
 
 /** @param {string} w */

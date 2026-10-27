@@ -1,7 +1,7 @@
 // The app: the GitHub App (made once, its key opened with a passkey each time), the repository chosen, and the desk. No
 // server: the page talks to GitHub's API only, and keeps what it needs on this device
 import { installHint, isIos, switchNow } from './lib/install.js';
-import { $, show, toast } from './ui/dom.js';
+import { $, busy, show, toast } from './ui/dom.js';
 import * as store from './ui/db.js';
 import * as desk from './ui/desk.js';
 import * as gh from './ui/github.js';
@@ -99,8 +99,10 @@ async function checkLogin(who) {
 // Logged out (NFR-SEC-16): the App's key forgotten, with what the device keeps of the works (the works last read, the
 // blobs, the settings, the versions kept); the drafts not sent too, when the author says so
 // As the server version's: asked only when something is not sent. Unlike it, the drafts can be kept (logging out is
-// how a GitHub App's key made again is put in: the drafts go with the new one)
-async function logOut() {
+// how a GitHub App's key made again is put in: the drafts go with the new one). What is deleted, said in the band, the
+// button pressed not pressed again meanwhile (DESK-OPS-05)
+/** @param {HTMLButtonElement} button the one pressed */
+async function logOut(button) {
   await desk.settled();
   const left = (await store.all('drafts')).length;
   const dropDrafts =
@@ -108,11 +110,17 @@ async function logOut() {
     confirm(
       `未送信の書きかけが ${left} 件あります。ログアウトするとき、この端末から削除しますか？（「キャンセル」なら書きかけだけ残します。同じ GitHub のユーザーの GitHub App で始め直すと送れます）`,
     );
-  await vault.forgetApp();
-  gh.useApp(null);
-  appVault = appInUse = null;
-  $('author-notice').hidden = true;
-  await forgetDevice(left > 0 && !dropDrafts);
+  await busy(
+    'ログアウトしています…',
+    async () => {
+      await vault.forgetApp();
+      gh.useApp(null);
+      appVault = appInUse = null;
+      $('author-notice').hidden = true;
+      await forgetDevice(left > 0 && !dropDrafts);
+    },
+    button,
+  );
   hideNotice();
   kind = '';
   toast(
@@ -127,7 +135,7 @@ async function logOut() {
 async function openRepo(r) {
   await keepWork(r);
   await store.put('prefs', 'repo', r);
-  void proposeAuthor(r.full_name);
+  await proposeAuthor(r.full_name);
   await desk.open(r);
 }
 // この端末の画面 (FR-APP-05): its size, its scale, the room the status bar and the home bar take, and whether it is the
@@ -158,25 +166,25 @@ async function openSettings() {
   $('screen-info').textContent = screenInfo();
   $('gh-help').textContent = KINDS[kind];
   showLeave();
-  $('gh-state').textContent = 'GitHub App で連携しています';
-  // asked of GitHub (DESK-OPS-03): refused (the App deleted on GitHub), said so; GitHub not saying it (not reached,
-  // failed), nothing said
+  // asked of GitHub (DESK-OPS-03), said while it is asked (DESK-OPS-05): refused (the App deleted on GitHub), said so;
+  // GitHub not saying it (not reached, failed), said as connected
+  $('gh-state').textContent = 'GitHub に確かめています…';
   $('relink').hidden = true;
   const app = /** @type {import('./ui/github.js').App} */ (appInUse);
   let who = null;
+  let state = 'GitHub App で連携しています';
   try {
     who = await app.who();
     // (installed nowhere: uninstalled on GitHub)
     if (!(await app.installedOn()).length)
-      $('gh-state').textContent =
-        'GitHub App が、どのリポジトリにもインストールされていません。「App をインストールするリポジトリを選ぶ」で、作品のリポジトリを選んでください。';
+      state = 'GitHub App が、どのリポジトリにもインストールされていません。「App をインストールするリポジトリを選ぶ」で、作品のリポジトリを選んでください。';
   } catch (err) {
     if (err instanceof gh.GitHubError && (err.status === 401 || err.status === 404)) {
-      $('gh-state').textContent =
-        'GitHub App との連携が無効になっています。GitHub がこの App の認証を拒否しました。GitHub で App を削除した場合も、この表示になります。';
+      state = 'GitHub App との連携が無効になっています。GitHub がこの App の認証を拒否しました。GitHub で App を削除した場合も、この表示になります。';
       $('relink').hidden = false;
     }
   }
+  $('gh-state').textContent = state;
   $('me').textContent = who ? `GitHub の ${who.login}` : '';
 }
 // 連携をやめるとき: an App made here, its own page to delete it on
@@ -209,7 +217,7 @@ async function openFirst() {
   const name = decodeURIComponent(location.hash.slice(1));
   const r = name ? (await worksHere()).find(x => x.full_name === name) : undefined;
   if (!r) return chooseRepo();
-  void proposeAuthor(r.full_name);
+  await proposeAuthor(r.full_name);
   await desk.open(r);
 }
 
@@ -334,21 +342,32 @@ async function installed(leave) {
 }
 // the app shown again: an App installed meanwhile, or a key kept meanwhile by another page of this app
 async function recheck() {
-  if (!$('app-install').hidden) return installed(false);
+  // (said in the band while GitHub is asked: DESK-OPS-05)
+  if (!$('app-install').hidden) return busy('GitHub に確かめています…', () => installed(false));
   if (!$('setup').hidden && (await vault.keptApp())) await start();
 }
 // Who an App's commits are written by, when it is not known yet (an App made by the manifest flow): proposed from the
 // latest commit of the work opened (or the account the App is installed on), kept at once, and shown with the way to
-// change it, before anything is sent
+// change it, before anything is sent. Asked before the work is opened, so that it is shown before the text is, not
+// once the author has started writing (said in the band while GitHub is asked: DESK-OPS-05). GitHub not saying it:
+// nothing proposed this time
 /** @param {string} repo */
 async function proposeAuthor(repo) {
-  if (!appInUse || appInUse.author) return;
-  /** @type {any[]} */
-  let commits = [];
-  try {
-    commits = await gh.latest(repo);
-  } catch {}
-  const author = authorOf(commits, await appInUse.account(`/repos/${repo}/`));
+  const app = appInUse;
+  if (!app || app.author) return;
+  /** @type {{ author: { name: string, email: string } | null }} */
+  const got = { author: null };
+  await busy('作品を読み込んでいます…', async () => {
+    try {
+      /** @type {any[]} */
+      let commits = [];
+      try {
+        commits = await gh.latest(repo);
+      } catch {}
+      got.author = authorOf(commits, await app.account(`/repos/${repo}/`));
+    } catch {}
+  });
+  const author = got.author;
   if (!author) return;
   await keepAuthor(author);
   $('author-name').value = author.name;
@@ -429,8 +448,11 @@ async function start() {
   // (started before the 利用規約 were agreed to here, or before they changed)
   if (!agreed()) return showTerms(() => void start(), null);
   const form = appFormOf(a);
-  // (kept without a passkey: opened at once)
-  if (form === 'local') return withApp(a, await vault.openApp(a));
+  // (kept without a passkey: opened at once, what is read said until the next screen: DESK-OPS-05)
+  if (form === 'local') {
+    loading('作品を読み込んでいます…');
+    return withApp(a, await vault.openApp(a));
+  }
   kind = `app-${form}`;
   $('unlock-note').textContent = UNLOCK_APP[kind];
   show('unlock');
@@ -439,7 +461,7 @@ async function start() {
 $('make-app').addEventListener('click', () => agreeFirst(() => void makeApp()));
 $('app-paste-form').addEventListener('submit', e => void pasteCode(/** @type {SubmitEvent} */ (e)));
 $('author-notice').addEventListener('submit', e => void changeAuthor(/** @type {SubmitEvent} */ (e)));
-$('logout-install').addEventListener('click', () => void logOut());
+$('logout-install').addEventListener('click', () => void logOut($('logout-install')));
 $('copy-bridge').addEventListener('click', () =>
   navigator.clipboard.writeText($('app-bridge-code').value).then(
     () => toast('コードを写しました。始めた Novel Desk に戻って貼ってください'),
@@ -451,8 +473,8 @@ $('copy-bridge').addEventListener('click', () =>
 );
 document.addEventListener('visibilitychange', () => void recheck());
 $('open-key').addEventListener('click', () => void openKey());
-$('logout').addEventListener('click', () => void logOut());
-$('logout-unlock').addEventListener('click', () => void logOut());
+$('logout').addEventListener('click', () => void logOut($('logout')));
+$('logout-unlock').addEventListener('click', () => void logOut($('logout-unlock')));
 $('open-settings').addEventListener('click', () => void openSettings());
 $('close-settings').addEventListener('click', () => void chooseRepo());
 $('agree-terms').addEventListener('click', agree);
@@ -462,7 +484,7 @@ wireWorks({ open: openRepo });
 desk.wire({ changeRepo: () => void chooseRepo(), open: openRepo, relist: chooseRepo });
 // the connection refused, said in the settings: logged out to make the App again (on the first screen: the passkey is
 // made by the button pressed there)
-$('relink').addEventListener('click', () => void logOut());
+$('relink').addEventListener('click', () => void logOut($('relink')));
 $('token-notice-close').addEventListener('click', hideNotice);
 
 // --- adding the app to the home screen (FR-APP-03): said on the first screen only, never once opened from there

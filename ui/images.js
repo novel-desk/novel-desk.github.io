@@ -5,12 +5,13 @@ import { trashStamp } from '../lib/episodes.js';
 import { esc } from '../lib/format.js';
 import { dirOf } from '../lib/markdown.js';
 import { extOf, MAX_PICTURE, mdFiles, newPicture, notesList, pictureUses, renamePicture, toTrash } from '../lib/notes.js';
-import { $, toast } from './dom.js';
+import { $, busy, toast } from './dom.js';
 import { api } from './shared.js';
 
-// the texts of the work's .md files that can be read (the pictures in them)
+// the texts of the work's .md files that can be read (the pictures in them; said in the band while they are read:
+// DESK-OPS-05)
 async function mdTexts() {
-  const got = await api.texts(mdFiles(api.files()));
+  const got = await busy('読み込んでいます…', () => api.texts(mdFiles(api.files())));
   return /** @type {Record<string, string>} */ (Object.fromEntries(Object.entries(got).filter(([, t]) => t !== null)));
 }
 // make the picture small on the device (long side 1600px, JPEG; a GIF as it is)

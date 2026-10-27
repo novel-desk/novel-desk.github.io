@@ -239,9 +239,10 @@ test('drafts left by an account’s App, another account’s App made: the draft
   expect(await stored(page, 'drafts')).toEqual([]);
 });
 
-// FR-GH-01: whose the commits are not known yet (the latest commit not read yet when the author sends): written as the
-// App, as GitHub writes them; then proposed as before
-test('whose the commits are not known yet: written as the App; then proposed', async ({ page, gh, work }) => {
+// FR-GH-01, DESK-OPS-05: whose the commits are is asked of GitHub before the work is opened (the latest commit held
+// here): the text not shown until it is answered, so that the notice comes before the author writes, not after
+test('whose the commits are not known yet: asked before the text is shown; proposed with it', async ({ page, gh, work }) => {
+  void work;
   /** @type {import('@playwright/test').Route[]} */
   const held = [];
   await page.route(
@@ -250,15 +251,32 @@ test('whose the commits are not known yet: written as the App; then proposed', a
   );
   await noPasskey(page);
   await startApp(page, gh);
-  await expect(page.locator('#episode-title')).toHaveValue('はじまり');
-  await page.locator('#body').fill('# 第1話 はじまり\n\nまだ決まっていない\n');
-  await page.getByRole('button', { name: '送る（1）' }).click();
-  await expect(page.locator('#sync-state')).toHaveText(/^送りました（/);
-  expect(work.text('chapters/01_first.md')).toBe('# 第1話 はじまり\n\nまだ決まっていない\n');
-  expect(gh.written.at(-1)).toEqual({});
   await expect.poll(() => held.length).toBeGreaterThan(0);
+  await expect(page.locator('#busy')).toHaveText('作品を読み込んでいます…');
+  await expect(page.locator('#busy')).toBeVisible();
+  await expect(page.locator('#episode-title')).toHaveValue('');
+  await expect(page.locator('#author-notice')).toBeHidden();
   for (const r of held) await r.fallback();
   await expect(page.locator('#author-notice')).toBeVisible();
+  await expect(page.locator('#episode-title')).toHaveValue('はじまり');
+  await expect(page.locator('#busy')).toBeHidden();
+});
+
+// FR-GH-01: whose the commits are not known yet when a new work is made from the list before any work is opened:
+// written as the App, as GitHub writes them; then proposed when the work is opened
+test('whose the commits are not known yet: a new work made first is written as the App; then proposed', async ({ page, gh }) => {
+  const admin = 'admin-test-token-not-real';
+  gh.adminTokens = [admin];
+  await noPasskey(page);
+  await startApp(page, gh, ['author/novel', 'author/other']);
+  await expect(page.locator('#shelf')).toBeVisible();
+  await page.locator('#new-work-title').fill('試験の新作');
+  await page.locator('#new-work').getByRole('button', { name: '作成' }).click();
+  await page.getByLabel('リポジトリ名（英数字と . _ -）').fill('fresh');
+  await page.locator('#admin-token').fill(admin);
+  await page.locator('#create-work').click();
+  await expect(page.locator('#author-notice')).toBeVisible();
+  expect(gh.written[0]).toEqual({});
 });
 
 // NFR-SEC-16: GitHub not saying whose the App is (its /app not answered): kept as before, whose the drafts are not

@@ -25,6 +25,7 @@
  *   kept on the device (every 10 minutes of writing, or `force`)
  * @property {(path: string) => Promise<import('../lib/history.js').Snapshot[]>} snapshots the versions kept of a file
  * @property {() => Promise<void>} reload the work read from GitHub again
+ * @property {() => Promise<void>} reloadHeld the work read again, the text box not written in until it is read
  * @property {() => boolean} busy reading or sending
  * @property {() => number} unsent how many files the changes not sent change
  * @property {() => Promise<void>} send the changes not sent sent now (as 送る)

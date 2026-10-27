@@ -9,7 +9,7 @@ import { CONFLICT_MARK } from '../lib/merge.js';
 import { groupNotes } from '../lib/notelist.js';
 import { newNote, noteHeading, notesList, renameNote, trashNote } from '../lib/notes.js';
 import { boxRange, parsePlot, plotPathOf } from '../lib/plot.js';
-import { $, show, toast } from './dom.js';
+import { $, busy, show, toast } from './dom.js';
 import { showHistory } from './history.js';
 import { pickImage, renderImages, wireImages } from './images.js';
 import { api } from './shared.js';
@@ -40,7 +40,11 @@ export async function plotPath() {
   return plotPathOf(api.view().layout.plot, await notesWithTitles());
 }
 
+const LOADING = '<p class="muted small">読み込んでいます…</p>';
 export async function openNotes() {
+  // (opened from the desk: what the lists showed before, maybe of another work, emptied until this work's are read, so
+  // that it is neither seen nor pressed. Drawn again on 資料 itself: left until drawn. DESK-OPS-05)
+  if ($('notes').hidden) $('notes-list').innerHTML = $('images-list').innerHTML = LOADING;
   show('notes');
   notePath = null;
   $('note-view').hidden = true;
@@ -200,7 +204,8 @@ async function previewHtml() {
 }
 async function togglePreview() {
   const on = $('note-preview').hidden === true;
-  if (on) $('note-preview').innerHTML = await previewHtml();
+  // (said in the band while its pictures are read: DESK-OPS-05)
+  if (on) $('note-preview').innerHTML = await busy('読み込んでいます…', previewHtml);
   $('note-preview').hidden = !on;
   area().hidden = on;
   setPreviewButton($('note-preview-toggle'), on);

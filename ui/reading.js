@@ -2,7 +2,7 @@
 // the preview a swipe sideways, a pull on past its end, and the page sliding along. The place read stays when the
 // preview is switched on and off. From the server version's public/ui/reading.js; the desk gives what it needs
 import { esc } from '../lib/format.js';
-import { $ } from './dom.js';
+import { $, busy } from './dom.js';
 import { lineAtInBox, lineInBox, setPreviewButton } from './textbox.js';
 
 /**
@@ -16,11 +16,12 @@ const area = () => /** @type {HTMLTextAreaElement} */ ($('body'));
 const pv = () => $('preview');
 export const reading = () => !pv().hidden;
 
-// the preview drawn, with the way to the episodes before and after at its end
+// the preview drawn, with the way to the episodes before and after at its end (said in the band while its pictures are
+// read: DESK-OPS-05)
 export async function renderPreview() {
   const prev = desk.neighbor(-1),
     next = desk.neighbor(1);
-  const html = await desk.draw();
+  const html = await busy('読み込んでいます…', desk.draw);
   pv().innerHTML =
     html +
     `<nav class="ep-nav">${prev ? `<button class="ghost" data-go="-1">‹ ${esc(prev.title)}</button>` : '<span></span>'}${
@@ -37,6 +38,9 @@ function setReading(on) {
 
 // the page slides: on along the way read (up for the next, down for the previous; sideways for a swipe)
 let going = false;
+// the preview kept on while the next episode is opened from it (goEpisode): the episode opened does not switch it off,
+// so that its text is not seen as typed while its preview is drawn (DESK-OPS-05). Put in once drawn
+let staying = false;
 const still = matchMedia('(prefers-reduced-motion: reduce)');
 /** @param {number} d 1: the next, -1: the previous @param {boolean} [atEnd] @param {string} [axis] */
 export async function goEpisode(d, atEnd = false, axis = 'Y') {
@@ -58,7 +62,15 @@ export async function goEpisode(d, atEnd = false, axis = 'Y') {
         ).finished;
   try {
     await move(page(), 0, -d * 25, 160, 'ease-in');
-    if (!(await desk.open(ep.path))) return;
+    staying = was;
+    let opened;
+    try {
+      opened = await desk.open(ep.path);
+    } finally {
+      staying = false;
+    }
+    // (one that cannot be opened: shown as the episode opened shows it, in the text box)
+    if (!opened) return stopReading();
     if (was) {
       await renderPreview();
       setReading(true);
@@ -106,8 +118,10 @@ export async function togglePreview() {
   const l = lineInBox(a, at.line);
   a.scrollTop = l.top + at.into * l.height;
 }
-// back to writing (another episode opened)
-export const stopReading = () => setReading(false);
+// back to writing (another episode opened; not while the next is opened from the preview)
+export const stopReading = () => {
+  if (!staying) setReading(false);
+};
 
 /** @param {Desk} d */
 export function wireReading(d) {

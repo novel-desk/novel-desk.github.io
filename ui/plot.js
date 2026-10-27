@@ -252,6 +252,8 @@ async function boardClick(e) {
 // --- the 中箱 of the open episode, over its text (FR-PLOT-06): shown only for the episode it was opened on
 /** @type {string | null} */
 let peek = null;
+// the episode the panel was drawn for ('' none since it was closed)
+let panelFor = '';
 export async function renderPlotPanel() {
   const panel = $('plot-panel');
   const path = api.current();
@@ -259,8 +261,12 @@ export async function renderPlotPanel() {
   $('plot-peek').classList.toggle('on', on);
   if (!on) {
     panel.hidden = true;
+    panelFor = '';
     return;
   }
+  // (opened, or another episode: what it showed before emptied until this episode's box is read. DESK-OPS-05)
+  if (panelFor !== path) panel.innerHTML = '<p class="muted small">読み込んでいます…</p>';
+  panelFor = path;
   panel.hidden = false;
   const p = await loadPlot();
   if (api.current() !== path) return;

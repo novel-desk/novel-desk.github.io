@@ -15,7 +15,7 @@ import { editToml } from '../lib/tomledit.js';
 import { AUTO_WAIT, keptMode, onOtherBranch, saveState, sendsItself, stamped, syncMode, writtenOn } from '../lib/sync.js';
 import { viewOf } from '../lib/view.js';
 import { visibilityTag } from '../lib/works.js';
-import { $, show, toast } from './dom.js';
+import { $, busy as withBand, show, toast } from './dom.js';
 import * as store from './db.js';
 import { bytes, contents, converted, load, lookOf, readShas } from './work.js';
 import { Overlapped, sendAll } from './send.js';
@@ -53,6 +53,8 @@ let edits = [];
 let view = null;
 // the episode open ('' = none)
 let current = '';
+// how many times an episode (or none) was opened: the text box is set each time (reloadHeld)
+let opens = 0;
 let busy = false;
 // a work being opened (open(): until it is read the first time)
 let opening = false;
@@ -317,6 +319,7 @@ function watchRows() {
 async function openEpisode(path, shut = true) {
   const w = /** @type {NonNullable<typeof work>} */ (work);
   current = path;
+  opens++;
   // (an episode of the table of contents: the callers open one of its rows)
   const e = /** @type {import('../lib/layout.js').TocEpisode} */ (findEpisode(path));
   const text = textOf(path);
@@ -342,6 +345,7 @@ async function openEpisode(path, shut = true) {
 // no episode open (none in the work, or the open one put in the trash)
 function openNone() {
   current = '';
+  opens++;
   $('body').value = '';
   /** @type {HTMLTextAreaElement} */ ($('body')).disabled = true;
   $('episode-title').value = '';
@@ -850,6 +854,19 @@ async function reload() {
   await refreshScreens();
   sendSoon();
 }
+// The work read again with the text box not written in until it is read (a branch switched to, ui/branches.js: as
+// when a work is opened, DESK-OPS-05). Read, the episode opened sets the box; not read, the box put back as it was
+async function reloadHeld() {
+  const area = /** @type {HTMLTextAreaElement} */ ($('body'));
+  const was = area.disabled;
+  const at = opens;
+  area.disabled = true;
+  try {
+    await reload();
+  } finally {
+    if (opens === at) area.disabled = was;
+  }
+}
 // a work that could not be opened (not read at all): said, and the list of works shown again (as the server version's)
 /** @param {Error} err */
 function leaveFailed(err) {
@@ -925,8 +942,11 @@ async function deleteWork() {
     return;
   clearTimeout(autoTimer);
   sight?.disconnect();
-  await writing;
-  await forgetWork(r.full_name);
+  // (said in the band: the device's store may take a while for a long work. DESK-OPS-05)
+  await withBand('削除しています…', async () => {
+    await writing;
+    await forgetWork(r.full_name);
+  });
   work = null;
   drafts = new Map();
   parked = [];
@@ -1299,8 +1319,12 @@ export function wire(on) {
   });
   wireDrag();
   $('send').addEventListener('click', () => void sendDrafts(true));
-  // 再読み込み: over the table of contents and over the text (the table of contents is closed on a phone)
-  for (const id of ['reload-work', 'reload-desk']) $(id).addEventListener('click', () => void (busy || opening ? null : reload()));
+  // 再読み込み: over the table of contents and over the text (the table of contents is closed on a phone: the one over
+  // the text says it in the band, as the state under the table of contents is not seen there. DESK-OPS-05)
+  /** @param {boolean} band */
+  const again = band => void (busy || opening ? null : band ? withBand('読み込んでいます…', reload) : reload());
+  $('reload-work').addEventListener('click', () => again(false));
+  $('reload-desk').addEventListener('click', () => again(true));
   $('to-shelf').addEventListener('click', on.changeRepo);
   changeRepo = on.changeRepo;
   $('delete-work').addEventListener('click', () => void deleteWork());
@@ -1348,6 +1372,7 @@ export function wire(on) {
     snapshot,
     snapshots,
     reload,
+    reloadHeld,
     busy: () => busy,
     unsent,
     send: () => sendDrafts(),

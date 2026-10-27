@@ -5,7 +5,7 @@
 import { branchNameError, commitDate, mergeLines } from '../lib/branches.js';
 import { charsOf } from '../lib/format.js';
 import { isEpisode, relOf, titleOf } from '../lib/layout.js';
-import { $, toast } from './dom.js';
+import { $, busy, toast } from './dom.js';
 import * as store from './db.js';
 import * as gh from './github.js';
 import { pick } from './picker.js';
@@ -25,7 +25,7 @@ async function chooseBranch() {
   const other = api.otherBranch();
   let list;
   try {
-    list = await gh.branches(w.repo);
+    list = await busy('ブランチを読み込んでいます…', () => gh.branches(w.repo));
   } catch (err) {
     return toast(`ブランチを読めませんでした: ${err.message}`);
   }
@@ -47,13 +47,14 @@ async function chooseBranch() {
     const why = branchNameError(name);
     if (why) return toast(why);
     try {
-      await gh.newBranch(w.repo, name, w.commit);
+      await busy('ブランチを作成しています…', () => gh.newBranch(w.repo, name, w.commit));
     } catch (err) {
       return toast(`ブランチを作成できませんでした: ${err.message}`);
     }
   }
   await store.put('prefs', `branch:${w.repo}`, name);
-  await api.reload();
+  // (the text box not written in until the branch is read, as when a work is opened: DESK-OPS-05)
+  await busy('ブランチを読み込んでいます…', api.reloadHeld);
   toast(list.includes(name) ? `${name} に切り替えました` : `${name} を作成して切り替えました`);
 }
 // the episodes a merge changes, with their lengths before (where the branches met) and after; how many other files
@@ -85,7 +86,7 @@ async function mergeBranch() {
   if (!w) return toast(NO_WORK);
   let list;
   try {
-    list = (await gh.branches(w.repo)).filter(b => b !== w.branch);
+    list = (await busy('ブランチを読み込んでいます…', () => gh.branches(w.repo))).filter(b => b !== w.branch);
   } catch (err) {
     return toast(`ブランチを読めませんでした: ${err.message}`);
   }
@@ -98,16 +99,20 @@ async function mergeBranch() {
   });
   if (!into) return;
   try {
-    const cmp = await gh.compare(w.repo, into, w.branch);
     const unsent = api.unsent() > 0;
-    if (!cmp.commits.length && !unsent) return toast(`${into} には、もう ${w.branch} の内容が全部入っています`);
-    const lines = mergeLines({
-      from: w.branch,
-      into,
-      unsent,
-      commits: cmp.commits.map(c => ({ date: commitDate(c.commit.committer.date), subject: c.commit.message.split('\n')[0] })),
-      ...(await changedEpisodes(w.repo, cmp)),
+    // what the merge brings, read (said in the band: DESK-OPS-05). null: nothing to merge
+    const lines = await busy('マージの内容を読み込んでいます…', async () => {
+      const cmp = await gh.compare(w.repo, into, w.branch);
+      if (!cmp.commits.length && !unsent) return null;
+      return mergeLines({
+        from: w.branch,
+        into,
+        unsent,
+        commits: cmp.commits.map(c => ({ date: commitDate(c.commit.committer.date), subject: c.commit.message.split('\n')[0] })),
+        ...(await changedEpisodes(w.repo, cmp)),
+      });
     });
+    if (!lines) return toast(`${into} には、もう ${w.branch} の内容が全部入っています`);
     if (!confirm(`${lines.join('\n')}\n\nマージしますか？`)) return;
     // what is not sent goes first (as the server version's: pushed, then merged)
     if (unsent) {

@@ -7,7 +7,7 @@ import { charsOf, esc, n } from '../lib/format.js';
 import { episodesOf, firstLayout, parseLayout, tableOfContents, titleOf, headingsOf, CONFIG } from '../lib/layout.js';
 import { foldersOf } from '../lib/changes.js';
 import { nextTag, pathOrder, releaseLabel, releasesOf } from '../lib/releases.js';
-import { $, toast } from './dom.js';
+import { $, busy, toast } from './dom.js';
 import * as gh from './github.js';
 import { api } from './shared.js';
 import { bytes, each } from './work.js';
@@ -23,16 +23,21 @@ async function makeRelease() {
   const given = prompt('リリース名（例: 第一稿、新人賞応募版）\nいまの原稿にタグを付け、GitHub のリリースにも残します');
   const label = given === null ? null : releaseLabel(given);
   if (!label) return;
+  // (said in the band, the button not pressed again until it is made: DESK-OPS-05)
+  await busy('リリースを作成しています…', () => sendAndRelease(w.repo, label), $('name-version'));
+}
+/** @param {string} repo @param {string} label */
+async function sendAndRelease(repo, label) {
   // what is not sent yet goes first (as the server version's: pushed, then tagged)
   if (api.unsent()) {
     await api.send();
     if (api.unsent()) return toast('送れなかったので、リリースを作成しませんでした。書いたものはこの端末に残っています');
   }
   try {
-    const [list, names] = await Promise.all([gh.releases(w.repo), gh.tags(w.repo)]);
+    const [list, names] = await Promise.all([gh.releases(repo), gh.tags(repo)]);
     const tag = nextTag([...names, ...list.map((/** @type {{ tag_name: string }} */ r) => r.tag_name)]);
     const eps = api.episodes();
-    await gh.newRelease(w.repo, {
+    await gh.newRelease(repo, {
       tag,
       commit: api.work().commit,
       name: label,

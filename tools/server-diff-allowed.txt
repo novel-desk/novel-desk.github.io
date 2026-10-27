@@ -82,6 +82,8 @@ B3 css + .leave[open] summary
 B3 html + #app-repos-link
 # B4. 作者が決めたもの: 読み込み中の表示
 B4 css + .loading-text
+B4 css + .busy
+B4 html + #busy
 # B5. 作者が決めたもの: 知らせ（トースト）の見た目
 B5 css .toast {left}
 B5 css .toast {bottom}

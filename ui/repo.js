@@ -4,7 +4,7 @@
 // name. Making and renaming a repository needs Administration, which the GitHub App does not have: a token with it is
 // put in each time, used for that one request and not kept
 import { adminFailure, isWorkKey, keptAfterForget, movedKey, newWorkFiles, repoName, whereIs, withWork } from '../lib/works.js';
-import { $, toast } from './dom.js';
+import { $, busy, toast } from './dom.js';
 import * as store from './db.js';
 import * as gh from './github.js';
 
@@ -185,25 +185,30 @@ async function renameRepo(desk) {
   if (!name) return say('リポジトリ名は、英数字と . _ - で 100 文字までにしてください');
   if (name === r.full_name.split('/')[1]) return renameDialog().close();
   if (!admin) return say('Administration の権限を付けたトークンを入れてください（名前を変えるときだけ使い、この端末には残しません）');
-  $('rename-repo-go').disabled = true;
   try {
-    let meta;
-    try {
-      meta = await gh.renameRepo(admin, r.full_name, name);
-    } catch (err) {
-      throw new Error(`リポジトリ名を ${r.full_name.split('/')[0]}/${name} に変更できませんでした: ${said(err)}`, { cause: err });
-    }
-    $('rename-admin-token').value = '';
-    await desk.settled();
-    await moveRepo(r.full_name, meta.full_name);
-    await store.put('prefs', `id:${meta.full_name}`, meta.id);
+    // (said in the band over the dialog, its button not pressed again meanwhile: DESK-OPS-05)
+    const meta = await busy(
+      '名前を変更しています…',
+      async () => {
+        let meta;
+        try {
+          meta = await gh.renameRepo(admin, r.full_name, name);
+        } catch (err) {
+          throw new Error(`リポジトリ名を ${r.full_name.split('/')[0]}/${name} に変更できませんでした: ${said(err)}`, { cause: err });
+        }
+        $('rename-admin-token').value = '';
+        await desk.settled();
+        await moveRepo(r.full_name, meta.full_name);
+        await store.put('prefs', `id:${meta.full_name}`, meta.id);
+        return meta;
+      },
+      $('rename-repo-go'),
+    );
     renameDialog().close();
     toast(`${meta.full_name} に変更しました`);
     await desk.reopen({ full_name: meta.full_name, default_branch: meta.default_branch, visibility: meta.visibility });
   } catch (err) {
     say(/** @type {Error} */ (err).message);
-  } finally {
-    $('rename-repo-go').disabled = false;
   }
 }
 

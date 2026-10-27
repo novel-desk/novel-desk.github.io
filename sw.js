@@ -17,6 +17,7 @@ const FILES = [
   'apple-touch-icon.png',
   'lib/appkey.js',
   'lib/branches.js',
+  'lib/busy.js',
   'lib/changes.js',
   'lib/characters.js',
   'lib/commit.js',

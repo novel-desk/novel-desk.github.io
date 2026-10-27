@@ -5,7 +5,7 @@
 // end of the episode open, or given up
 import { kindsOf } from '../lib/commit.js';
 import { esc, whenLong } from '../lib/format.js';
-import { $ } from './dom.js';
+import { $, busy } from './dom.js';
 import { api } from './shared.js';
 
 const dialog = () => /** @type {HTMLDialogElement} */ (/** @type {unknown} */ ($('unsent')));
@@ -63,12 +63,13 @@ function redraw() {
   else dialog().close();
 }
 // a text set aside, as the author chooses (put in the episode open: the list closed, to show it there)
-/** @param {'send' | 'put' | 'drop'} how @param {number} i */
-async function unpark(how, i) {
+// (sent: said in the band over the list, its button not pressed again meanwhile. DESK-OPS-05)
+/** @param {'send' | 'put' | 'drop'} how @param {number} i @param {HTMLButtonElement} button the one pressed */
+async function unpark(how, i, button) {
   const d = aside[i];
   if (how === 'drop' && !confirm('この書きかけを破棄しますか？（この端末の履歴に残ります）')) return;
   if (how === 'put') dialog().close();
-  await api.unpark(d, how);
+  await (how === 'send' ? busy('送信しています…', () => api.unpark(d, how), button) : api.unpark(d, how));
   if (how !== 'put') redraw();
 }
 export function wireUnsent() {
@@ -84,7 +85,7 @@ export function wireUnsent() {
     const u = t.closest('[data-unpark-send], [data-unpark-put], [data-unpark-drop]');
     if (u instanceof HTMLElement) {
       const how = u.dataset.unparkSend ? 'send' : u.dataset.unparkPut ? 'put' : 'drop';
-      void unpark(how, Number(u.dataset.unparkSend ?? u.dataset.unparkPut ?? u.dataset.unparkDrop));
+      void unpark(how, Number(u.dataset.unparkSend ?? u.dataset.unparkPut ?? u.dataset.unparkDrop), /** @type {HTMLButtonElement} */ (u));
     }
   });
 }

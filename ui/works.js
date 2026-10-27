@@ -9,7 +9,7 @@
 import { esc, n, whenLong } from '../lib/format.js';
 import { viewOf } from '../lib/view.js';
 import { byUpdated, listed, offered, stillHolds, summaryOf, visibilityTag } from '../lib/works.js';
-import { $, toast } from './dom.js';
+import { $, busy, toast } from './dom.js';
 import * as store from './db.js';
 import * as gh from './github.js';
 import { offList, worksHere } from './repo.js';
@@ -141,9 +141,16 @@ async function importWork(open) {
   /** @type {import('../lib/works.js').RepoMeta | null} */
   let r;
   try {
-    r = /^[^/\s]+\/[^/\s]+$/.test(name) ? await gh.repoMeta(name) : null;
-    // (one a GitHub App lists but cannot read, installed by its owner's account: opened, so that it says why)
-    r ??= (await gh.repos()).find(x => x.full_name === name) ?? null;
+    // (said in the band while GitHub is asked, the button not pressed again meanwhile: DESK-OPS-05)
+    r = await busy(
+      '読み込んでいます…',
+      async () =>
+        (/^[^/\s]+\/[^/\s]+$/.test(name) ? await gh.repoMeta(name) : null) ??
+        // (one a GitHub App lists but cannot read, installed by its owner's account: opened, so that it says why)
+        (await gh.repos()).find(x => x.full_name === name) ??
+        null,
+      /** @type {HTMLButtonElement} */ ($('import-work').querySelector('button')),
+    );
   } catch (err) {
     return toast(err.message);
   }
