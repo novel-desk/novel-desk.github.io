@@ -107,7 +107,7 @@ describe('works', () => {
   });
   // FR-WORK-02, FR-GH-10, NFR-USE-01
   test('adminFailure: what went wrong and what to do', () => {
-    expect(adminFailure(401, 'Bad credentials')).toMatch(/^このトークンは使えません/);
+    expect(adminFailure(401, 'Bad credentials')).toMatch(/^このトークンは使用できません/);
     expect(adminFailure(403, 'Resource not accessible')).toMatch(/Administration を Read and write にした別のトークン/);
     expect(adminFailure(404, 'Not Found')).toMatch(/Administration/);
     expect(adminFailure(422, 'name already exists')).toBe('GitHub が受け付けませんでした（同じ名前のリポジトリがあるかもしれません）: name already exists');

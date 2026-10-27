@@ -227,7 +227,7 @@ export const today = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
-// The GitHub App made from the first screen (GitHub App を作って始める, on the fake GitHub's pages; no passkey), installed
+// The GitHub App made from the first screen (GitHub App を作成して始める, on the fake GitHub's pages; no passkey), installed
 // on `repos` there: one, its work opened at once; more, the list of works
 /** @param {import('@playwright/test').Page} page @param {string[]} [repos] */
 export async function startApp(page, repos = ['author/novel', 'author/other']) {
@@ -235,7 +235,7 @@ export async function startApp(page, repos = ['author/novel', 'author/other']) {
   if (!gh) throw new Error('the test does not take the fake GitHub (gh)');
   gh.installRepos = repos;
   await page.goto('./');
-  await page.getByRole('button', { name: 'GitHub App を作って始める' }).click();
+  await page.getByRole('button', { name: 'GitHub App を作成して始める' }).click();
 }
 // The GitHub App made (without a passkey, installed on the author's two repositories), and the work chosen: the desk
 // open on its first episode, whose the commits are taken as proposed (これでよい)

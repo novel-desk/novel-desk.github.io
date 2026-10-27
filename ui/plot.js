@@ -265,7 +265,7 @@ export async function renderPlotPanel() {
   const p = await loadPlot();
   if (api.current() !== path) return;
   if (!p) {
-    panel.innerHTML = '<p class="muted small">プロットの資料がありません。目次の「プロット」から作れます。</p>';
+    panel.innerHTML = '<p class="muted small">プロットの資料がありません。目次の「プロット」から作成できます。</p>';
     return;
   }
   // (the episode open is one of the work's)

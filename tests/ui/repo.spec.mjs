@@ -52,10 +52,10 @@ test('a new work refused: the permission needed is said; a name GitHub would not
   await expect(page.locator('#new-work-state')).toHaveText('リポジトリ名は、英数字と . _ - で 100 文字までにしてください');
   await create(page, { title: '題', repo: 'x', token: TOKEN });
   await expect(page.locator('#new-work-state')).toHaveText(
-    'リポジトリを作れませんでした: このトークンには、リポジトリを作る・名前を変える権限がありません。Repository permissions の Administration を Read and write にした別のトークン（作るときは Repository access を All repositories に）を作って入れてください',
+    'リポジトリを作成できませんでした: このトークンには、リポジトリを作成する・名前を変更する権限がありません。Repository permissions の Administration を Read and write にした別のトークン（作成するときは Repository access を All repositories に）を作成して入力してください',
   );
   await create(page, { title: '題', repo: 'x', token: 'wrong' });
-  await expect(page.locator('#new-work-state')).toHaveText(/^リポジトリを作れませんでした: このトークンは使えません/);
+  await expect(page.locator('#new-work-state')).toHaveText(/^リポジトリを作成できませんでした: このトークンは使用できません/);
   expect([...gh.repos.keys()]).toEqual(['author/novel', 'author/other']);
 });
 
@@ -177,10 +177,12 @@ test('a new work: no title or no token said first; GitHub not reached said; the 
   await page.locator('#close-new-repo').click();
   await expect(page.locator('#new-repo')).toBeHidden();
   await create(page, { title: '題', repo: 'x', token: ' ' });
-  await expect(page.locator('#new-work-state')).toHaveText('Administration の権限を付けたトークンを入れてください（作るときだけ使い、この端末には残しません）');
+  await expect(page.locator('#new-work-state')).toHaveText(
+    'Administration の権限を付けたトークンを入れてください（作成するときだけ使用し、この端末には保存しません）',
+  );
   gh.down = true;
   await create(page, { title: '題', repo: 'x', token: ADMIN });
-  await expect(page.locator('#new-work-state')).toHaveText('リポジトリを作れませんでした: GitHub につながりません（オフラインかもしれません）');
+  await expect(page.locator('#new-work-state')).toHaveText('リポジトリを作成できませんでした: GitHub につながりません（オフラインかもしれません）');
   expect([...gh.repos.keys()]).toEqual(['author/novel', 'author/other']);
 });
 

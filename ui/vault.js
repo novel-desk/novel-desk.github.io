@@ -86,7 +86,7 @@ async function newPasskey(salt) {
     return await makePasskey(salt);
   } catch (err) {
     if (webauthnFailure(err) === 'cancelled')
-      throw new Error('パスキーが作られませんでした（取り消されたか、時間切れです）。もう一度押してください', { cause: err });
+      throw new Error('パスキーを作成できませんでした（取り消されたか、時間切れになりました）。もう一度押してください', { cause: err });
     return null;
   }
 }
@@ -105,7 +105,7 @@ async function opened(v) {
   try {
     return await decrypt(await prfKey(output, v.salt, APP_KEY_INFO), v.iv, v.data);
   } catch (err) {
-    throw new Error('GitHub App の秘密鍵を復号できませんでした（作ったときと違うパスキーかもしれません）', { cause: err });
+    throw new Error('GitHub App の秘密鍵を復号できませんでした（作成したときと違うパスキーの可能性があります）', { cause: err });
   }
 }
 

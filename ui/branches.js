@@ -49,12 +49,12 @@ async function chooseBranch() {
     try {
       await gh.newBranch(w.repo, name, w.commit);
     } catch (err) {
-      return toast(`ブランチを作れませんでした: ${err.message}`);
+      return toast(`ブランチを作成できませんでした: ${err.message}`);
     }
   }
   await store.put('prefs', `branch:${w.repo}`, name);
   await api.reload();
-  toast(list.includes(name) ? `${name} に切り替えました` : `${name} を作って切り替えました`);
+  toast(list.includes(name) ? `${name} に切り替えました` : `${name} を作成して切り替えました`);
 }
 // the episodes a merge changes, with their lengths before (where the branches met) and after; how many other files
 // (a file renamed counts as the one it is now: new, as the server version's git diff of names says it)

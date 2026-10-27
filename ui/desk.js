@@ -858,11 +858,11 @@ function leaveFailed(err) {
 }
 /** @param {string} name */
 const stopSaid = name =>
-  `${name} は、つないだリポジトリとは別のリポジトリになっています（GitHub で名前が変わったか、消された後に同じ名前で作られたかもしれません）。送らずに止めています。GitHub で確かめてから「つなぎ直す」を押してください`;
+  `${name} は、つないだリポジトリとは別のリポジトリになっています（GitHub で名前が変わったか、削除された後に同じ名前で作成された可能性があります）。送らずに止めています。GitHub で確かめてから「つなぎ直す」を押してください`;
 // an empty repository started as a work (the files a new work has), when the author says so
 /** @param {Repo} r */
 async function offerStart(r) {
-  if (!confirm(`${r.full_name} は空のリポジトリです。作品として始めますか？（novel.toml、README.md、最初の話を置きます）`)) return false;
+  if (!confirm(`${r.full_name} は空のリポジトリです。作品として始めますか？（novel.toml、README.md、最初の話を作成します）`)) return false;
   syncState('作品を始めています…');
   try {
     await startWork(r.full_name, r.default_branch, await titleFor(r.full_name));

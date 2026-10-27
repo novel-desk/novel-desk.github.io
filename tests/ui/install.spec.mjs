@@ -20,14 +20,14 @@ test.describe('an iPhone', () => {
     await noPasskey(page);
     await page.addInitScript(() => Object.defineProperty(navigator, 'standalone', { value: true, configurable: true }));
     await page.goto('./');
-    await expect(page.getByRole('button', { name: 'GitHub App を作って始める' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'GitHub App を作成して始める' })).toBeVisible();
     await expect(page.locator('#install-ios')).toBeHidden();
   });
 });
 test('a browser that offers to install the app: a button that asks it; nothing before the offer', async ({ page, gh }) => {
   await noPasskey(page);
   await page.goto('./');
-  await expect(page.getByRole('button', { name: 'GitHub App を作って始める' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'GitHub App を作成して始める' })).toBeVisible();
   await expect(page.locator('#install-app')).toBeHidden();
   await expect(page.locator('#install-ios')).toBeHidden();
   await page.evaluate(() => {
@@ -45,7 +45,7 @@ test('a browser that offers to install the app: a button that asks it; nothing b
 test('installed from the browser’s menu after the offer: the button goes', async ({ page, gh }) => {
   await noPasskey(page);
   await page.goto('./');
-  await expect(page.getByRole('button', { name: 'GitHub App を作って始める' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'GitHub App を作成して始める' })).toBeVisible();
   await page.evaluate(() => dispatchEvent(Object.assign(new Event('beforeinstallprompt', { cancelable: true }), { prompt: async () => {} })));
   await expect(page.locator('#install-app')).toBeVisible();
   await page.evaluate(() => dispatchEvent(new Event('appinstalled')));

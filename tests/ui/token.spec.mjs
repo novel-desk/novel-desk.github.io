@@ -47,7 +47,7 @@ test('DESK-OPS-04: a device started with a token: the token deleted and said on 
   const gone = page.locator('#token-gone');
   await expect(gone).toBeVisible();
   await expect(gone).toContainText('トークンで始める方法は無くなりました');
-  await expect(gone).toContainText('「GitHub App を作って始める」で始め直してください');
+  await expect(gone).toContainText('「GitHub App を作成して始める」で始め直してください');
   await expect(gone.getByRole('link', { name: 'トークンの一覧' })).toHaveAttribute('href', 'https://github.com/settings/personal-access-tokens');
   expect(await stored(page, 'vault')).toEqual([]);
   expect(await stored(page, 'drafts')).toEqual(drafts);

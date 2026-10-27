@@ -25,16 +25,16 @@ try {
 // what the screen says of how the App's key is kept ('' none kept yet)
 const KINDS = {
   '': '',
-  'app-prf': 'GitHub App の秘密鍵はパスキー（PRF）から作った鍵で暗号化して、この端末に置いています。開くたびにパスキーを使います。',
+  'app-prf': 'GitHub App の秘密鍵は、パスキー（PRF）から生成した鍵で暗号化し、この端末に保存しています。起動するたびにパスキーで認証します。',
   'app-local':
-    'このブラウザーはパスキーの PRF に対応していないため、GitHub App の秘密鍵は暗号化せず、この端末の取り出せない鍵（WebCrypto）として置いています。パスキーは使いません。この端末でこのブラウザーを開ける人は、作品を読み書きできます。',
+    'このブラウザーはパスキーの PRF に対応していないため、GitHub App の秘密鍵は暗号化せず、この端末の取り出せない鍵（WebCrypto）として保存しています。パスキーは使用しません。この端末でこのブラウザーを開ける人は、作品を読み書きできます。',
   // (DESK-SEC-01: kept by the version before; said here only, not each time it is opened)
   'app-old':
-    'GitHub App の秘密鍵は暗号化されていません（前の版で、この端末の取り出せない鍵として置いたものです。開くたびにパスキーを使います）。ログアウトしてから「GitHub App を作って始める」で App を作り直すと、パスキーで暗号化して保存します。前の App は、GitHub の Settings → Developer settings → GitHub Apps で消してください。',
+    'GitHub App の秘密鍵は暗号化されていません（前の版で、この端末の取り出せない鍵として保存したものです。起動するたびにパスキーで認証します）。ログアウトしてから「GitHub App を作成して始める」で App を再作成すると、パスキーで暗号化して保存します。前の App は、GitHub の Settings → Developer settings → GitHub Apps で削除してください。',
 };
 // what the screen to open it with says of an App's key kept with a passkey (the one kept by the version before: what
 // to do with it is said in the settings only)
-const UNLOCK_APP = { 'app-prf': KINDS['app-prf'], 'app-old': 'GitHub App の秘密鍵は、開くたびにパスキーを使います。' };
+const UNLOCK_APP = { 'app-prf': KINDS['app-prf'], 'app-old': 'GitHub App の秘密鍵は、起動するたびにパスキーで認証します。' };
 /** @type {keyof typeof KINDS} */
 let kind = '';
 /** @type {AppVault | null} the GitHub App in use, as kept */
@@ -116,7 +116,7 @@ async function logOut() {
   hideNotice();
   kind = '';
   toast(
-    'ログアウトしました。GitHub App の秘密鍵と、この端末に残した作品の控えを消しました。GitHub の App と、パスワードの管理のパスキーは残っています。使わないときは、それぞれ削除してください（App は GitHub の Settings → Developer settings → GitHub Apps）',
+    'ログアウトしました。GitHub App の秘密鍵と、この端末に残した作品の控えを削除しました。GitHub の App と、パスワードの管理のパスキーは残っています。使用しないときは、それぞれ削除してください（App は GitHub の Settings → Developer settings → GitHub Apps）',
   );
   show('setup');
 }
@@ -199,7 +199,7 @@ function hideNotice() {
 }
 gh.onRefused(() => {
   $('token-notice-text').textContent =
-    'GitHub が GitHub App のトークンを断りました（秘密鍵が消されたか、App が外されたかもしれません）。ログアウトしてから「GitHub App を作って始める」で App を作り直してください。書いたものはこの端末に残っています。';
+    'GitHub が GitHub App のトークンを拒否しました（秘密鍵が削除されたか、App がアンインストールされた可能性があります）。ログアウトしてから「GitHub App を作成して始める」で App を再作成してください。書いた文章はこの端末に残っています。';
   $('token-notice').hidden = false;
 });
 
@@ -251,7 +251,7 @@ async function makeApp() {
 // (left as it was while the page leaves for GitHub; put back when the author comes back to it, as Safari keeps it)
 function resetMakeApp() {
   $('make-app').disabled = false;
-  $('make-app').textContent = 'GitHub App を作って始める';
+  $('make-app').textContent = 'GitHub App を作成して始める';
 }
 addEventListener('pageshow', resetMakeApp);
 // whether a flow started on this device is waited for (the field to paste its code in shown)
@@ -281,7 +281,7 @@ async function pasteCode(/** @type {SubmitEvent} */ e) {
   const p = await store.get('prefs', 'app-manifest');
   if (!back || !startedHere(p, back.state, Date.now())) {
     $('app-paste-error').textContent =
-      'このコードは、ここで始めた GitHub App のものではありません（1 時間を過ぎたかもしれません）。もう一度「GitHub App を作って始める」を押してください';
+      'このコードは、ここで始めた GitHub App のものではありません（1 時間を過ぎたかもしれません）。もう一度「GitHub App を作成して始める」を押してください';
     return;
   }
   $('app-paste').value = '';

@@ -133,15 +133,15 @@ async function createWork(open, relist) {
   };
   if (!title) return say('題名を入れてください', true);
   if (!name) return say('リポジトリ名は、英数字と . _ - で 100 文字までにしてください', true);
-  if (!admin) return say('Administration の権限を付けたトークンを入れてください（作るときだけ使い、この端末には残しません）', true);
+  if (!admin) return say('Administration の権限を付けたトークンを入れてください（作成するときだけ使用し、この端末には保存しません）', true);
   $('create-work').disabled = true;
-  say('作っています…', false);
+  say('作成しています…', false);
   try {
     let made;
     try {
       made = await gh.createRepo(admin, $('new-work-owner').value.trim(), name, title);
     } catch (err) {
-      throw new Error(`リポジトリを作れませんでした: ${said(err)}`, { cause: err });
+      throw new Error(`リポジトリを作成できませんでした: ${said(err)}`, { cause: err });
     }
     $('admin-token').value = '';
     await store.put('prefs', `new-title:${made.full_name}`, title);

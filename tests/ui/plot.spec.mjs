@@ -395,7 +395,7 @@ test("the open episode's 中箱: none, chosen, taken away, gone; the plot opened
   work.push({ 'novel.toml': TOML });
   await openWork(page);
   await page.getByRole('button', { name: 'この話のプロット' }).click();
-  await expect(page.locator('#plot-panel')).toHaveText('プロットの資料がありません。目次の「プロット」から作れます。');
+  await expect(page.locator('#plot-panel')).toHaveText('プロットの資料がありません。目次の「プロット」から作成できます。');
   await page.getByRole('button', { name: 'この話のプロット' }).click();
   await expect(page.locator('#plot-panel')).toBeHidden();
   work.push({

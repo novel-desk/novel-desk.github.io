@@ -5,7 +5,7 @@ import { test, expect, keepMoreOpen, noPasskey, toSettings, TERMS } from './lib/
 test.use({ agreed: false });
 
 /** @param {import('@playwright/test').Page} page */
-const makeApp = page => page.getByRole('button', { name: 'GitHub App を作って始める' }).click();
+const makeApp = page => page.getByRole('button', { name: 'GitHub App を作成して始める' }).click();
 // the work opened (the App installed on it only), whose the commits are taken as proposed
 /** @param {import('@playwright/test').Page} page */
 async function opened(page) {

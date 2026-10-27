@@ -1,5 +1,5 @@
 // GitHub App の秘密鍵 (FR-GH-01, NFR-SEC-15, NFR-SEC-16): the GitHub App's private key, kept when
-// the App is made from the first screen (GitHub App を作って始める; the flow itself in manifest.spec.mjs). The key is
+// the App is made from the first screen (GitHub App を作成して始める; the flow itself in manifest.spec.mjs). The key is
 // made by the fake GitHub for the test (never a real one); it checks the App's JWTs with its public key, gives its
 // installation tokens for a while, and takes them until they end or are revoked
 import { createPrivateKey, generateKeyPairSync, verify } from 'node:crypto';
@@ -37,13 +37,13 @@ function oldApp(gh, repos = ['author/novel', 'author/other']) {
   gh.app = { id: APP_ID, publicKey, installations: [{ id: 7, account: 'author', repos }] };
   return privateKey.export({ type: 'pkcs1', format: 'pem' }).toString();
 }
-// the App made from the first screen (GitHub App を作って始める) on the fake GitHub's pages, installed there on `repos`
+// the App made from the first screen (GitHub App を作成して始める) on the fake GitHub's pages, installed there on `repos`
 /** @param {import('@playwright/test').Page} page @param {import('./lib/fake-github.mjs').FakeGitHub} gh @param {string[]} [repos] */
 async function startApp(page, gh, repos = ['author/novel']) {
   gh.installRepos = repos;
   await keepMoreOpen(page);
   await page.goto('./');
-  await page.getByRole('button', { name: 'GitHub App を作って始める' }).click();
+  await page.getByRole('button', { name: 'GitHub App を作成して始める' }).click();
 }
 // the private key of the App made last, as GitHub gave it (PKCS#1)
 /** @param {import('./lib/fake-github.mjs').FakeGitHub} gh */
@@ -93,7 +93,7 @@ test('started with the App’s private key: kept so that it cannot be taken out;
   expect(await persistAsked(page)).toBe(1);
   await toSettings(page);
   await expect(page.locator('#gh-help')).toHaveText(
-    /PRF に対応していないため、GitHub App の秘密鍵は暗号化せず、この端末の取り出せない鍵.*パスキーは使いません/,
+    /PRF に対応していないため、GitHub App の秘密鍵は暗号化せず、この端末の取り出せない鍵.*パスキーは使用しません/,
   );
   await page.getByRole('button', { name: '‹ 戻る' }).click();
   // (whose the commits are: not known until a work is opened)
@@ -157,7 +157,7 @@ test('the installation’s token: asked for again before it ends and when refuse
   gh.appTokens.clear();
   await page.locator('#reload-work').click();
   await expect(page.locator('#token-notice-text')).toHaveText(
-    /^GitHub が GitHub App のトークンを断りました.*ログアウトしてから「GitHub App を作って始める」で App を作り直してください/,
+    /^GitHub が GitHub App のトークンを拒否しました.*ログアウトしてから「GitHub App を作成して始める」で App を再作成してください/,
   );
 });
 
@@ -331,7 +331,7 @@ test('DESK-SEC-01: the App’s key kept by the version before without a passkey:
   await keepOld(page, pem, false);
   await expect(page.locator('#shelf')).toBeVisible();
   await toSettings(page);
-  await expect(page.locator('#gh-help')).toHaveText(/GitHub App の秘密鍵は暗号化せず.*パスキーは使いません/);
+  await expect(page.locator('#gh-help')).toHaveText(/GitHub App の秘密鍵は暗号化せず.*パスキーは使用しません/);
 });
 
 test.describe('with a passkey', () => {
@@ -370,7 +370,7 @@ test.describe('with a passkey', () => {
     const pem = pemOf(gh);
     await toSettings(page);
     await expect(page.locator('#gh-help')).toHaveText(
-      'GitHub App の秘密鍵はパスキー（PRF）から作った鍵で暗号化して、この端末に置いています。開くたびにパスキーを使います。',
+      'GitHub App の秘密鍵は、パスキー（PRF）から生成した鍵で暗号化し、この端末に保存しています。起動するたびにパスキーで認証します。',
     );
     // (the passkey called, in the passwords' list, by what it opens and the day it was made)
     expect(await passkeyNames(page)).toEqual([`Novel Desk GitHub App ${today()}`]);
@@ -386,7 +386,7 @@ test.describe('with a passkey', () => {
     expect(all).not.toContain('PRIVATE KEY');
     // opened again: the passkey; the key made from what it decrypts cannot be taken out, and signs
     await page.reload();
-    await expect(page.locator('#unlock-note')).toHaveText(/暗号化して.*開くたびにパスキーを使います/);
+    await expect(page.locator('#unlock-note')).toHaveText(/暗号化し.*起動するたびにパスキーで認証します/);
     await answering(page, 'nw-get', 'cancel');
     await page.getByRole('button', { name: 'パスキーで開く' }).click();
     await expect(page.locator('#unlock-error')).toHaveText(
@@ -439,7 +439,7 @@ test.describe('with a passkey', () => {
       await page.goto('./');
       await answering(page, 'nw-create', create);
       await answering(page, 'nw-get', get);
-      await page.getByRole('button', { name: 'GitHub App を作って始める' }).click();
+      await page.getByRole('button', { name: 'GitHub App を作成して始める' }).click();
       if (kind === 'prf') await page.getByRole('button', { name: 'パスキーで開く' }).click();
       await expect(page.locator('#shelf')).toBeVisible();
       expect((await keptAppForm(page))?.kind).toBe(kind);
@@ -483,7 +483,7 @@ test.describe('with a passkey', () => {
       ['error', 'パスキーを使えません（TypeError）'],
       ['string', 'パスキーを使えません（test）'],
       ['none', 'パスキーが PRF の値を返しませんでした'],
-      ['other', 'GitHub App の秘密鍵を復号できませんでした（作ったときと違うパスキーかもしれません）'],
+      ['other', 'GitHub App の秘密鍵を復号できませんでした（作成したときと違うパスキーの可能性があります）'],
     ]) {
       await answering(page, 'nw-get', how);
       await page.getByRole('button', { name: 'パスキーで開く' }).click();
@@ -501,7 +501,7 @@ test.describe('with a passkey', () => {
     await expect(page.locator('#shelf')).toBeVisible();
     await toSettings(page);
     await expect(page.locator('#gh-help')).toHaveText(
-      'このブラウザーはパスキーの PRF に対応していないため、GitHub App の秘密鍵は暗号化せず、この端末の取り出せない鍵（WebCrypto）として置いています。パスキーは使いません。この端末でこのブラウザーを開ける人は、作品を読み書きできます。',
+      'このブラウザーはパスキーの PRF に対応していないため、GitHub App の秘密鍵は暗号化せず、この端末の取り出せない鍵（WebCrypto）として保存しています。パスキーは使用しません。この端末でこのブラウザーを開ける人は、作品を読み書きできます。',
     );
     const kept = await keptAppForm(page);
     expect([kept?.kind, kept?.fields, kept?.cryptoKeys]).toEqual(['local', ['appId', 'author', 'key', 'kind', 'slug'], 1]);
@@ -520,7 +520,7 @@ test.describe('with a passkey', () => {
     await otherAnswers(page);
     await authenticator(page, true);
     await keepOld(page, pem, true);
-    await expect(page.locator('#unlock-note')).toHaveText('GitHub App の秘密鍵は、開くたびにパスキーを使います。');
+    await expect(page.locator('#unlock-note')).toHaveText('GitHub App の秘密鍵は、起動するたびにパスキーで認証します。');
     for (const [how, said] of [
       ['cancel', CANCELLED],
       ['error', 'パスキーを使えません（TypeError）'],
@@ -535,7 +535,7 @@ test.describe('with a passkey', () => {
     await expect(page.locator('#toast')).not.toHaveText(/暗号化/);
     await toSettings(page);
     await expect(page.locator('#gh-help')).toHaveText(
-      'GitHub App の秘密鍵は暗号化されていません（前の版で、この端末の取り出せない鍵として置いたものです。開くたびにパスキーを使います）。ログアウトしてから「GitHub App を作って始める」で App を作り直すと、パスキーで暗号化して保存します。前の App は、GitHub の Settings → Developer settings → GitHub Apps で消してください。',
+      'GitHub App の秘密鍵は暗号化されていません（前の版で、この端末の取り出せない鍵として保存したものです。起動するたびにパスキーで認証します）。ログアウトしてから「GitHub App を作成して始める」で App を再作成すると、パスキーで暗号化して保存します。前の App は、GitHub の Settings → Developer settings → GitHub Apps で削除してください。',
     );
     // (kept as it was)
     expect((await keptAppForm(page))?.fields).toEqual(['appId', 'author', 'credentialId', 'key']);

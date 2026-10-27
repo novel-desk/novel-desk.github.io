@@ -414,5 +414,5 @@ test('GitHub リポジトリをインポート: every page offered; the ones on 
   );
   gh.fail = () => 401;
   await openRepo(page, 'author/novel');
-  await expect(page.locator('#toast')).toHaveText('トークンが使えません（期限切れか、消されたかもしれません）: test failure');
+  await expect(page.locator('#toast')).toHaveText('トークンが使用できません（期限切れか、削除された可能性があります）: test failure');
 });

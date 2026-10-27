@@ -10,7 +10,7 @@ test('the App deleted on GitHub: the settings say the connection is gone; logged
   await noPasskey(page);
   await keepMoreOpen(page);
   await page.goto('./');
-  await page.getByRole('button', { name: 'GitHub App を作って始める' }).click();
+  await page.getByRole('button', { name: 'GitHub App を作成して始める' }).click();
   await expect(page.locator('#episode-title')).toHaveValue('はじまり');
   await page.getByRole('button', { name: 'これでよい' }).click();
   const slug = /** @type {{ slug: string }} */ ([...gh.codes.values()].at(-1)).slug;
@@ -23,7 +23,7 @@ test('the App deleted on GitHub: the settings say the connection is gone; logged
   const link = page.locator('#leave-app-link');
   await expect(link).toHaveAttribute('href', `https://github.com/settings/apps/${slug}/advanced`);
   await expect(link).toHaveText(`「${slug}」の Advanced のページ`);
-  await expect(page.locator('#leave-app')).toContainText('インストールも一緒に外れます');
+  await expect(page.locator('#leave-app')).toContainText('インストールも同時に解除されます');
   // the repositories it is installed on chosen on GitHub, from here
   await expect(page.locator('#app-repos-link')).toHaveAttribute('href', `https://github.com/apps/${slug}/installations/new`);
   // uninstalled on GitHub: said when the settings are opened again
@@ -47,7 +47,7 @@ test('the App deleted on GitHub: the settings say the connection is gone; logged
   await expect(page.locator('#me')).toHaveText('');
   await page.getByRole('button', { name: 'ログアウトして App を再作成' }).click();
   await expect(page.locator('#setup')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'GitHub App を作って始める' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'GitHub App を作成して始める' })).toBeVisible();
 });
 
 // DESK-OPS-03: GitHub not reached (or failing): not said to be gone
@@ -84,7 +84,7 @@ test('the App’s tokens refused: said; nothing the device keeps deleted; taken 
   gh.appTokens.clear();
   await page.locator('#reload-work').click();
   await expect(page.locator('#token-notice-text')).toHaveText(
-    /^GitHub が GitHub App のトークンを断りました.*ログアウトしてから「GitHub App を作って始める」で App を作り直してください。書いたものはこの端末に残っています。$/,
+    /^GitHub が GitHub App のトークンを拒否しました.*ログアウトしてから「GitHub App を作成して始める」で App を再作成してください。書いた文章はこの端末に残っています。$/,
   );
   expect(await stored(page, 'snapshots')).toEqual(snapshots);
   expect(await stored(page, 'blobs')).toEqual(blobs);
@@ -196,7 +196,7 @@ test('logged out with the drafts kept, the App made again: their branch and mode
   expect(work.text('chapters/01_first.md')).toBe(WORK_FILES['chapters/01_first.md']);
 });
 
-// DESK-OPS-05: GitHub App を作って始める: the button says what is being done until the page leaves for GitHub; back
+// DESK-OPS-05: GitHub App を作成して始める: the button says what is being done until the page leaves for GitHub; back
 // from GitHub, the screen says the App is being taken (both held here until looked at)
 test('making the App: what is being done said on the button, and on the screen while the App is taken', async ({ page, gh }) => {
   gh.installRepos = ['author/novel'];
@@ -215,7 +215,7 @@ test('making the App: what is being done said on the button, and on the screen w
     await route.fallback();
   });
   await page.goto('./');
-  await page.getByRole('button', { name: 'GitHub App を作って始める' }).click();
+  await page.getByRole('button', { name: 'GitHub App を作成して始める' }).click();
   // (the page leaves for GitHub once the form is sent: the button no longer to be seen, only the screen after)
   release();
   await expect(page.locator('#loading-text')).toHaveText('GitHub App を受け取っています…');
@@ -249,7 +249,7 @@ test('making the App: パスキーを作成しています… on the button whil
     navigator.credentials.create = () => new Promise(() => {});
   });
   await page.goto('./');
-  await page.getByRole('button', { name: 'GitHub App を作って始める' }).click();
+  await page.getByRole('button', { name: 'GitHub App を作成して始める' }).click();
   await expect(page.locator('#make-app')).toHaveText('パスキーを作成しています…');
   await expect(page.locator('#make-app')).toBeDisabled();
 });

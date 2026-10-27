@@ -41,7 +41,7 @@ describe('github', () => {
     });
   });
   test('failure: what each status means, with what GitHub said', () => {
-    expect(failure(401)).toBe('トークンが使えません（期限切れか、消されたかもしれません）');
+    expect(failure(401)).toBe('トークンが使用できません（期限切れか、削除された可能性があります）');
     expect(failure(403, 'rate limit')).toBe('権限がないか、回数の上限に達しました: rate limit');
     expect(failure(404)).toMatch(/^見つかりません/);
     expect(failure(409)).toBe('リポジトリが空です');

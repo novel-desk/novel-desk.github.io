@@ -68,9 +68,9 @@
   <div class="auth-card" id="app-make">
     <h1>Novel Desk</h1>
     <!-- 前にトークンで始めた端末: トークンを消したことと、始め直し方（DESK-OPS-04） -->
-    <p id="token-gone" class="error" role="alert" hidden>トークンで始める方法は無くなりました。この端末に保管していたトークンは消しました。「GitHub App を作って始める」で始め直してください。送っていない書きかけがあれば残してあり、同じ GitHub のアカウントで App を作ると送れます。前のトークンは、GitHub の<a href="https://github.com/settings/personal-access-tokens" target="_blank" rel="noopener noreferrer">トークンの一覧</a>で消してください。</p>
-    <p class="muted small">GitHub に Novel Desk 専用の GitHub App を作って始めます。GitHub の画面で「Create GitHub App」を押し、続けて作品のリポジトリを選んで「Install」を押すと、作品を開けます。鍵のファイルや設定を扱うことはありません。秘密鍵はこの端末の取り出せない鍵として置きます。</p>
-    <button class="primary" id="make-app">GitHub App を作って始める</button>
+    <p id="token-gone" class="error" role="alert" hidden>トークンで始める方法は無くなりました。この端末に保存していたトークンは削除しました。「GitHub App を作成して始める」で始め直してください。送っていない書きかけがあれば残してあり、同じ GitHub のアカウントで App を作成すると送れます。前のトークンは、GitHub の<a href="https://github.com/settings/personal-access-tokens" target="_blank" rel="noopener noreferrer">トークンの一覧</a>で削除してください。</p>
+    <p class="muted small">GitHub に Novel Desk 専用の GitHub App を作成して始めます。GitHub の画面で「Create GitHub App」を押し、続けて作品のリポジトリを選んで「Install」を押すと、作品を開けます。鍵のファイルや設定を扱うことはありません。秘密鍵はこの端末の取り出せない鍵として保存します。</p>
+    <button class="primary" id="make-app">GitHub App を作成して始める</button>
     <p id="app-make-error" class="error" role="alert"></p>
     <form id="app-paste-form" class="paste-form" hidden>
       <p class="muted small">GitHub から戻った画面が別の所（Safari など）で開き、コードが出たときは、それを写してここに貼ってください。</p>
@@ -82,7 +82,7 @@
   <!-- GitHub から戻った所が、始めた所と別だったとき -->
   <div class="auth-card" id="app-bridge" hidden>
     <h2>始めた Novel Desk に戻ってください</h2>
-    <p class="muted small">GitHub App はできましたが、この画面は「GitHub App を作って始める」を押した所（ホーム画面の Novel Desk など）とは別の所で開いています。ここでは受け取りません。下のコードを写し、押したほうの Novel Desk に貼ってください。コードは GitHub App を作ってから 1 時間だけ使えます。GitHub App を作っている途中でなければ、このページは閉じてください。</p>
+    <p class="muted small">GitHub App は作成されましたが、この画面は「GitHub App を作成して始める」を押した所（ホーム画面の Novel Desk など）とは別の所で開いています。ここでは受け取りません。下のコードを写し、押したほうの Novel Desk に貼ってください。コードは GitHub App を作成してから 1 時間だけ使えます。GitHub App を作成している途中でなければ、このページは閉じてください。</p>
     <input id="app-bridge-code" readonly aria-label="コード">
     <button class="primary" id="copy-bridge">コードを写す</button>
   </div>
@@ -170,7 +170,7 @@
           <option value="off">同期しない</option>
         </select><button id="send">送る</button><button id="gh-merge">マージ</button></div>
       </div>
-      <button class="ghost danger small" id="delete-work" title="作品の一覧から外す（この端末に残した控えを消す。GitHub のリポジトリはそのまま）">この作品を削除</button>
+      <button class="ghost danger small" id="delete-work" title="作品の一覧から外す（この端末に残した控えを削除する。GitHub のリポジトリはそのまま）">この作品を削除</button>
     </details>
   </aside>
   <div class="scrim" id="scrim"></div>
@@ -328,10 +328,10 @@
       <details class="leave">
         <summary>連携をやめるとき</summary>
         <ol class="terms-list">
-          <li>送っていない書きかけがあれば、先に送ります（作品の「リリース・GitHub・その他」の「未送信の一覧」で確かめられます）。GitHub で連携を消すと、この端末からは送れなくなります。</li>
-          <li>右上の「ログアウト」を押します。この端末から、App の秘密鍵と、作品の控えを消します。</li>
-          <li id="leave-app">GitHub で App を消します。<a id="leave-app-link" href="https://github.com/settings/apps" target="_blank" rel="noopener noreferrer">GitHub App の一覧</a><span id="leave-app-then"></span>App を消すと、リポジトリへのインストールも一緒に外れます。</li>
-          <li>パスキーを、パスワードの管理（iPhone なら「パスワード」アプリ）で消します。名前は novel-desk.github.io です。</li>
+          <li>送っていない書きかけがあれば、先に送ります（作品の「リリース・GitHub・その他」の「未送信の一覧」で確かめられます）。GitHub で連携を解除すると、この端末からは送れなくなります。</li>
+          <li>右上の「ログアウト」を押します。この端末から、App の秘密鍵と、作品の控えを削除します。</li>
+          <li id="leave-app">GitHub で App を削除します。<a id="leave-app-link" href="https://github.com/settings/apps" target="_blank" rel="noopener noreferrer">GitHub App の一覧</a><span id="leave-app-then"></span>App を削除すると、リポジトリへのインストールも同時に解除されます。</li>
+          <li>パスキーを、パスワードの管理（iPhone なら「パスワード」アプリ）で削除します。名前は novel-desk.github.io です。</li>
         </ol>
         <p class="muted small">GitHub のリポジトリと、送った原稿は残ります。また使うときは、最初の画面からもう一度始めます。</p>
       </details>
@@ -383,11 +383,11 @@
 <dialog id="new-repo" class="versions" aria-labelledby="new-repo-title">
   <header><strong id="new-repo-title">新しい作品</strong><button class="ghost" id="close-new-repo">閉じる</button></header>
   <form id="new-repo-form" class="replace-form">
-    <p class="muted small">GitHub に非公開のリポジトリを作り、題名を入れた novel.toml、README.md、最初の話を置きます。中身のない（空の）リポジトリは、「GitHub リポジトリをインポート」から開くと作品として始められます。</p>
+    <p class="muted small">GitHub に非公開のリポジトリを作成し、題名を入れた novel.toml、README.md、最初の話を作成します。中身のない（空の）リポジトリは、「GitHub リポジトリをインポート」から開くと作品として始められます。</p>
     <label>リポジトリ名（英数字と . _ -）<input id="new-work-repo" autocapitalize="none" autocomplete="off" spellcheck="false" placeholder="my-novel"></label>
-    <label>持ち主（空なら自分。組織に作るときは組織の名前）<input id="new-work-owner" autocapitalize="none" autocomplete="off" spellcheck="false"></label>
+    <label>持ち主（空なら自分。組織に作成するときは組織の名前）<input id="new-work-owner" autocapitalize="none" autocomplete="off" spellcheck="false"></label>
     <label>Administration の権限があるトークン<input id="admin-token" type="password" autocomplete="off" spellcheck="false" placeholder="github_pat_…"></label>
-    <p class="muted small">リポジトリを作るには、GitHub の fine-grained トークンで、Repository access を All repositories にし、Repository permissions の Administration を Read and write にしたものが要ります。このトークンは作るときだけ使い、この端末には残しません（期限を短くして作り、使い終わったら GitHub で消してください）。作ったリポジトリを開くには、GitHub App をそのリポジトリにも入れてください（GitHub の App の設定の Install App で、リポジトリを足します）。</p>
+    <p class="muted small">リポジトリを作るには、GitHub の fine-grained トークンで、Repository access を All repositories にし、Repository permissions の Administration を Read and write にしたものが要ります。このトークンは作成するときだけ使用し、この端末には保存しません（期限を短くして作成し、使い終わったら GitHub で削除してください）。作ったリポジトリを開くには、GitHub App をそのリポジトリにも入れてください（GitHub の App の設定の Install App で、リポジトリを足します）。</p>
     <button class="primary" id="create-work">作成</button>
     <p id="new-work-state" class="muted small" role="status"></p>
   </form>

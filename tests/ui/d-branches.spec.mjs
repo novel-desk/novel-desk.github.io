@@ -28,7 +28,7 @@ test('choosing a branch: GitHub not answering said; closed or the same branch ch
   await page.getByRole('button', { name: /⎇ main/ }).click();
   await page.locator('#picker-input').fill('second');
   await page.locator('#picker').getByRole('button', { name: '決定' }).click();
-  await expect(page.locator('#toast')).toHaveText(/^ブランチを作れませんでした: .*test failure$/);
+  await expect(page.locator('#toast')).toHaveText(/^ブランチを作成できませんでした: .*test failure$/);
   expect(Object.keys(work.refs)).toEqual(['main']);
   await expect(page.getByRole('button', { name: /⎇ main/ })).toBeVisible();
 });

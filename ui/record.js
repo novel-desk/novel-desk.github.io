@@ -84,7 +84,7 @@ export async function openRecord() {
   $('record-body').innerHTML =
     `${failed ? `<p class="error">${esc(failed)}</p>` : ''}<h2>日ごと（直近 30 日）</h2>${barChart(lastDays(days, 30))}${table(days, '日')}
     <h2>月ごと</h2>${barChart(allMonths(months))}${table(months, '月')}
-    <p class="muted small">増えた字数は、その日（その月）の終わりの合計の字数から、前の日（前の月）の終わりの合計を引いたものです。消した分は差し引きます。最初の日と月は、その前が分からないので「—」です。この端末で書いた日は書くたびに残し、それより前の日は GitHub の commit から分かる日だけです（その日の最後の commit の字数）。</p>`;
+    <p class="muted small">増えた字数は、その日（その月）の終わりの合計の字数から、前の日（前の月）の終わりの合計を引いたものです。削除した分は差し引きます。最初の日と月は、その前が分からないので「—」です。この端末で書いた日は書くたびに残し、それより前の日は GitHub の commit から分かる日だけです（その日の最後の commit の字数）。</p>`;
 }
 
 export function wireRecord() {

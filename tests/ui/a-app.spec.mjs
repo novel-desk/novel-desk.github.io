@@ -18,7 +18,7 @@ test('the colour where the browser keeps nothing for the page: 自動, and one c
   await keepMoreOpen(page);
   gh.installRepos = ['author/novel', 'author/other'];
   await page.goto('./');
-  await page.getByRole('button', { name: 'GitHub App を作って始める' }).click();
+  await page.getByRole('button', { name: 'GitHub App を作成して始める' }).click();
   await page.getByRole('button', { name: '同意して始める' }).click();
   // (back from installing it on GitHub, a page loaded again: agreed to only while a page is open, so asked again)
   await page.getByRole('button', { name: '同意して始める' }).click();

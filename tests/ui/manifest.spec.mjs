@@ -1,4 +1,4 @@
-// GitHub App を作って始める (FR-GH-01, NFR-SEC-05, NFR-SEC-10, NFR-SEC-11, NFR-SEC-16): one button posts the App's
+// GitHub App を作成して始める (FR-GH-01, NFR-SEC-05, NFR-SEC-10, NFR-SEC-11, NFR-SEC-16): one button posts the App's
 // manifest to GitHub; the fake GitHub makes the App (a key made for the test, never a real one), comes back with the
 // code and the state, and, on the page of installing it, installs it and comes back again
 import {
@@ -79,7 +79,7 @@ const everything = page =>
 /** @param {import('./lib/fake-github.mjs').FakeGitHub} gh */
 const conversions = gh => gh.appCalls.filter(c => c.startsWith('POST /app-manifests/'));
 /** @param {import('@playwright/test').Page} page */
-const makeApp = page => page.getByRole('button', { name: 'GitHub App を作って始める' }).click();
+const makeApp = page => page.getByRole('button', { name: 'GitHub App を作成して始める' }).click();
 /** @param {import('@playwright/test').Page} page */
 const inFront = page => page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
 
@@ -216,7 +216,7 @@ test('a wrong or missing state: refused, nothing converted; the code shown to pa
   await expect(page.locator('#app-bridge')).toBeVisible();
   await expect(page.locator('#app-bridge-code')).toHaveValue('not-the-state.testcode100000000');
   // (a link sent by someone else shows it too: told to close it when no App is being made)
-  await expect(page.locator('#app-bridge')).toContainText('GitHub App を作っている途中でなければ、このページは閉じてください。');
+  await expect(page.locator('#app-bridge')).toContainText('GitHub App を作成している途中でなければ、このページは閉じてください。');
   expect(page.url()).toBe(baseURL);
   expect(conversions(gh)).toEqual([]);
   // the code copied (the clipboard taken; then refused: selected, to copy by hand)
@@ -405,7 +405,7 @@ test.describe('with a passkey', () => {
     const all = await everything(page);
     for (const line of pem.split('\n').slice(1, -2)) expect(all.texts).not.toContain(line);
     expect(all.texts).not.toMatch(/PRIVATE KEY|test-client-secret-not-real|testcode1/);
-    await expect(page.locator('#unlock-note')).toHaveText(/暗号化して.*開くたびにパスキーを使います/);
+    await expect(page.locator('#unlock-note')).toHaveText(/暗号化し.*起動するたびにパスキーで認証します/);
     await page.getByRole('button', { name: 'パスキーで開く' }).click();
     await expect(page.locator('#episode-title')).toHaveValue('はじまり');
     await page.reload();
@@ -416,8 +416,8 @@ test.describe('with a passkey', () => {
     await authenticator(page, false);
     await page.goto('./');
     await makeApp(page);
-    await expect(page.locator('#app-make-error')).toHaveText('パスキーが作られませんでした（取り消されたか、時間切れです）。もう一度押してください');
+    await expect(page.locator('#app-make-error')).toHaveText('パスキーを作成できませんでした（取り消されたか、時間切れになりました）。もう一度押してください');
     expect(gh.manifests).toEqual([]);
-    await expect(page.getByRole('button', { name: 'GitHub App を作って始める' })).toBeEnabled();
+    await expect(page.getByRole('button', { name: 'GitHub App を作成して始める' })).toBeEnabled();
   });
 });

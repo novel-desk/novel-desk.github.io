@@ -211,7 +211,7 @@ async function togglePreview() {
 async function addNote(folder = '') {
   const given = prompt(
     folder
-      ? `「${folder}」に作る資料の名前（ファイル名は英数字になります。例: alice）`
+      ? `「${folder}」に作成する資料の名前（ファイル名は英数字になります。例: alice）`
       : '資料の名前（ファイル名は英数字になります。例: characters、world、plot）。フォルダに入れるときは「フォルダ/名前」（例: キャラ/alice）',
   );
   if (!given) return;
