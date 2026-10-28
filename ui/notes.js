@@ -3,12 +3,25 @@
 // as a change not sent. A box of the plot or a person of the characters is written here by itself (its lines only).
 // From the server version's public/ui/notes.js
 import { trashStamp, cleanTitle } from '../lib/episodes.js';
-import { esc, whenLong } from '../lib/format.js';
+import { noteStateSaid } from '../lib/desk.js';
+import { newName, whenLong } from '../lib/format.js';
+import { historyDraft } from '../lib/history.js';
 import { picturePaths, relPath, renderMd } from '../lib/markdown.js';
-import { CONFLICT_MARK } from '../lib/merge.js';
-import { groupNotes } from '../lib/notelist.js';
-import { newNote, noteHeading, notesList, renameNote, trashNote } from '../lib/notes.js';
-import { boxRange, parsePlot, plotPathOf } from '../lib/plot.js';
+import { notesIndexHtml, titledNotes } from '../lib/notelist.js';
+import {
+  addedNote,
+  addNoteAsk,
+  newNote,
+  noteRenameAsk,
+  notesList,
+  notesWhere,
+  noteTitle,
+  renameNote,
+  sectionStart,
+  sectionText,
+  trashNote,
+} from '../lib/notes.js';
+import { boxLines, plotPathOf } from '../lib/plot.js';
 import { $, busy, show, toast } from './dom.js';
 import { showHistory } from './history.js';
 import { pickImage, renderImages, wireImages } from './images.js';
@@ -27,13 +40,12 @@ const LIST = { label: '‹ 一覧', title: '資料の一覧に戻る', go: () =>
 let back = LIST;
 const area = () => /** @type {HTMLTextAreaElement} */ ($('note-body'));
 // the note's whole text (a box written by itself: put back between the lines around it)
-const noteText = () => (noteSection ? [...noteSection.before, ...area().value.split('\n'), ...noteSection.after].join('\n') : area().value);
+const noteText = () => sectionText(noteSection, area().value);
 
 // the notes of the work, with their texts' headings (the list shows them in place of the file names)
 async function notesWithTitles() {
   const notes = notesList(api.view().layout, api.files()).filter(f => f.kind === 'note');
-  const texts = await api.texts(notes.map(f => f.path));
-  return notes.map(f => ({ ...f, title: noteHeading(texts[f.path] ?? '') ?? undefined, updated: 0 }));
+  return titledNotes(notes, await api.texts(notes.map(f => f.path)));
 }
 // the work's plot note: [plot] file, else the note named プロット or plot ('' none)
 export async function plotPath() {
@@ -51,28 +63,10 @@ export async function openNotes() {
   $('notes-index').hidden = false;
   $('notes').classList.remove('note-open');
   const l = api.view().layout;
-  $('notes-where').textContent = l.notes ? '' : '資料のフォルダが設定されていません。novel.toml の [notes] dir を設定すると、ここに表示されます';
+  $('notes-where').textContent = notesWhere(l.notes);
   $('notes-where').hidden = Boolean(l.notes);
   const notes = await notesWithTitles();
-  const plotFile = plotPathOf(l.plot, notes);
-  const { pinned, folders } = groupNotes(notes, l.notes, plotFile);
-  const drafts = api.drafts();
-  /** @type {(f: import('../lib/notelist.js').NoteRow) => string} */
-  const row = f =>
-    `<button data-note="${esc(f.path)}"><span>${esc(f.label)}${f.path === plotFile ? ' <span class="vis">プロット</span>' : ''}</span>${drafts.has(f.path) ? '<small class="unsent-tag">未送信</small>' : ''}</button>`;
-  const top = pinned.length
-    ? `<div class="notes-folder"><span>主な資料</span></div><div class="notes-in">${pinned.map(row).join('')}</div>${notes.length > pinned.length ? '<div class="notes-folder"><span>そのほか</span></div>' : ''}`
-    : '';
-  $('notes-list').innerHTML = notes.length
-    ? top +
-      folders
-        .map(({ folder, rows }) =>
-          folder === ''
-            ? rows.map(row).join('')
-            : `<div class="notes-folder"><span>${esc(folder)}</span><button class="ghost" data-add-in="${esc(folder)}" title="このフォルダに資料を作成">＋</button></div><div class="notes-in">${rows.map(row).join('')}</div>`,
-        )
-        .join('')
-    : '<p class="muted small">まだ資料がありません。「＋ 資料を追加」で作成できます。</p>';
+  $('notes-list').innerHTML = notesIndexHtml(notes, l.notes, plotPathOf(l.plot, notes), api.drafts());
   await renderImages();
 }
 
@@ -95,7 +89,7 @@ export async function openNote(path, from = LIST) {
   $('notes-index').hidden = true;
   $('note-view').hidden = false;
   $('notes').classList.add('note-open');
-  $('note-name').textContent = noteHeading(text) ?? /** @type {string} */ (path.split('/').pop());
+  $('note-name').textContent = noteTitle(text, path);
   area().value = text;
   area().hidden = false;
   $('note-preview').hidden = true;
@@ -133,7 +127,7 @@ export async function readInNotes() {
   if (text !== noteText()) {
     noteSection = null;
     $('note-whole').hidden = true;
-    $('note-name').textContent = noteHeading(text) ?? /** @type {string} */ (path.split('/').pop());
+    $('note-name').textContent = noteTitle(text, path);
     setKeepingCaret(area(), text);
     // (the preview open drawn again, as the server version's)
     if (!$('note-preview').hidden) $('note-preview').innerHTML = await previewHtml();
@@ -143,11 +137,7 @@ export async function readInNotes() {
 }
 function showState() {
   const text = area().value;
-  $('note-state').textContent = text.includes(CONFLICT_MARK)
-    ? '両方の版が並んでいます。「――― ここから」の行を探して整理してください'
-    : api.drafts().has(/** @type {string} */ (notePath))
-      ? '端末に保存済み（未送信）'
-      : '';
+  $('note-state').textContent = noteStateSaid(text, api.drafts().has(/** @type {string} */ (notePath)));
 }
 // only the lines start..end in the box, the rest of the note kept aside (put back around them when kept)
 /** @param {number} start @param {number} end @param {string} name over the text */
@@ -163,12 +153,10 @@ function showLines(start, end, name) {
 // a box of the plot written by itself (FR-PLOT-03): found again by its heading in the note open (not found: the whole)
 /** @param {'g' | 'c'} kind @param {number} gi @param {number | undefined} ci @param {string} want the box's heading */
 export function showBox(kind, gi, ci, want) {
-  const lines = area().value.split('\n');
   // (the note open is the one the boxes were drawn from: the box is in it. A box without a heading, the part before the
   // first 大箱, is not written by itself)
-  const range = boxRange(parsePlot(area().value), kind, gi, ci);
-  if (!/^#{1,2}\s/.test(lines[range[0]]) || lines[range[0]].replace(/^#{1,2}\s+/, '').trim() !== want) return;
-  showLines(range[0], range[1], want.replace(/^大箱[\d０-９]+[：:]\s*/, ''));
+  const box = boxLines(area().value, kind, gi, ci, want);
+  if (box) showLines(box.start, box.end, box.name);
 }
 // a person of the characters written by itself (FR-NOTE-08), as a box of the plot
 /** @param {[number, number]} range its lines in the note open @param {string} head */
@@ -177,11 +165,11 @@ export function showPerson(range, head) {
 }
 // 「全体」: the whole note again, the caret where the box begins (its button shown only while a box is written by itself)
 function showWhole() {
-  const at = /** @type {NonNullable<typeof noteSection>} */ (noteSection).before.reduce((n, l) => n + l.length + 1, 0);
+  const at = sectionStart(/** @type {NonNullable<typeof noteSection>} */ (noteSection).before);
   area().value = noteText();
   noteSection = null;
   $('note-whole').hidden = true;
-  $('note-name').textContent = noteHeading(area().value) ?? /** @type {string} */ (/** @type {string} */ (notePath).split('/').pop());
+  $('note-name').textContent = noteTitle(area().value, /** @type {string} */ (notePath));
   area().setSelectionRange(at, at);
   const { y } = inBoxCopy(area(), copy => {
     copy.textContent = area().value.slice(0, at);
@@ -214,17 +202,11 @@ async function togglePreview() {
 // a new note: 「名前」 or 「フォルダ/名前」 (its file name in ASCII, its heading the name)
 /** @param {string} [folder] */
 async function addNote(folder = '') {
-  const given = prompt(
-    folder
-      ? `「${folder}」に作成する資料の名前（ファイル名は英数字になります。例: alice）`
-      : '資料の名前（ファイル名は英数字になります。例: characters、world、plot）。フォルダに入れるときは「フォルダ/名前」（例: キャラ/alice）',
-  );
-  if (!given) return;
-  if (!given.trim()) return void toast('名前を入れてください');
-  const at = given.lastIndexOf('/');
-  const [inFolder, name] = folder ? [folder, given] : [given.slice(0, Math.max(0, at)), given.slice(at + 1)];
+  const asked = addedNote(prompt(addNoteAsk(folder)), folder);
+  if (!asked) return;
+  if ('error' in asked) return void toast(asked.error);
   try {
-    const made = newNote(api.view().layout, api.files(), inFolder, name, cleanTitle(name), Date.now());
+    const made = newNote(api.view().layout, api.files(), asked.folder, asked.name, cleanTitle(asked.name), Date.now());
     if (await api.apply({ moves: [], writes: [made], edits: [], path: made.path })) await openNote(made.path);
   } catch (err) {
     toast(err.message);
@@ -236,17 +218,11 @@ async function renameOpen() {
   const l = api.view().layout;
   const byName = !l.plot && (await plotPath()) === path;
   const isPlot = l.plot === path || byName;
-  const file = /** @type {string} */ (path.split('/').pop());
-  const now = isPlot ? file.replace(/\.md$/, '') : /** @type {string} */ ($('note-name').textContent);
-  const name = prompt(
-    isPlot
-      ? 'プロットの資料の新しいファイル名（英数字と - _）。大箱の見出しは変えません'
-      : '資料の新しい名前（資料の 1 行目の見出しになります。ファイル名は英数字になり、英数字が無ければ今のままです）',
-    now,
-  );
-  if (name === null || !name.trim() || name.trim() === now) return;
+  const { now, ask } = noteRenameAsk(isPlot, path, /** @type {string} */ ($('note-name').textContent));
+  const name = newName(prompt(ask, now), now);
+  if (name === null) return;
   try {
-    const plan = renameNote(l, api.files(), path, name.trim(), cleanTitle(name.trim()), noteText(), byName);
+    const plan = renameNote(l, api.files(), path, name, cleanTitle(name), noteText(), byName);
     if (await api.apply(plan)) {
       toast('資料の名前を変更しました（送るまではこの端末だけの変更です）');
       await openNote(plan.path);
@@ -271,15 +247,15 @@ async function historyOfOpen() {
     repo: w.repo,
     branch: w.branch,
     path,
-    title: noteHeading(noteText()) ?? /** @type {string} */ (path.split('/').pop()),
+    title: noteTitle(noteText(), path),
     what: '資料',
-    draft: d?.text !== undefined ? { text: d.text, at: d.at } : null,
+    draft: historyDraft(d),
     snapshots: await api.snapshots(path),
     remote: Boolean(w.blobs[path]),
     now: noteText,
     // (the history is a modal dialog: the note stays open until it is closed)
     restore: async (text, at) => {
-      const title = noteHeading(noteText()) ?? /** @type {string} */ (path.split('/').pop());
+      const title = noteTitle(noteText(), path);
       await api.snapshot(path, noteText(), true);
       noteSection = null;
       setKeepingCaret(area(), text);

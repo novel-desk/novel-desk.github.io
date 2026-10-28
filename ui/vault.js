@@ -1,6 +1,6 @@
 // The GitHub App's private key, kept on this device: encrypted with a key from a passkey's PRF output (iPhone: Face ID
 // each time it is opened), or where PRF is not there, as a WebCrypto key that cannot be taken out of IndexedDB (below)
-import { APP_KEY_INFO, createOptions, getOptions, openFailure, passkeyName, prfOf, webauthnFailure } from '../lib/passkey.js';
+import { APP_KEY_INFO, asksPasskey, createOptions, getOptions, openFailure, passkeyName, prfInCaps, prfOf, webauthnFailure } from '../lib/passkey.js';
 import { pkcs8Of } from '../lib/appkey.js';
 import * as store from './db.js';
 
@@ -45,8 +45,7 @@ async function saysPrf() {
   if (!PKC) return false;
   if (typeof PKC.getClientCapabilities !== 'function') return null;
   try {
-    const caps = await PKC.getClientCapabilities();
-    return 'extension:prf' in caps ? caps['extension:prf'] === true : null;
+    return prfInCaps(await PKC.getClientCapabilities());
   } catch {
     return null;
   }
@@ -174,9 +173,9 @@ export async function openApp(v) {
       pkcs8.fill(0);
     }
   }
-  if (v.kind !== 'local' && v.credentialId) {
+  if (asksPasskey(v)) {
     try {
-      await passkeyOutput(v.credentialId, random(32));
+      await passkeyOutput(/** @type {Uint8Array} */ (/** @type {AppOld} */ (v).credentialId), random(32));
     } catch (err) {
       throw new Error(openFailure(err), { cause: err });
     }

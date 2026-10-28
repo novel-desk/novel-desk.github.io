@@ -9,7 +9,8 @@ import { changeParts, changePart, commitSubject, japanDay, kindsOf } from '../li
 import { conflictsOf } from '../lib/changes.js';
 import { filesOf, japaneseText, textOf } from '../lib/github.js';
 import { CONFIG, relOf, titleWith } from '../lib/layout.js';
-import { keptBoth, sendPlan, underHeading } from '../lib/merge.js';
+import { sendPlan } from '../lib/merge.js';
+import { blobsAfter, configChange, opContent, opEntry, opSource, sentText, tryAgain } from '../lib/send.js';
 import { editToml } from '../lib/tomledit.js';
 import { viewOf } from '../lib/view.js';
 import * as gh from './github.js';
@@ -36,9 +37,6 @@ export class Overlapped extends Error {
     this.paths = paths;
   }
 }
-
-// how many times the branch may move on during one send before it gives up
-const TRIES = 3;
 
 // a blob's text there now: UTF-8, or a Japanese text of another encoding (FR-WORK-03); null when it is neither
 /** @param {string} repo @param {string} sha */
@@ -90,12 +88,7 @@ export async function sendAll(work, drafts, edits) {
       if (was === null) throw new Error(`${to} は GitHub で UTF-8 でない形に変わっているので、送れません`);
       const mine = /** @type {string} */ (draft.text);
       // (changed there too: both side by side; only renamed there: what was written, under the heading given there)
-      const { text, both } =
-        how === 'both'
-          ? keptBoth(mine, was)
-          : how === 'heading'
-            ? { text: underHeading(/** @type {string} */ (look.texts[draft.base]), mine, was), both: false }
-            : { text: mine, both: false };
+      const { text, both } = sentText(how, mine, was, look.texts[draft.base]);
       const blob = await gh.newBlob(work.repo, text);
       await store.put('blobs', blob, new TextEncoder().encode(text));
       sent.push({ draft, to, text, blob, both });
@@ -103,20 +96,22 @@ export async function sendAll(work, drafts, edits) {
       [there[to], after[to]] = [was, text];
     }
     for (const d of ops) {
-      const old = blobs[d.from?.path ?? d.path];
-      if (old && !d.gone) there[d.from?.path ?? d.path] = (await textAt(work.repo, old.sha).catch(() => null)) ?? '';
+      const old = blobs[opSource(d)];
+      if (old && !d.gone) there[opSource(d)] = (await textAt(work.repo, old.sha).catch(() => null)) ?? '';
       let blob = '';
-      if (d.text !== undefined) {
-        blob = await gh.newBlob(work.repo, d.text);
-        await store.put('blobs', blob, new TextEncoder().encode(d.text));
-        after[d.path] = d.text;
-      } else if (d.bytes) blob = await gh.newBytes(work.repo, base64(d.bytes));
-      else if (!d.gone) {
+      const content = opContent(d);
+      if (content === 'text') {
+        const text = /** @type {string} */ (d.text);
+        blob = await gh.newBlob(work.repo, text);
+        await store.put('blobs', blob, new TextEncoder().encode(text));
+        after[d.path] = text;
+      } else if (content === 'bytes') blob = await gh.newBytes(work.repo, base64(/** @type {Uint8Array} */ (d.bytes)));
+      else if (content === 'blob') {
         blob = /** @type {string} */ (d.sha);
         after[d.path] = (await textAt(work.repo, blob).catch(() => null)) ?? '';
       }
       sent.push({ draft: d, to: d.path, text: d.text, blob, both: false });
-      entries.push({ path: d.path, mode: d.mode ?? blobs[d.path]?.mode ?? '100644', type: /** @type {const} */ ('blob'), sha: d.gone ? null : blob });
+      entries.push(opEntry(d, blobs, blob));
     }
     // novel.toml: its keys set on the one there now (what else changed in it there stays)
     const read = { blobs, config: configNow, problems: [], texts: there, shaTexts: {} };
@@ -135,10 +130,11 @@ export async function sendAll(work, drafts, edits) {
     if (!entries.length) return { commit, tree, updated: Date.now(), blobs, folders, sent: [], refused, message: '' };
     const was = viewOf(read, new Map(), []);
     const now = viewOf({ ...read, config }, new Map(), []);
-    const listed = kindsOf([
-      ...ops,
-      ...(edits.length && config !== configNow ? [{ repo: work.repo, path: CONFIG, base: blobs[CONFIG]?.sha ?? '', at: 0 }] : []),
-    ]).map(k => ({ ...k, before: there[k.path] ?? '', after: after[k.to || k.path] ?? '' }));
+    const listed = kindsOf([...ops, ...configChange({ repo: work.repo, edits: edits.length, config, configNow, blob: blobs[CONFIG]?.sha })]).map(k => ({
+      ...k,
+      before: there[k.path] ?? '',
+      after: after[k.to || k.path] ?? '',
+    }));
     const parts = [
       ...sent
         .filter(s => !s.draft.op)
@@ -162,16 +158,11 @@ export async function sendAll(work, drafts, edits) {
       // (moved on again between reading it and moving it: read again, a few times)
       if (err instanceof gh.GitHubError && err.status === 422) {
         await traceStop('Moved', err);
-        if (i + 1 < TRIES) continue;
+        if (tryAgain(err.status, i)) continue;
       }
       throw err;
     }
     await trace('Move');
-    for (const e of entries) {
-      blobs = { ...blobs };
-      if (e.sha === null) delete blobs[e.path];
-      else blobs[e.path] = { sha: e.sha, mode: e.mode };
-    }
-    return { commit: newCommit, tree: newTree, updated: Date.now(), blobs, folders, sent, refused, message };
+    return { commit: newCommit, tree: newTree, updated: Date.now(), blobs: blobsAfter(blobs, entries), folders, sent, refused, message };
   }
 }

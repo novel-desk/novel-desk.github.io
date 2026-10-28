@@ -6,9 +6,24 @@
 // episodes' blobs, which the device keeps by sha). Another repository is opened from 「GitHub リポジトリをインポート」
 // (FR-WORK-03): its name typed, with the ones the GitHub App can write to offered (GitHub's listing read when it is opened).
 // The list and the summaries are this module's
-import { esc, n, whenLong } from '../lib/format.js';
+import { esc } from '../lib/format.js';
+import { statusOf } from '../lib/github.js';
 import { viewOf } from '../lib/view.js';
-import { byUpdated, listed, offered, stillHolds, summaryOf, visibilityTag } from '../lib/works.js';
+import {
+  byUpdated,
+  importName,
+  isRepoPath,
+  listed,
+  mayHold,
+  offered,
+  rowFailure,
+  sameRows,
+  stillHolds,
+  summaryOf,
+  visibilityOf,
+  workRow,
+  worksSkeleton,
+} from '../lib/works.js';
 import { $, busy, toast } from './dom.js';
 import * as store from './db.js';
 import * as gh from './github.js';
@@ -16,7 +31,7 @@ import { offList, worksHere } from './repo.js';
 import { contents, each, readFiles } from './work.js';
 
 /** @typedef {import('../lib/works.js').Summary} Summary */
-/** @typedef {{ full_name: string, default_branch: string, private?: boolean, visibility?: string }} Listed a repository as listed */
+/** @typedef {import('../lib/works.js').Listed} Listed */
 
 // how many works are read at once
 const WIDTH = 3;
@@ -25,19 +40,13 @@ const summaryKey = repo => `summary:${repo}`;
 // the list shown now (a newer one makes an older one's rows stop filling in)
 let shown = 0;
 
-/** @param {Listed} r @param {Summary | null} s @param {string} state what is happening to it ('' none) @param {boolean} failed its last send failed */
-function rowInside(r, s, state, failed) {
-  const where = `GitHub ${esc(r.full_name)}（${esc(s?.branch ?? r.default_branch)}） ${visibilityTag(r)}`;
-  const about = s ? `${n(s.chars)} 字 ・ ${n(s.count)} 話 ・ 最終更新 ${esc(whenLong(s.updated))} ・ ${where}` : where;
-  return `<b>${esc(s?.title ?? r.full_name.split('/')[1])}</b><small>${about}${failed ? ' ・ 送信失敗' : ''}${state ? ` ・ ${esc(state)}` : ''}</small>`;
-}
 // a row filled in where it is (the button stays the same element: a tap on it while it fills in is not lost)
 /** @type {Set<string>} the works whose last send failed (kept on the device by the desk: failed:<repo>) */
 let failing = new Set();
 /** @param {HTMLElement} b @param {Listed} r @param {Summary | null} s @param {string} [state] */
 function putRow(b, r, s, state = '') {
-  Object.assign(b.dataset, { repo: r.full_name, branch: r.default_branch, visibility: r.visibility ?? (r.private ? 'private' : 'public') });
-  b.innerHTML = rowInside(r, s, state, failing.has(r.full_name));
+  Object.assign(b.dataset, { repo: r.full_name, branch: r.default_branch, visibility: visibilityOf(r) });
+  b.innerHTML = workRow(r, s, state, failing.has(r.full_name));
 }
 const rows = () => /** @type {HTMLElement[]} */ ([...$('works').querySelectorAll('[data-repo]')]);
 // 「GitHub リポジトリをインポート」 (as the server version's: no id)
@@ -45,12 +54,13 @@ export const importBox = () => /** @type {HTMLDetailsElement} */ (document.query
 /** @param {Listed[]} list @param {Map<string, Summary>} kept */
 function render(list, kept) {
   const state = (/** @type {Listed} */ r) => (kept.has(r.full_name) ? '' : '読み込み中…');
-  const now = rows();
-  if (!list.length || now.length !== list.length || now.some((b, i) => b.dataset.repo !== list[i].full_name)) {
-    $('works').innerHTML = list.length
-      ? list.map(() => '<button class="work" data-repo=""></button>').join('')
-      : '<p class="muted">まだ作品がありません。上にタイトルを入力して「作成」を押すか、「GitHub リポジトリをインポート」から作品のリポジトリを開いてください。</p>';
-  }
+  if (
+    !sameRows(
+      rows().map(b => /** @type {string} */ (b.dataset.repo)),
+      list,
+    )
+  )
+    $('works').innerHTML = worksSkeleton(list.length);
   rows().forEach((b, i) => putRow(b, list[i], kept.get(list[i].full_name) ?? null, state(list[i])));
 }
 /** @param {Listed} r @param {Summary | null} s @param {string} [state] */
@@ -78,7 +88,7 @@ async function summarize(r, drafts) {
   const overlay = drafts.length > 0 || edits.length > 0;
   /** @type {Summary | undefined} */
   const kept = await store.get('prefs', summaryKey(repo));
-  if (kept && !overlay && !kept.overlay && kept.chosen === chosen) {
+  if (mayHold(kept, chosen, overlay)) {
     const heads = await Promise.all(kept.heads.map(([b]) => headOrNone(repo, b)));
     if (stillHolds(kept, chosen, heads, overlay)) return kept;
   }
@@ -134,10 +144,7 @@ async function offer() {
 // GitHub リポジトリをインポート (FR-WORK-03): the repository typed (owner/name) opened, and so put on the list
 /** @param {(r: import('./desk.js').Repo) => Promise<void>} open */
 async function importWork(open) {
-  const name = $('import-repo')
-    .value.trim()
-    .replace(/^https:\/\/github\.com\//, '')
-    .replace(/\.git$/, '');
+  const name = importName($('import-repo').value);
   /** @type {import('../lib/works.js').RepoMeta | null} */
   let r;
   try {
@@ -145,7 +152,7 @@ async function importWork(open) {
     r = await busy(
       '読み込んでいます…',
       async () =>
-        (/^[^/\s]+\/[^/\s]+$/.test(name) ? await gh.repoMeta(name) : null) ??
+        (isRepoPath(name) ? await gh.repoMeta(name) : null) ??
         // (one a GitHub App lists but cannot read, installed by its owner's account: opened, so that it says why)
         (await gh.repos()).find(x => x.full_name === name) ??
         null,
@@ -194,9 +201,7 @@ export async function showWorks() {
       latest.set(r.full_name, s);
       if (at === shown) fill(r, s);
     } catch (err) {
-      const empty = err instanceof gh.GitHubError && err.status === 409;
-      if (at === shown)
-        fill(r, kept.get(r.full_name) ?? null, empty ? '空のリポジトリです（開くと作品として始められます）' : kept.has(r.full_name) ? '' : err.message);
+      if (at === shown) fill(r, kept.get(r.full_name) ?? null, rowFailure(statusOf(err), kept.has(r.full_name), err.message));
     }
   });
   // the rows in the order of the summaries read (the latest changed first), the same elements moved

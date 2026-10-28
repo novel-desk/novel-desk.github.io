@@ -3,10 +3,20 @@
 // it kept in this device's versions (FR-REL-03). From the server version's public/ui/versions.js; GitHub's REST API in
 // place of the server's git
 import { filesOf, textOf } from '../lib/github.js';
-import { charsOf, esc, n } from '../lib/format.js';
-import { episodesOf, firstLayout, parseLayout, tableOfContents, titleOf, headingsOf, CONFIG } from '../lib/layout.js';
+import { esc } from '../lib/format.js';
+import { episodesOf, firstLayout, parseLayout, tableOfContents, CONFIG } from '../lib/layout.js';
 import { foldersOf } from '../lib/changes.js';
-import { nextTag, pathOrder, releaseLabel, releasesOf } from '../lib/releases.js';
+import {
+  bareTags,
+  nextTag,
+  releaseBody,
+  releaseEpisodeHtml,
+  releaseEpisodes,
+  releaseEpisodesHtml,
+  releaseLabel,
+  releasesHtml,
+  releasesOf,
+} from '../lib/releases.js';
 import { $, busy, toast } from './dom.js';
 import * as gh from './github.js';
 import { api } from './shared.js';
@@ -14,14 +24,14 @@ import { bytes, each } from './work.js';
 
 const body = () => $('releases-body');
 const dialog = () => /** @type {HTMLDialogElement} */ (/** @type {unknown} */ ($('releases')));
-/** @type {{ tag: string, label: string, episodes: { path: string, title: string, chapter: string, chars: number, text: string }[] } | null} */
+/** @type {{ tag: string, label: string, episodes: import('../lib/releases.js').ReleaseEpisode[] } | null} */
 let opened = null;
 
 async function makeRelease() {
   const w = api.work();
   if (w.offline) return toast('オフラインです。つながってからリリースを作成してください');
   const given = prompt('リリース名（例: 第一稿、新人賞応募版）\nいまの原稿にタグを付け、GitHub のリリースにも残します');
-  const label = given === null ? null : releaseLabel(given);
+  const label = releaseLabel(given ?? '');
   if (!label) return;
   // (said in the band, the button not pressed again until it is made: DESK-OPS-05)
   await busy('リリースを作成しています…', () => sendAndRelease(w.repo, label), $('name-version'));
@@ -36,13 +46,7 @@ async function sendAndRelease(repo, label) {
   try {
     const [list, names] = await Promise.all([gh.releases(repo), gh.tags(repo)]);
     const tag = nextTag([...names, ...list.map((/** @type {{ tag_name: string }} */ r) => r.tag_name)]);
-    const eps = api.episodes();
-    await gh.newRelease(repo, {
-      tag,
-      commit: api.work().commit,
-      name: label,
-      body: `${label}（${eps.length} 話、${eps.reduce((s, e) => s + e.chars, 0)} 字）`,
-    });
+    await gh.newRelease(repo, { tag, commit: api.work().commit, name: label, body: releaseBody(label, api.episodes()) });
     toast(`リリース「${label}」（${tag}）を作成しました`);
   } catch (err) {
     toast(`リリースを作成できませんでした: ${err.message}`);
@@ -57,20 +61,10 @@ async function showReleases() {
     const repo = api.work().repo;
     const [made, names] = await Promise.all([gh.releases(repo), gh.tags(repo)]);
     // the tags v and a number with no release: dated by their commits
-    const released = new Set(made.map((/** @type {{ tag_name: string }} */ r) => r.tag_name));
-    const bare = names.filter(t => /^v\d+$/.test(t) && !released.has(t));
     const tags = await Promise.all(
-      bare.map(async name => ({ name, date: new Date((await gh.commitOf(repo, await gh.tagCommit(repo, name))).date).toISOString() })),
+      bareTags(names, made).map(async name => ({ name, date: new Date((await gh.commitOf(repo, await gh.tagCommit(repo, name))).date).toISOString() })),
     );
-    const list = releasesOf(made, tags);
-    body().innerHTML = list.length
-      ? list
-          .map(
-            r =>
-              `<button class="version" data-tag="${esc(r.tag)}" data-label="${esc(r.label)}"><b>${esc(r.label)}</b><small>${esc(r.tag)} ・ ${esc(new Date(r.date).toLocaleString('ja-JP'))}</small></button>`,
-          )
-          .join('')
-      : '<p class="muted">まだリリースはありません。「リリースを作成」で、いまの原稿を残せます。</p>';
+    body().innerHTML = releasesHtml(releasesOf(made, tags));
   } catch (err) {
     body().innerHTML = `<p class="error">${esc(err.message)}</p>`;
   }
@@ -93,28 +87,9 @@ async function showRelease(tag, label) {
     await each(episodesOf(toc), 6, async e => {
       texts[e.path] = textOf(await bytes(w.repo, blobs[e.path].sha)) ?? '';
     });
-    const headings = headingsOf(l, toc, texts);
-    const episodes = episodesOf(toc)
-      .map(e => {
-        const at = e.rel.indexOf('/');
-        return {
-          path: e.path,
-          title: titleOf(l, e.rel, headings),
-          chapter: at === -1 ? '' : titleOf(l, e.rel.slice(0, at), headings),
-          chars: charsOf(texts[e.path]),
-          text: texts[e.path],
-        };
-      })
-      .sort((a, b) => pathOrder(a.path, b.path));
+    const episodes = releaseEpisodes(l, toc, texts);
     opened = { tag, label, episodes };
-    body().innerHTML =
-      '<button class="ghost back-releases">‹ リリース一覧</button>' +
-      episodes
-        .map(
-          (e, i) =>
-            `<button class="version" data-episode="${i}"><b>${e.chapter ? `${esc(e.chapter)} / ` : ''}${esc(e.title)}</b><small>${n(e.chars)} 字</small></button>`,
-        )
-        .join('');
+    body().innerHTML = releaseEpisodesHtml(episodes);
   } catch (err) {
     body().innerHTML = `<p class="error">${esc(err.message)}</p>`;
   }
@@ -123,12 +98,12 @@ async function showRelease(tag, label) {
 function showEpisode(i) {
   const r = /** @type {NonNullable<typeof opened>} */ (opened);
   const e = r.episodes[i];
-  const here = api.episodes().find(x => x.path === e.path);
-  body().innerHTML = `<button class="ghost back-release">‹ ${esc(r.label)}</button><textarea class="version-text" readonly aria-label="リリースの本文">${esc(e.text)}</textarea>${
-    here
-      ? `<button class="primary" data-restore="${i}">この話を今の原稿に復元</button>`
-      : '<p class="muted small">今の原稿には、同じ場所にこの話がありません（タイトルや順番が変わった可能性があります）。必要なら上の本文をコピーしてください。</p>'
-  }`;
+  body().innerHTML = releaseEpisodeHtml(
+    r.label,
+    e,
+    i,
+    api.episodes().some(x => x.path === e.path),
+  );
 }
 /** @param {number} i */
 async function restore(i) {

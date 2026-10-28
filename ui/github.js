@@ -1,6 +1,6 @@
 // The requests to GitHub's REST API, with the GitHub App's installation tokens (in memory only). Every address is under
 // api.github.com: the page's CSP lets nothing else be reached
-import { API, failure, nextPage } from '../lib/github.js';
+import { API, apiUrl, appRefused, failure, mergeMade, nextPage, ownAccount, timeOf, writtenBy as byAuthor } from '../lib/github.js';
 
 // told when GitHub refuses the App's installation token, asked for again (401: the App's key deleted, or the App
 // removed): app.js listens
@@ -32,8 +32,8 @@ export class GitHubError extends Error {
 async function request(url, init = {}, as = '') {
   let res = await attempt(url, init, as || (await /** @type {App} */ (app).tokenFor(url, false)));
   // (an App's installation token refused: asked for again, once)
-  if (res.status === 401 && !as) res = await attempt(url, init, await /** @type {App} */ (app).tokenFor(url, true));
-  if (res.status === 401 && !as) refusals.dispatchEvent(new Event('refused'));
+  if (appRefused(res.status, as)) res = await attempt(url, init, await /** @type {App} */ (app).tokenFor(url, true));
+  if (appRefused(res.status, as)) refusals.dispatchEvent(new Event('refused'));
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new GitHubError(failure(res.status, body.message), res.status);
@@ -43,7 +43,7 @@ async function request(url, init = {}, as = '') {
 /** @param {string} url @param {RequestInit} init @param {string} bearer @returns {Promise<Response>} */
 async function attempt(url, init, bearer) {
   try {
-    return await fetch(url.startsWith('https://') ? url : API + url, {
+    return await fetch(apiUrl(url), {
       ...init,
       cache: 'no-store',
       headers: { Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', Authorization: `Bearer ${bearer}`, ...init.headers },
@@ -69,7 +69,7 @@ export const headOf = async (repo, branch) => (await getJson(`/repos/${repoPath(
 /** @param {string} repo @param {string} commit @returns {Promise<{ tree: string, date: number }>} the commit's tree, and when it was made */
 export async function commitOf(repo, commit) {
   const c = await getJson(`/repos/${repoPath(repo)}/git/commits/${commit}`);
-  return { tree: c.tree.sha, date: Date.parse(c.committer?.date ?? '') || 0 };
+  return { tree: c.tree.sha, date: timeOf(c.committer?.date) };
 }
 /** @param {string} repo @param {string} commit @returns {Promise<string>} the commit's tree */
 export const treeOf = async (repo, commit) => (await commitOf(repo, commit)).tree;
@@ -80,7 +80,7 @@ export const latest = repo => getJson(`/repos/${repoPath(repo)}/commits?per_page
 /** @param {string} repo @param {string} branch @param {string} path @returns {Promise<number>} */
 export async function lastChange(repo, branch, path) {
   const list = await getJson(`/repos/${repoPath(repo)}/commits?sha=${encodeURIComponent(branch)}&path=${encodeURIComponent(path)}&per_page=1`);
-  return Date.parse(list[0]?.commit?.committer?.date ?? '') || 0;
+  return timeOf(list[0]?.commit?.committer?.date);
 }
 /** @param {string} repo @param {string} tree */
 export const treeFiles = (repo, tree) => getJson(`/repos/${repoPath(repo)}/git/trees/${tree}?recursive=1`);
@@ -135,7 +135,7 @@ export async function merge(repo, base, head, message) {
     body: JSON.stringify({ base, head, commit_message: message }),
     headers: { 'Content-Type': 'application/json' },
   });
-  return res.status === 204 ? null : (await res.json()).sha;
+  return mergeMade(res.status, () => res.json());
 }
 // the repository's releases and tags (100 each at most)
 /** @param {string} repo @returns {Promise<any[]>} */
@@ -168,7 +168,7 @@ export const newCommit = async (repo, message, tree, parent) =>
   (await send('POST', `/repos/${repoPath(repo)}/git/commits`, { message, tree, parents: [parent], ...writtenBy() })).sha;
 // who a commit is written by: the author (GitHub would write it as the App; so it does when the author is not known
 // yet)
-const writtenBy = () => (app?.author ? { author: app.author, committer: app.author } : {});
+const writtenBy = () => byAuthor(app?.author);
 // moves the branch onto the commit, only forward (a branch moved on elsewhere since: GitHubError 422)
 /** @param {string} repo @param {string} branch @param {string} commit */
 export const moveBranch = (repo, branch, commit) => send('PATCH', `/repos/${repoPath(repo)}/git/refs/heads/${refPath(branch)}`, { sha: commit, force: false });
@@ -215,7 +215,7 @@ const sendAs = async (as, method, path, body) => (await requestAs(as, method, pa
 export async function createRepo(as, owner, name, description) {
   const me = (await sendAs(as, 'GET', '/user')).login;
   const body = { name, description, private: true, auto_init: false };
-  const mine = !owner || owner === me;
+  const mine = ownAccount(owner, me);
   const r = await sendAs(as, 'POST', mine ? '/user/repos' : `/orgs/${encodeURIComponent(owner)}/repos`, body);
   return { id: r.id, full_name: r.full_name, default_branch: r.default_branch || 'main', visibility: r.visibility, private: r.private, mine };
 }

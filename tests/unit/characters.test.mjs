@@ -1,5 +1,17 @@
 import { describe, test, expect } from 'vitest';
-import { parseCharacters, personRange, nthOf, addPerson, movePerson, isCharactersNote, NEW_CHARACTERS } from '../../lib/characters.js';
+import {
+  parseCharacters,
+  personRange,
+  nthOf,
+  addPerson,
+  movePerson,
+  isCharactersNote,
+  NEW_CHARACTERS,
+  charactersNote,
+  charactersEmpty,
+  charactersBoard,
+  cardMove,
+} from '../../lib/characters.js';
 
 describe('characters', () => {
   // FR-NOTE-07: a person is a heading and its lines; the note's title above them is not one; a deeper heading stays
@@ -96,5 +108,53 @@ describe('characters', () => {
     expect(isCharactersNote('people', '主要人物')).toBe(true);
     expect(isCharactersNote('キャラ/alice')).toBe(true);
     expect(isCharactersNote('02_world', '世界設定資料集')).toBe(false);
+  });
+});
+
+describe('the screen キャラ', () => {
+  // FR-NOTE-07: the note found by its name or its title; the characters in a folder, a note each
+  test('charactersNote: by name, by title (its text read), none; the folder of the characters', () => {
+    const notes = [
+      { path: 'notes/world.md', name: 'world.md' },
+      { path: 'notes/a.md', name: 'a.md' },
+      { path: 'notes/キャラ/rei.md', name: 'rei.md' },
+    ];
+    expect(charactersNote(notes, { 'notes/a.md': '# 登場人物\n' })).toEqual({ path: 'notes/a.md', folder: 'notes/キャラ' });
+    expect(charactersNote([{ path: 'notes/characters.md', name: 'characters.md' }], {})).toEqual({ path: 'notes/characters.md', folder: '' });
+    expect(charactersNote([{ path: 'notes/world.md', name: 'world.md' }], { 'notes/world.md': null })).toEqual({ path: '', folder: '' });
+    expect(charactersNote([{ path: 'notes/world.md', name: 'world.md' }], { 'notes/world.md': '本文だけ' })).toEqual({ path: '', folder: '' });
+  });
+  test('charactersEmpty: the characters in a folder (said, not made again as one); none (the button to make the note)', () => {
+    expect(charactersEmpty('notes/<キャラ>')).toContain('キャラクターが「notes/&lt;キャラ&gt;」に 1 人 1 つの資料で分かれています');
+    expect(charactersEmpty('notes/<キャラ>')).not.toContain('characters-new');
+    expect(charactersEmpty('')).toContain('<button id="characters-new">キャラクターの資料を作成</button>');
+  });
+  // FR-NOTE-07, FR-NOTE-08, FR-NOTE-10: a card each, ↑ not on the first, ↓ not on the last, 編集; the text cut to its lines
+  test('charactersBoard: the draft said, the cards with their tools, the button to add one', () => {
+    const people = [
+      { head: '零<', body: ['主人公'], start: 0, end: 2 },
+      { head: 'カミヤ', body: [''], start: 2, end: 3 },
+    ];
+    const html = charactersBoard(people, true);
+    expect(html.startsWith('<p class="muted small">この端末に、まだ送っていない書きかけがあります')).toBe(true);
+    expect(html).toContain('<b>零&lt;</b>');
+    expect(html).toContain('data-move-up="0" disabled');
+    expect(html).toContain('data-move-down="0"  title');
+    expect(html).toContain('data-move-up="1"  title');
+    expect(html).toContain('data-move-down="1" disabled');
+    expect(html).toContain('<button class="ghost" data-person="1">編集</button>');
+    expect(html).toContain('<p class="pcard-sum">主人公</p>');
+    expect(html.match(/pcard-sum/g)).toHaveLength(1);
+    expect(html.endsWith('<button class="plot-add-group" id="characters-add">人物を追加</button>')).toBe(true);
+    expect(html).not.toContain('まだ誰もいません');
+    const none = charactersBoard([], false);
+    expect(none).toBe(
+      '<p class="muted small">まだ誰もいません。「人物を追加」で見出しを足せます。</p><button class="plot-add-group" id="characters-add">人物を追加</button>',
+    );
+  });
+  test('cardMove: ↑ is -1, ↓ is 1, by the card; another button: none', () => {
+    expect(cardMove({ moveUp: '2' })).toEqual({ i: 2, by: -1 });
+    expect(cardMove({ moveDown: '0' })).toEqual({ i: 0, by: 1 });
+    expect(cardMove({})).toBe(null);
   });
 });

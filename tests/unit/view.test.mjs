@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest';
-import { viewOf } from '../../lib/view.js';
+import { viewOf, namedBranch, shasToLook } from '../../lib/view.js';
 
 const read = over => ({
   blobs: { 'novel.toml': { sha: 'cfg', mode: '100644' }, '01.md': { sha: 's1', mode: '100644' }, '02.md': { sha: 's2', mode: '100644' } },
@@ -50,4 +50,25 @@ describe('view', () => {
     expect(bad.problems[0]).toMatch(/^novel\.toml が読めないので、書き換えません/);
     expect(bad.problems[1]).toMatch(/^novel\.toml が読めません/);
   });
+});
+
+// FR-WORK-01: the branch read; FR-SAVE-04: the texts that tell the files apart
+test('namedBranch: the one novel.toml names, not the default nor the one gone', () => {
+  expect(namedBranch('dev', 'main', '')).toBe('dev');
+  expect(namedBranch('', 'main', '')).toBe('');
+  expect(namedBranch('main', 'main', '')).toBe('');
+  expect(namedBranch('dev', 'main', 'dev')).toBe('');
+});
+test('shasToLook: for a text whose file changed, the blobs written from and read, and those of its kind come or changed; each once', () => {
+  const was = { blobs: { 'a.md': { sha: 'r1' }, 'b.md': { sha: 'r2' }, 'p.png': { sha: 'r3' } } };
+  const now = { blobs: { 'a.md': { sha: 'n1' }, 'b.md': { sha: 'r2' }, 'c.md': { sha: 'n3' }, 'p.png': { sha: 'n4' } } };
+  const drafts = [
+    { repo: 'o/r', path: 'a.md', base: 'r0', text: 't', at: 1 },
+    { repo: 'o/r', path: 'x.md', base: 'r1', text: 't', at: 1 },
+    { repo: 'o/r', path: 'b.md', base: 'r2', text: 't', at: 1 },
+    { repo: 'o/r', path: 'n.md', base: '', text: 't', at: 1 },
+    { repo: 'o/r', path: 'c.md', base: 'r9', op: 'o', text: 't', at: 1 },
+  ];
+  expect(shasToLook(drafts, was, now)).toEqual(['r0', 'r1', 'n1', 'n3']);
+  expect(shasToLook([], was, now)).toEqual([]);
 });

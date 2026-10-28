@@ -2,11 +2,10 @@
 // list, as on 資料, and one of them as read (a preview). Which is shown is kept on the device for each work, and the
 // note is read again each time an episode is opened (a draft of it not sent: that). The panel's width is dragged at its
 // border (or moved by ← →), and kept on the device. From the server version's public/ui/sidenote.js
-import { esc } from '../lib/format.js';
-import { sideWidth } from '../lib/layout.js';
+import { gripStep, sideWidth } from '../lib/layout.js';
 import { picturePaths, renderMd } from '../lib/markdown.js';
-import { groupNotes } from '../lib/notelist.js';
-import { noteHeading, notesList } from '../lib/notes.js';
+import { inNotes, sideListHtml, sideNoteHtml, sideUnreadable, titledNotes } from '../lib/notelist.js';
+import { notesList } from '../lib/notes.js';
 import { plotPathOf } from '../lib/plot.js';
 import { $, busy } from './dom.js';
 import * as store from './db.js';
@@ -37,12 +36,6 @@ export function hide() {
   $('side-note-in').innerHTML = '';
   $('side-peek').classList.remove('on');
 }
-const listHead =
-  '<div class="plot-panel-head"><b>資料</b><span class="grow"></span><button class="ghost small" data-side-close aria-label="閉じる">×</button></div>';
-/** @param {string} name */
-const noteHead = name =>
-  `<div class="plot-panel-head"><button class="ghost small" data-side-list>‹ 一覧</button><b>${esc(name)}</b><span class="grow"></span><button class="ghost small" data-side-close aria-label="閉じる">×</button></div>`;
-
 // what is kept for the work, shown: the list of its notes, or a note; nothing kept: the panel closed
 export async function renderSideNote() {
   const w = api.work();
@@ -54,23 +47,11 @@ export async function renderSideNote() {
   if (!path) {
     const texts = await api.texts(notes.map(f => f.path));
     if (n !== draws) return;
-    const titled = notes.map(f => ({ ...f, title: noteHeading(texts[f.path] ?? '') ?? undefined, updated: 0 }));
-    const plotFile = plotPathOf(l.plot, titled);
-    const { pinned, folders } = groupNotes(titled, l.notes, plotFile);
-    /** @type {(f: import('../lib/notelist.js').NoteRow) => string} */
-    const row = f =>
-      `<button data-side-note="${esc(f.path)}"><span>${esc(f.label)}${f.path === plotFile ? ' <span class="vis">プロット</span>' : ''}</span></button>`;
-    /** @type {(name: string, rows: import('../lib/notelist.js').NoteRow[]) => string} */
-    const group = (name, rows) => `<div class="notes-folder"><span>${esc(name)}</span></div><div class="notes-in">${rows.map(row).join('')}</div>`;
-    const top = pinned.length ? group('主な資料', pinned) + (titled.length > pinned.length ? '<div class="notes-folder"><span>そのほか</span></div>' : '') : '';
+    const titled = titledNotes(notes, texts);
     shown = { repo: w.repo, path: '', text: '' };
     $('side-peek').classList.add('on');
     $('side-note').hidden = false;
-    $('side-note-in').innerHTML =
-      listHead +
-      (titled.length
-        ? `<div class="notes-list side-note-body">${top}${folders.map(({ folder, rows }) => (folder === '' ? rows.map(row).join('') : group(folder, rows))).join('')}</div>`
-        : '<p class="muted small">まだ資料がありません。目次の「資料」から作成できます。</p>');
+    $('side-note-in').innerHTML = sideListHtml(titled, l.notes, plotPathOf(l.plot, titled));
     return;
   }
   const text = (await api.texts([path]))[path];
@@ -79,7 +60,7 @@ export async function renderSideNote() {
   $('side-note').hidden = false;
   if (text === null) {
     shown = null;
-    $('side-note-in').innerHTML = `${noteHead(path)}<p class="muted small">この資料は読めません（無くなったか、この端末にまだ読み込まれていません）。</p>`;
+    $('side-note-in').innerHTML = sideUnreadable(path);
     return;
   }
   // the same text: left as it is, where it was scrolled to
@@ -92,11 +73,11 @@ export async function renderSideNote() {
   if (n !== draws) return;
   // (what is shown, once it is: a drawing given up for a later one has shown nothing)
   shown = { repo: w.repo, path, text };
-  $('side-note-in').innerHTML =
-    // (its path in the notes folder, as the server version's)
-    noteHead(path.replace(new RegExp(`^${api.view().layout.notes.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/`), '')) +
-    (api.drafts().has(path) ? '<p class="muted small">この端末に、まだ送っていない書きかけがあります（ここにはその内容を出しています）。</p>' : '') +
-    `<div class="preview side-note-body">${renderMd(text, path, p => urls[p])}</div>`;
+  $('side-note-in').innerHTML = sideNoteHtml(
+    inNotes(path, api.view().layout.notes),
+    api.drafts().has(path),
+    renderMd(text, path, p => urls[p]),
+  );
   /** @type {HTMLElement} */ ($('side-note').querySelector('.side-note-body')).scrollTop = top;
 }
 // (said in the band while the notes and their pictures are read: DESK-OPS-05)
@@ -152,7 +133,7 @@ export function wireSideNote() {
   addEventListener('pointerup', letGo);
   addEventListener('pointercancel', letGo);
   grip.addEventListener('keydown', e => {
-    const by = e.key === 'ArrowLeft' ? 16 : e.key === 'ArrowRight' ? -16 : 0;
+    const by = gripStep(e.key);
     if (!by) return;
     e.preventDefault();
     setWidth($('side-note').getBoundingClientRect().width + by);

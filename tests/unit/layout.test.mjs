@@ -24,6 +24,7 @@ import {
   sideWidth,
   SIDE_MIN,
   BESIDE_MIN,
+  gripStep,
 } from '../../lib/layout.js';
 
 const layout = (over = {}) => ({ ...firstLayout(), ...over });
@@ -308,4 +309,11 @@ test('sideWidth: held between the least of the panel and of the text', () => {
   expect(sideWidth(100, 1400)).toBe(240);
   expect(sideWidth(900, 1400)).toBe(700);
   expect(sideWidth(500, 800)).toBe(240);
+});
+
+// FR-NOTE-11: the panel's border moved by the keyboard
+test('gripStep: ← widens, → narrows, 16px; another key nothing', () => {
+  expect(gripStep('ArrowLeft')).toBe(16);
+  expect(gripStep('ArrowRight')).toBe(-16);
+  expect(gripStep('Enter')).toBe(0);
 });

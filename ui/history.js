@@ -1,10 +1,9 @@
 // 履歴: the versions of the open episode (this device's and GitHub's), each compared with the one before and with the
 // text now, or read whole, and put back (FR-HIST-01〜04). From the server version's public/ui/history.js. Putting a
 // version back writes it in the text box: a change not sent, as anything typed
-import { diffHtml } from '../lib/diff.js';
-import { charsOf, esc, n, whenLong } from '../lib/format.js';
+import { esc, whenLong } from '../lib/format.js';
 import { bytesOf, textOf } from '../lib/github.js';
-import { versionsOf } from '../lib/history.js';
+import { historyListHtml, versionHtml, versionsOf } from '../lib/history.js';
 import { $ } from './dom.js';
 import * as gh from './github.js';
 import * as store from './db.js';
@@ -28,7 +27,6 @@ let tab = 'local';
 let failed = '';
 const body = () => $('versions-body');
 const dialog = () => /** @type {HTMLDialogElement} */ (/** @type {unknown} */ ($('versions')));
-const KIND = { here: '未送信', snapshot: '自動', github: 'GitHub' };
 
 /** @param {HistoryOf} who */
 export async function showHistory(who) {
@@ -52,26 +50,7 @@ export async function showHistory(who) {
   renderList();
 }
 function renderList() {
-  const local = versions.filter(v => v.kind !== 'github'),
-    remote = versions.filter(v => v.kind === 'github');
-  const list = tab === 'local' ? local : remote;
-  body().innerHTML =
-    `<div class="history-tabs">
-      <button data-tab="local" class="${tab === 'local' ? 'on' : ''}">ローカル履歴（${local.length}）</button>
-      <button data-tab="github" class="${tab === 'github' ? 'on' : ''}">GitHub 履歴（${remote.length}）</button></div>` +
-    (tab === 'github' && failed ? `<p class="error">GitHub の履歴を読めませんでした: ${esc(failed)}</p>` : '') +
-    (list.length
-      ? list
-          .map(
-            v =>
-              `<button class="version" data-v="${versions.indexOf(v)}"><b>${esc(whenLong(v.at))}<span class="tag">${KIND[v.kind]}</span></b><small>${v.text === null ? esc(v.subject) : `${n(charsOf(v.text))} 字${v.subject ? ` ・ ${esc(v.subject)}` : ''}`}</small></button>`,
-          )
-          .join('')
-      : tab === 'local'
-        ? '<p class="muted small">まだローカルの履歴はありません。書いていると、10 分おきに自動で残ります。</p>'
-        : failed
-          ? ''
-          : `<p class="muted small">GitHub にこの${esc(/** @type {HistoryOf} */ (of).what)}の履歴はありません（まだ送っていません）。</p>`);
+  body().innerHTML = historyListHtml(versions, tab, failed, /** @type {HistoryOf} */ (of).what);
 }
 // a version's text: kept with it, or read from GitHub (the blob kept on the device by its sha)
 /** @param {import('../lib/history.js').Version} v */
@@ -99,34 +78,7 @@ async function showVersion(i) {
     return;
   }
   if (of !== who) return;
-  /** @type {(html: string, places: number) => string} */
-  const shown = (html, places) => (places ? `<div class="diff">${html}</div>` : '');
-  let changes;
-  if (was == null) changes = '<p class="muted small">これより前の版はありません。</p>';
-  else {
-    const [html, places] = diffHtml(was, text);
-    changes =
-      `<p class="muted small">前の版（${esc(whenLong(before.at))}、${n(charsOf(was))} 字）からこの版までの変更：${places ? `${places} か所` : 'ありません'}</p>` +
-      shown(html, places);
-  }
-  const now = who.now();
-  const [nowHtml, nowPlaces] = diffHtml(text, now);
-  const toNow =
-    `<p class="muted small">この版から今の本文（${n(charsOf(now))} 字）までの変更：${nowPlaces ? `${nowPlaces} か所` : 'ありません'}</p>` +
-    shown(nowHtml, nowPlaces);
-  body().innerHTML = `<div class="hist-head"><button class="ghost back-history">‹ 履歴</button>
-    <span class="muted small">${n(charsOf(text))} 字 ・ ${v.kind === 'github' ? 'GitHub' : v.kind === 'snapshot' ? '自動のスナップショット' : 'まだ送っていない版'}</span></div>
-    <div class="history-tabs">${[
-      ['before', '前と比べる'],
-      ['now', '今と比べる'],
-      ['text', '全文'],
-    ]
-      .map(([k, label]) => `<button data-view="${k}" class="${k === view ? 'on' : ''}">${label}</button>`)
-      .join('')}</div>
-    <div class="version-diff" data-for="before"${view === 'before' ? '' : ' hidden'}>${changes}</div>
-    <div class="version-diff" data-for="now"${view === 'now' ? '' : ' hidden'}>${toNow}</div>
-    <textarea class="version-text" readonly aria-label="この版の全文"${view === 'text' ? '' : ' hidden'}>${esc(text)}</textarea>
-    <button class="primary restore-history" data-restore="${i}">この版を復元</button>`;
+  body().innerHTML = versionHtml({ v, i, text, before, was, now: who.now(), view });
 }
 /** @param {string} k */
 function setView(k) {

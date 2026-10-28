@@ -2,8 +2,20 @@
 // at the commit read), and the branch merged into another on GitHub, what the merge brings said first. As the server
 // version's: what is not sent yet goes first (the changes are of the branch they were made on), then the branch changes
 // or the merge is made
-import { branchNameError, commitDate, mergeLines } from '../lib/branches.js';
+import {
+  branchNameError,
+  commitDate,
+  mergedSaid,
+  mergeFailure,
+  mergeLines,
+  mergeMessage,
+  mergeSides,
+  mergeTarget,
+  switchedSaid,
+  switchPlan,
+} from '../lib/branches.js';
 import { charsOf } from '../lib/format.js';
+import { statusOf } from '../lib/github.js';
 import { isEpisode, relOf, titleOf } from '../lib/layout.js';
 import { $, busy, toast } from './dom.js';
 import * as store from './db.js';
@@ -15,10 +27,6 @@ import { textAt } from './work.js';
 const UNSENT = '送れなかったので、ブランチを切り替えたりマージしたりしませんでした。書いたものはこの端末に残っています';
 const NO_WORK = '作品を読み込めていません。「再読み込み」で読み込んでから、ブランチを切り替えたりマージしたりしてください';
 
-// The changes not sent written on another branch than the one open (the device's settings gone, or the branch gone on
-// GitHub): only that branch can be chosen, to send them where they were written
-/** @param {string} other */
-const onlyThat = other => `未送信の変更は ${other} で書いたものです。${other} に切り替えるか、「送る」で送ってから、ほかのブランチに切り替えてください`;
 async function chooseBranch() {
   const w = api.work();
   if (!w) return toast(NO_WORK);
@@ -29,21 +37,23 @@ async function chooseBranch() {
   } catch (err) {
     return toast(`ブランチを読めませんでした: ${err.message}`);
   }
-  const name = await pick({
+  const chosen = await pick({
     title: 'ブランチ',
     items: list,
     current: w.branch,
     placeholder: '新しいブランチの名前',
     help: '選択するとそのブランチに切り替えます。存在しない名前を入力すると、新しく作成します。まだ送っていない変更がある時は、送ってから切り替えます。',
   });
-  if (!name || name === w.branch) return;
-  if (api.unsent() && other && name !== other) return toast(onlyThat(other));
+  const plan = switchPlan({ name: chosen, current: w.branch, unsent: api.unsent(), other, listed: list });
+  if (!plan) return;
+  if (plan.refuse) return toast(plan.refuse);
   // what is not sent goes first, to the branch it was written on (as the server version's: pushed, then switched)
-  if (api.unsent() && !other) {
+  if (plan.sendFirst) {
     await api.send();
     if (api.unsent()) return toast(UNSENT);
   }
-  if (!list.includes(name)) {
+  const name = plan.name;
+  if (plan.create) {
     const why = branchNameError(name);
     if (why) return toast(why);
     try {
@@ -55,7 +65,7 @@ async function chooseBranch() {
   await store.put('prefs', `branch:${w.repo}`, name);
   // (the text box not written in until the branch is read, as when a work is opened: DESK-OPS-05)
   await busy('ブランチを読み込んでいます…', api.reloadHeld);
-  toast(list.includes(name) ? `${name} に切り替えました` : `${name} を作成して切り替えました`);
+  toast(switchedSaid(name, plan.create));
 }
 // the episodes a merge changes, with their lengths before (where the branches met) and after; how many other files
 // (a file renamed counts as the one it is now: new, as the server version's git diff of names says it)
@@ -75,8 +85,9 @@ async function changedEpisodes(repo, cmp) {
       others++;
       continue;
     }
-    const before = f.status === 'added' || f.status === 'renamed' ? null : await chars(await gh.shaAt(repo, f.filename, cmp.merge_base_commit.sha));
-    const after = f.status === 'removed' ? null : await chars(f.sha);
+    const sides = mergeSides(f.status);
+    const before = sides.before ? await chars(await gh.shaAt(repo, f.filename, cmp.merge_base_commit.sha)) : null;
+    const after = sides.after ? await chars(f.sha) : null;
     episodes.push({ title: name, before, after });
   }
   return { episodes, others };
@@ -94,7 +105,7 @@ async function mergeBranch() {
   const into = await pick({
     title: `${w.branch} をどこにマージしますか`,
     items: list,
-    value: list.includes('main') ? 'main' : list[0],
+    value: mergeTarget(list),
     help: 'マージは GitHub 上で行います。現在のブランチは変わりません。',
   });
   if (!into) return;
@@ -112,7 +123,7 @@ async function mergeBranch() {
         ...(await changedEpisodes(w.repo, cmp)),
       });
     });
-    if (!lines) return toast(`${into} には、もう ${w.branch} の内容が全部入っています`);
+    if (!lines) return toast(mergedSaid(false, w.branch, into));
     if (!confirm(`${lines.join('\n')}\n\nマージしますか？`)) return;
     // what is not sent goes first (as the server version's: pushed, then merged)
     if (unsent) {
@@ -122,19 +133,13 @@ async function mergeBranch() {
     // (the button shows 「…」 while GitHub merges, as the server version's)
     $('gh-merge').disabled = true;
     $('gh-merge').textContent = '…';
-    const made = await gh.merge(w.repo, into, w.branch, `${w.branch} を ${into} にマージ（Novel Desk から）`).finally(() => {
+    const made = await gh.merge(w.repo, into, w.branch, mergeMessage(w.branch, into)).finally(() => {
       $('gh-merge').disabled = false;
       $('gh-merge').textContent = 'マージ';
     });
-    toast(made ? `${w.branch} を ${into} にマージしました` : `${into} には、もう ${w.branch} の内容が全部入っています`);
+    toast(mergedSaid(Boolean(made), w.branch, into));
   } catch (err) {
-    toast(
-      err instanceof gh.GitHubError && err.status === 409
-        ? `${into} と ${w.branch} が競合しているため、自動ではマージできません。GitHub か Working Copy で競合を解消してください`
-        : err instanceof gh.GitHubError && err.status === 404
-          ? `${into} か ${w.branch} が GitHub に見つかりません`
-          : `マージできませんでした: ${err.message}`,
-    );
+    toast(mergeFailure(statusOf(err), err.message, w.branch, into));
   }
 }
 

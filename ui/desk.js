@@ -1,20 +1,73 @@
 // The desk: the table of contents of the work open, the episode being written, its preview, the episodes added,
 // renamed, put in the trash and reordered, and sending and reading again. The work, the changes not sent and the
 // episode open are this module's: the others call open() and the functions it gives them
-import { moveFiles, rebase, relabel, settle, unsentList, withoutOp, writeFile } from '../lib/changes.js';
-import { afterSend, draftKey, draftOf, goneWhileSent, sameVersion, typedOver } from '../lib/drafts.js';
+import { rebase, relabel, settle, unsentList, withoutOp } from '../lib/changes.js';
+import {
+  afterSent,
+  afterTrash,
+  askKey,
+  autoSends,
+  briefOf,
+  changedKept,
+  changedTitle,
+  chapterWith,
+  charsOfAll,
+  convertedPaths,
+  draftsOf,
+  episodeChars,
+  dropClass,
+  episodeNote,
+  episodeRows,
+  keptToOpen,
+  lastChange as lastChanged,
+  MOVED,
+  movedShas,
+  neighborOf,
+  nextDraft,
+  onGitHubOf,
+  openAfter,
+  openAfterRead,
+  openOrFirst,
+  openStep,
+  otherBranchSaid as otherSaid,
+  parkedSaid,
+  pictureKeyOf,
+  planChanges,
+  readAgainst,
+  readSaid,
+  readsIn,
+  remoteTextOf,
+  repoLink,
+  saveSaid,
+  sendButton,
+  sendFailedSaid,
+  sendNowStep,
+  sentSaid,
+  shasOf,
+  stopSaid,
+  TAKEN,
+  textsOf,
+  tocHtml,
+  toggled,
+  unparkRefusal,
+  unparkSentSaid,
+  unparkText,
+  unsentCount,
+  updatedOf as updatedFrom,
+  updatedSaid,
+  workTitleOf,
+  workTitleTyped,
+} from '../lib/desk.js';
+import { draftKey, sameVersion } from '../lib/drafts.js';
 import * as plans from '../lib/episodes.js';
-import { charsOf, esc, n, rowTimes, whenLong } from '../lib/format.js';
+import { esc, n, rowTimes, whenLong } from '../lib/format.js';
+import { historyDraft } from '../lib/history.js';
 import { imageType } from '../lib/github.js';
-import { episodesOf, isEpisode, titleOf } from '../lib/layout.js';
-import { isNote } from '../lib/notes.js';
+import { episodesOf, titleOf } from '../lib/layout.js';
 import { picturePaths, relPath, renderMd } from '../lib/markdown.js';
-import { CONFLICT_MARK, keptBoth } from '../lib/merge.js';
-import { noteHeading } from '../lib/notes.js';
 import { editToml } from '../lib/tomledit.js';
-import { AUTO_WAIT, keptMode, onOtherBranch, saveState, sendsItself, stamped, syncMode, writtenOn } from '../lib/sync.js';
+import { AUTO_WAIT, keptMode, onOtherBranch, stamped, syncMode, writtenOn } from '../lib/sync.js';
 import { viewOf } from '../lib/view.js';
-import { visibilityTag } from '../lib/works.js';
 import { $, busy as withBand, show, toast } from './dom.js';
 import * as store from './db.js';
 import { bytes, contents, converted, load, lookOf, readShas } from './work.js';
@@ -86,11 +139,10 @@ function syncState(text, kind = '') {
 // the state in a word on the folded line (as the server version's 「・push 済み」)
 function brief() {
   const b = $('sync-brief');
-  const bad = $('sync-state').classList.contains('err') || failed.size > 0;
-  b.className = bad ? 'small err' : 'muted small';
-  b.textContent = !work || mode === 'off' ? '' : bad ? '・送信失敗' : unsent() ? '・未送信' : '・送信済み';
+  const said = briefOf({ read: Boolean(work), mode, bad: $('sync-state').classList.contains('err') || failed.size > 0, unsent: unsent() });
+  b.className = said.className;
+  b.textContent = said.text;
 }
-const hasConflict = (/** @type {string} */ text) => text.includes(CONFLICT_MARK);
 const shown = () => /** @type {import('../lib/view.js').View} */ (view);
 /** @param {string} path */
 const textOf = path => shown().texts[path] ?? null;
@@ -151,12 +203,15 @@ async function discard(item) {
     keep(next);
   }
   renderWork();
-  const open = findEpisode(current) ? current : (episodes()[0]?.path ?? '');
+  const open = openOrFirst(
+    episodes().map(e => e.path),
+    current,
+  );
   if (open) await openEpisode(open);
   else openNone();
 }
 // how many files the changes not sent change (novel.toml counts once)
-const unsent = () => drafts.size + (edits.length && !drafts.has('novel.toml') ? 1 : 0);
+const unsent = () => unsentCount(drafts, edits);
 
 // --- the table of contents
 
@@ -166,51 +221,25 @@ const WORK_TOOLS = ['open-notes', 'open-plot', 'open-characters', 'open-record',
 function renderToc() {
   const v = shown();
   const w = /** @type {NonNullable<typeof work>} */ (work);
-  const closed = new Set(/** @type {string[]} */ (folded));
-  const chapters = v.toc.filter(it => it.type === 'chapter');
-  /** @param {'episode' | 'chapter'} kind @param {string} path @param {string} [inChapter] */
-  const tools = (kind, path, inChapter = '') =>
-    `<span class="order-tools">${kind === 'chapter' ? `<button data-rename-chapter="${esc(path)}" title="章の題名を変更" aria-label="章の題名を変更">✎</button>` : ''}<button data-move="-1" data-path="${esc(path)}" aria-label="上へ">↑</button><button data-move="1" data-path="${esc(path)}" aria-label="下へ">↓</button>${
-      kind === 'episode' && chapters.length
-        ? `<select data-to-chapter data-path="${esc(path)}" aria-label="移動先の章"><option value="">章なし</option>${chapters
-            .map(c => `<option value="${esc(c.path)}"${inChapter === c.path ? ' selected' : ''}>${esc(titleAt(c.rel))}</option>`)
-            .join('')}</select>`
-        : ''
-    }</span>`;
-  /** @param {import('../lib/layout.js').TocEpisode} e @param {string} [inChapter] */
-  const episode = (e, inChapter) => {
-    const text = textOf(e.path) ?? '';
-    const tags =
-      (drafts.has(e.path) ? '<span class="unsent-tag">未送信</span>' : '') +
-      (hasConflict(text) ? '<span class="conflict" title="両方の版が並んでいます。「――― ここから」の行を整理してください">競合</span>' : '');
-    return `<div class="node episode${e.path === current ? ' active' : ''}" role="button" tabindex="0" data-path="${esc(e.path)}" data-node="${esc(e.path)}" draggable="${ordering}"><span class="t">${esc(titleAt(e.rel))}</span>${tags}<span class="u"></span><span class="c">${n(charsOf(text))}</span>${tools('episode', e.path, inChapter)}</div>`;
-  };
-  const chars = (/** @type {import('../lib/layout.js').TocEpisode[]} */ list) => list.reduce((sum, e) => sum + charsOf(textOf(e.path) ?? ''), 0);
-  $('tree').innerHTML = v.toc
-    .map(it =>
-      it.type === 'episode'
-        ? episode(it)
-        : `<div class="node chapter" role="button" tabindex="0" data-fold="${esc(it.path)}" data-node="${esc(it.path)}" draggable="${ordering}"><span class="fold">${closed.has(it.path) ? '▸' : '▾'}</span><span class="t">${esc(titleAt(it.rel))}</span><span class="c">${n(chars(it.episodes))}</span>${tools('chapter', it.path)}</div><div class="chapter-body${closed.has(it.path) && !it.episodes.some(e => e.path === current) ? ' closed' : ''}">${it.episodes.map(e => episode(e, it.path)).join('')}</div>`,
-    )
-    .join('');
+  $('tree').innerHTML = tocHtml({ toc: v.toc, titleAt, textOf, drafts, current, ordering, closed: new Set(folded) });
   $('toc').classList.toggle('reorder', ordering);
   $('toggle-reorder').textContent = ordering ? '完了' : '並べ替え';
-  $('work-chars').textContent = n(chars(episodes()));
+  $('work-chars').textContent = n(charsOfAll(episodes(), textOf));
   $('work-count').textContent = n(episodes().length);
-  $('work-updated').textContent = whenLong(Math.max(w.updated || 0, ...[...drafts.values()].map(d => d.at)));
+  $('work-updated').textContent = whenLong(lastChanged(w.updated, drafts.values()));
   $('work-branch').textContent = w.branch;
   // the repository, its page on GitHub, and whether it is public (FR-GH-11)
-  $('work-repo').innerHTML =
-    `<a href="https://github.com/${esc(w.repo)}/tree/${esc(encodeURIComponent(w.branch))}" target="_blank" rel="noopener">${esc(w.repo)}</a>${visibilityTag(/** @type {Repo} */ (repo))}`;
+  $('work-repo').innerHTML = repoLink(w.repo, w.branch, /** @type {Repo} */ (repo));
   $('gh-relink').hidden = !stopped;
   $('open-unsent').hidden = unsent() === 0 && !parked.length;
   showParked();
-  if (document.activeElement !== $('work-title')) $('work-title').value = v.layout.title || w.repo.split('/')[1];
+  if (document.activeElement !== $('work-title')) $('work-title').value = workTitleOf(v.layout.title, w.repo);
   // 送る and マージ: not shown when the work is not synced (as the server version's push and マージ); 「…」 while it sends
   $('send').hidden = $('gh-merge').hidden = mode === 'off';
   // (nothing to send: not pressed. It looks the same as the server version's push either way)
-  $('send').disabled = busy || unsent() === 0 || Boolean(stopped);
-  $('send').textContent = busy ? '…' : unsent() ? `送る（${unsent()}）` : '送る';
+  const button = sendButton({ busy, unsent: unsent(), stopped: Boolean(stopped) });
+  $('send').disabled = button.disabled;
+  $('send').textContent = button.text;
   $('sync-mode').value = mode;
   brief();
   for (const id of ['add-episode', 'add-chapter', 'toggle-reorder', 'trash-episode']) $(id).disabled = busy;
@@ -227,40 +256,23 @@ let folded = [];
 
 /** @param {number} d @returns {{ path: string, title: string } | null} */
 function neighbor(d) {
-  const eps = episodes(),
-    i = eps.findIndex(e => e.path === current);
-  const e = i < 0 ? null : eps[i + d];
-  return e ? { path: e.path, title: titleAt(e.rel) } : null;
+  return neighborOf(episodes(), current, d, titleAt);
 }
 function showCounts() {
   const text = $('body').value;
-  $('episode-chars').textContent = current ? n(charsOf(text)) : '0';
-  const w = work;
+  $('episode-chars').textContent = episodeChars(current, text);
   // (both versions side by side: said there instead, as the server version's)
-  $('save-state').textContent = hasConflict(text)
-    ? '両方の版が並んでいます。「――― ここから」の行を探して整理してください'
-    : current
-      ? saveState({
-          draft: drafts.has(current),
-          failed: failed.has(current),
-          onGitHub: Boolean(w && !w.offline && mode !== 'off' && w.blobs[current]),
-        })
-      : '';
+  $('save-state').textContent = saveSaid({ text, current, draft: drafts.has(current), failed: failed.has(current), onGitHub: onGitHubOf(work, mode, current) });
 }
-/** @param {string} path @param {string} sha */
-const changedKey = (path, sha) => `${path}\n${sha}`;
 // 最終更新 of an episode: when this device wrote it (not sent), else its last commit on GitHub (0: not known yet)
 /** @param {string} path */
 function updatedOf(path) {
-  const d = drafts.get(path);
-  if (d) return d.at;
-  const b = /** @type {NonNullable<typeof work>} */ (work).blobs[path];
-  return b ? (changed.get(changedKey(path, b.sha)) ?? 0) : 0;
+  return updatedFrom(drafts.get(path), /** @type {NonNullable<typeof work>} */ (work).blobs[path], changed, path);
 }
 // 最終更新 of the open episode (FR-EDIT-02), asked of GitHub when it is not known yet
 function showUpdated() {
   const ms = updatedOf(current);
-  $('episode-updated').textContent = current && ms ? `最終更新 ${whenLong(ms)}` : '';
+  $('episode-updated').textContent = updatedSaid(current, ms);
   if (current && !ms) ask(current);
 }
 // 最終更新 on the rows of the table of contents, where it tells one row from the others (as the server version's)
@@ -280,10 +292,8 @@ let askers = 0;
 /** @param {string} path */
 function ask(path) {
   const w = /** @type {NonNullable<typeof work>} */ (work);
-  const b = w.blobs[path];
-  if (!b || w.offline || drafts.has(path)) return;
-  const key = changedKey(path, b.sha);
-  if (changed.has(key) || asking.has(key)) return;
+  const key = askKey(w, drafts, path, [changed, asking]);
+  if (key === null) return;
   asking.add(key);
   asks.push({ repo: w.repo, branch: w.branch, path, key });
   while (askers < 3 && asks.length) void answerAsks();
@@ -301,8 +311,7 @@ async function answerAsks() {
     changed.set(job.key, ms);
     paintTimes();
     // (only the keys of the files there now are kept)
-    const keys = new Set(Object.entries(w.blobs).map(([p, b]) => changedKey(p, b.sha)));
-    await store.put('prefs', `changed:${w.repo}`, Object.fromEntries([...changed].filter(([k]) => keys.has(k))));
+    await store.put('prefs', `changed:${w.repo}`, changedKept(changed, w.blobs));
   }
   askers--;
 }
@@ -331,9 +340,9 @@ async function openEpisode(path, shut = true) {
   stopReading();
   showCounts();
   const note = $('episode-note');
-  note.hidden = text !== null;
-  note.textContent =
-    text !== null ? '' : w.offline ? 'この話はまだこの端末に読み込まれていません（つながってから開いてください）' : '文字コードが UTF-8 ではないため開けません';
+  const said = episodeNote(text, w.offline);
+  note.hidden = said.hidden;
+  note.textContent = said.text;
   if (shut) $('desk').classList.remove('toc-open');
   renderToc();
   showUpdated();
@@ -364,12 +373,8 @@ function openNone() {
 /** @param {string} path @param {string} text */
 function keepText(path, text) {
   const w = /** @type {NonNullable<typeof work>} */ (work);
-  const before = drafts.get(path);
   const next = new Map(drafts);
-  /** @type {Draft | null} */
-  let draft;
-  if (before?.op) draft = typedOver(before, text, Date.now());
-  else draft = draftOf({ repo: w.repo, path, base: before?.base ?? w.blobs[path]?.sha ?? '', read: remoteText(path), text, at: Date.now() });
+  const draft = nextDraft(drafts.get(path), { repo: w.repo, path, sha: w.blobs[path]?.sha ?? '', read: remoteText(path), text, at: Date.now() });
   if (draft) next.set(path, draft);
   else next.delete(path);
   keep(next);
@@ -394,17 +399,12 @@ const noteSoon = () => {
 };
 // (none when no work is read: another work being opened, its note from the one before not written)
 const noteNow = async () => {
-  if (work)
-    await noteToday(
-      work.repo,
-      episodes().reduce((sum, e) => sum + charsOf(textOf(e.path) ?? ''), 0),
-    );
+  if (work) await noteToday(work.repo, charsOfAll(episodes(), textOf));
 };
 // the text of a file as read from GitHub ('' when it is not there, or not read)
 /** @param {string} path */
 function remoteText(path) {
-  const w = /** @type {NonNullable<typeof work>} */ (work);
-  return w.texts[path] ?? w.shaTexts[w.blobs[path]?.sha ?? ''] ?? '';
+  return remoteTextOf(/** @type {NonNullable<typeof work>} */ (work), path);
 }
 // 履歴: a version of the episode kept on this device every 10 minutes of writing (or `force`: before one is put back)
 /** @type {Map<string, import('../lib/history.js').Snapshot[]>} */
@@ -435,7 +435,7 @@ async function openHistory() {
     path,
     title: titleAt(e.rel),
     what: '話',
-    draft: d?.text !== undefined ? { text: d.text, at: d.at } : null,
+    draft: historyDraft(d),
     snapshots: await snapshots(path),
     remote: Boolean(w.blobs[path]),
     now: () => $('body').value,
@@ -476,30 +476,17 @@ async function apply(plan, open, stay = false) {
     toast(checked.error);
     return false;
   }
-  let { changes, merged } = moveFiles(w.blobs, drafts, plan.moves, { repo: w.repo, op, at });
-  for (const { path, text, bytes: put, bound } of plan.writes) {
-    const there = shown().files[path] && !plan.moves.some(m => m[1] === path);
-    if (text !== undefined && !bound && there && !changes.get(path)?.op) {
-      // a text written into a file of the branch (a heading renamed): a draft of it, as when typed
-      const d = draftOf({ repo: w.repo, path, base: changes.get(path)?.base ?? w.blobs[path].sha, read: remoteText(path), text, at });
-      if (d) changes.set(path, d);
-      else changes.delete(path);
-      continue;
-    }
-    const made = writeFile(w.blobs, changes, path, put ? { bytes: put } : { text, ...(bound && { auto: true }) }, { repo: w.repo, op, at });
-    changes = made.changes;
-    for (const m of made.merged) merged.add(m);
-  }
+  // (a text written into a file of the branch, a heading renamed: a draft of it, as when typed)
+  const { changes, merged } = planChanges(w, drafts, shown().files, plan, { op, at }, remoteText);
   keep(changes, [...relabel(edits, merged, op), ...opEdits]);
   if (stay) {
     renderToc();
     return true;
   }
-  const moved = plan.moves.find(m => m[0] === current)?.[1];
-  const next = open ?? (moved && findEpisode(moved) ? moved : findEpisode(current) ? current : '');
+  const { next, keepsPlace } = openAfter({ moves: plan.moves, current, open, has: path => Boolean(findEpisode(path)) });
   // the episode open is still the one open (it or others renamed, moved, added): the preview open stays, where it was
   // read (as the server version's renderToc)
-  const place = reading() && (next === current || next === moved) ? previewPlace() : null;
+  const place = reading() && keepsPlace ? previewPlace() : null;
   if (next) await openEpisode(next);
   else openNone();
   if (place) await showPreviewAt(place);
@@ -516,8 +503,7 @@ function planned(make) {
   }
 }
 async function addEpisode() {
-  const chapter = shown().toc.find(it => it.type === 'chapter' && it.episodes.some(e => e.path === current));
-  const plan = planned(() => plans.addEpisode(forPlans(), chapter?.path ?? '', '新しい話'));
+  const plan = planned(() => plans.addEpisode(forPlans(), chapterWith(shown().toc, current), '新しい話'));
   if (plan && (await apply(plan, plan.path))) $('episode-title').select();
 }
 async function addChapter() {
@@ -538,8 +524,8 @@ async function renameEpisode() {
 async function renameChapter(path) {
   const it = /** @type {import('../lib/layout.js').TocItem} */ (shown().toc.find(c => c.path === path));
   const now = titleAt(it.rel);
-  const title = prompt('章の題名', now);
-  if (title === null || !title.trim() || title === now) return;
+  const title = changedTitle(prompt('章の題名', now), now);
+  if (title === null) return;
   const plan = planned(() => plans.rename(forPlans(), path, title));
   if (plan) await apply(plan);
 }
@@ -552,12 +538,9 @@ async function trashEpisode() {
     )
   )
     return;
-  const i = episodes().indexOf(e);
   const plan = plans.trash(forPlans(), current, Date.now());
-  const rest = episodes().filter(x => x !== e);
-  const next = rest[Math.max(0, i - 1)];
   // (no key of novel.toml to set that it could not take: the trash only takes away the titles novel.toml has)
-  if (await apply(plan, next?.path ?? '')) toast('削除しました（_trash/ に移動。送るまではこの端末だけの変更です）');
+  if (await apply(plan, afterTrash(episodes(), e))) toast('削除しました（_trash/ に移動。送るまではこの端末だけの変更です）');
 }
 /** @param {import('../lib/episodes.js').OrderItem[] | null} want */
 async function sendOrder(want) {
@@ -566,11 +549,10 @@ async function sendOrder(want) {
   if (plan) await apply(plan, current ? plans.placeAfter(shown().layout, want, current) : undefined);
 }
 async function renameWork() {
-  const title = $('work-title').value.trim();
+  const typed = workTitleTyped($('work-title').value, shown().layout.title, /** @type {NonNullable<typeof work>} */ (work).repo);
   // (nothing to keep: the title shown again, the field still focused, as the server version's)
-  if (!title || title === shown().layout.title)
-    return void ($('work-title').value = shown().layout.title || /** @type {NonNullable<typeof work>} */ (work).repo.split('/')[1]);
-  await apply({ moves: [], writes: [], edits: [{ key: ['title'], value: title }], path: '' });
+  if ('shown' in typed) return void ($('work-title').value = typed.shown);
+  await apply({ moves: [], writes: [], edits: [{ key: ['title'], value: typed.keep }], path: '' });
 }
 
 // --- the preview: the pictures read from GitHub (or the device), shown by object URLs
@@ -582,10 +564,7 @@ async function draw() {
 }
 // a picture shown by its blob, or (added on this device, not sent) by its bytes
 /** @param {string} path */
-const pictureKey = path => {
-  const c = drafts.get(path);
-  return c?.bytes ? `here:${path}:${c.at}` : (shown().files[path]?.sha ?? '');
-};
+const pictureKey = path => pictureKeyOf(drafts.get(path), shown().files, path);
 // the object URL of a picture of the work ('' when it cannot be read)
 /** @param {string} path @returns {Promise<string>} */
 async function pictureUrl(path) {
@@ -605,20 +584,9 @@ async function pictureUrl(path) {
 async function texts(paths) {
   const w = /** @type {NonNullable<typeof work>} */ (work);
   const files = shown().files;
-  await readShas(
-    w,
-    paths.flatMap(p => (files[p]?.sha ? [files[p].sha] : [])),
-  );
-  /** @type {Record<string, string | null>} */
-  const out = {};
-  for (const p of paths) {
-    const c = drafts.get(p);
-    if (!files[p]) out[p] = null;
-    // (a text file's change: its text, or the blob it moved)
-    else if (c) out[p] = c.text ?? w.shaTexts[/** @type {string} */ (c.sha)] ?? null;
-    else out[p] = w.texts[p] ?? w.shaTexts[files[p].sha] ?? null;
-  }
-  return out;
+  await readShas(w, shasOf(paths, files));
+  // (a text file's change: its text, or the blob it moved)
+  return textsOf(paths, files, drafts, w);
 }
 // a picture added to the open episode where the caret is: made small, put in the pictures folder, ![](…) written
 function insertImage() {
@@ -636,12 +604,7 @@ function insertImage() {
 // --- reading and sending
 
 /** @param {string} when */
-const readState = when =>
-  mode === 'off'
-    ? syncState('同期しない設定です。GitHub へ送ることも、GitHub から取り込むこともしません（この端末で前に読んだ版に書きます）')
-    : work?.offline
-      ? syncState('オフラインです。前に読んだ版を出しています（送るのはつながってから）', 'err')
-      : syncState(`GitHub から読みました（${when}）`, 'ok');
+const readState = when => syncState(...readSaid(mode, Boolean(work?.offline), when));
 const now = () => new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
 
 function renderWork() {
@@ -655,10 +618,7 @@ function renderWork() {
 // the texts of the files moved by the changes not sent, read when the device does not have them yet
 async function readMoved() {
   const w = /** @type {NonNullable<typeof work>} */ (work);
-  await readShas(
-    w,
-    [...drafts.values()].flatMap(d => (d.sha && d.text === undefined ? [d.sha] : [])),
-  );
+  await readShas(w, movedShas(drafts.values()));
 }
 // the changes on the work read again: the operations whose files changed elsewhere are given up (their texts stay)
 // The texts written whose file is gone, or is another file now, set aside (lib/changes.js settle; `before`: the files
@@ -694,12 +654,6 @@ async function rebaseChanges(before) {
 let parked = [];
 /** @param {Draft} d its key: of its repository and path, and its own id (two can be set aside from one path) */
 const parkedKey = d => `parked:${draftKey(d.repo, d.path)}\n${d.aside}`;
-// why a text is set aside (said on the screen and in the list)
-const MOVED = 'ほかの所で削除されたか、別のファイルに替わっていた';
-const TAKEN = '取り消した操作の中で書いた文章で、元の場所にも今の場所にも別の書きかけがあった';
-// what a text set aside is called: its heading, else its file
-/** @param {Draft} d */
-const parkedName = d => noteHeading(/** @type {string} */ (d.text)) ?? d.path;
 /** @param {Draft[]} list @param {string} why */
 function park(list, why) {
   if (!list.length) return;
@@ -708,10 +662,7 @@ function park(list, why) {
     parked = [...parked, p];
     thenWrite(() => store.put('drafts', parkedKey(p), p));
   }
-  syncState(
-    `「${list.map(parkedName).join('」「')}」は、${why}ので、書いた文章を送らずにこの端末に残しました。「未送信の一覧」で、送る・本文に入れる・捨てるを選べます`,
-    'err',
-  );
+  syncState(parkedSaid(list, why), 'err');
   renderToc();
 }
 // 未送信の書きかけ: a button over the screen while texts are set aside, opening the list (as the server version's)
@@ -731,7 +682,8 @@ function showParked() {
 // 'put' (at the end of the episode open, as typed), 'drop' (given up; kept in the history)
 /** @param {Draft} d @param {'send' | 'put' | 'drop'} how */
 async function unpark(d, how) {
-  if (how === 'send' && drafts.has(d.path)) return void toast('その場所には、まだ送っていない書きかけがあります。「送る」で送ってから、もう一度押してください');
+  const refusal = unparkRefusal(how, drafts.has(d.path));
+  if (refusal) return void toast(refusal);
   /** @type {string | null} */
   let there = '';
   if (how === 'send' && shown().files[d.path]) there = (await texts([d.path]))[d.path];
@@ -750,18 +702,18 @@ async function unpark(d, how) {
   const w = /** @type {NonNullable<typeof work>} */ (work);
   const text = /** @type {string} */ (d.text);
   const next = new Map(drafts);
-  next.set(d.path, { repo: w.repo, path: d.path, base: w.blobs[d.path]?.sha ?? '', text: there ? keptBoth(text, there).text : text, at: Date.now() });
+  next.set(d.path, { repo: w.repo, path: d.path, base: w.blobs[d.path]?.sha ?? '', text: unparkText(text, there), at: Date.now() });
   keep(next);
   renderWork();
   await sendDrafts();
-  toast(unsent() ? '送信できませんでした。書いたものはこの端末に残っています' : '送信しました。GitHub の版と並べて残しています');
+  toast(unparkSentSaid(unsent()));
 }
 // the texts read from another encoding than UTF-8 (FR-WORK-03), episodes and notes: kept as drafts, made UTF-8, so
 // that the next send puts them on GitHub as UTF-8 (the server version does it when the work is taken in)
 async function keepConverted() {
   const w = /** @type {NonNullable<typeof work>} */ (work);
   const v = shown();
-  const paths = Object.keys(v.files).filter(p => converted.has(v.files[p].sha) && !drafts.has(p) && (isEpisode(v.layout, p) || isNote(v.layout, p)));
+  const paths = convertedPaths(v, converted, drafts);
   if (!paths.length) return;
   const got = await texts(paths);
   const next = new Map(drafts);
@@ -789,7 +741,7 @@ async function reload() {
     const kept = mode === 'off' ? lastRead : null;
     /** @type {import('./work.js').Work & { gone: string }} */
     let read;
-    if (kept && (!chosen || kept.branch === chosen)) read = { ...(await contents(kept, false)), gone: '' };
+    if (keptToOpen(kept, chosen)) read = { ...(await contents(/** @type {import('./work.js').Files} */ (kept), false)), gone: '' };
     else {
       // where the repository is now (FR-GH-10, FR-GH-12): renamed or moved on GitHub, followed; another repository
       // under its name, neither read nor sent to (the work as last read on this device) until the author says so.
@@ -837,7 +789,7 @@ async function reload() {
   const got = /** @type {NonNullable<typeof work>} */ (work);
   // (none read before on this branch: only the files gone are known)
   // (novel.toml as read now: the one before is not kept with the files)
-  await rebaseChanges({ blobs: lastRead?.branch === got.branch ? lastRead.blobs : got.blobs, config: got.config });
+  await rebaseChanges({ blobs: readAgainst(lastRead, got), config: got.config });
   await readMoved();
   refreshView();
   await keepConverted();
@@ -846,7 +798,7 @@ async function reload() {
   const paths = episodes().map(e => e.path);
   const w = /** @type {NonNullable<typeof work>} */ (work);
   const last = await store.get('prefs', `episode:${w.repo}`);
-  const open = paths.includes(current) ? current : paths.includes(last) ? last : (paths[0] ?? '');
+  const open = openAfterRead(paths, current, last);
   if (open) await openEpisode(open, false);
   else openNone();
   if (place && place.path === current) await showPreviewAt(place.at);
@@ -873,9 +825,6 @@ function leaveFailed(err) {
   toast(`作品を開けませんでした: ${err.message}`);
   changeRepo();
 }
-/** @param {string} name */
-const stopSaid = name =>
-  `${name} は、つないだリポジトリとは別のリポジトリになっています（GitHub で名前が変わったか、削除された後に同じ名前で作成された可能性があります）。送らずに止めています。GitHub で確かめてから「つなぎ直す」を押してください`;
 // an empty repository started as a work (the files a new work has), when the author says so
 /** @param {Repo} r */
 async function offerStart(r) {
@@ -970,8 +919,7 @@ const chosenBranch = async repoName => (await store.get('prefs', `branch:${repoN
 // the branch the changes not sent were written on, when it is not the one open ('' when it is, or none is known)
 const otherBranch = () => writtenOn(onOtherBranch([...drafts.values()], /** @type {NonNullable<typeof work>} */ (work).branch));
 /** @param {string} branch */
-const otherBranchSaid = branch =>
-  `この端末の未送信の変更は、ブランチ ${branch} で書いたものです。いまは ${/** @type {NonNullable<typeof work>} */ (work).branch} を開いているので、自動では送りません。${branch} に送るときは「⎇」で ${branch} に切り替えてください（「送る」を押すと、いまのブランチに送るかを確かめます）`;
+const otherBranchSaid = branch => otherSaid(branch, /** @type {NonNullable<typeof work>} */ (work).branch);
 // a branch that GitHub no longer has: no longer the one chosen on this device (the changes not sent stay as they are)
 /** @param {string} repoName @param {string} branch */
 async function forgetBranch(repoName, branch) {
@@ -999,7 +947,7 @@ async function refreshScreens() {
 // shown, and when the app comes back in front
 async function readIn() {
   const w = work;
-  if (!w || busy || w.offline || mode === 'off' || !onWork() || document.visibilityState !== 'visible') return;
+  if (!w || !readsIn({ read: true, busy, offline: w.offline, mode, onWork: onWork(), visible: document.visibilityState === 'visible' })) return;
   let head;
   try {
     head = await headOf(w.repo, w.branch);
@@ -1042,11 +990,12 @@ function follow(moves) {
 // the episode open, after the work changed under it (read in, or sent): gone, the first one opened; else, with no
 // draft of it, what the branch has now shown, the caret and the place read where they were (FR-SAVE-08)
 async function showOpen() {
-  if (current && !findEpisode(current)) {
+  const step = openStep(current, Boolean(findEpisode(current)), drafts.has(current));
+  if (step === 'first') {
     const first = episodes()[0];
     if (first) await openEpisode(first.path, false);
     else openNone();
-  } else if (current && !drafts.has(current)) {
+  } else if (step === 'show') {
     const text = textOf(current);
     const area = /** @type {HTMLTextAreaElement} */ ($('body'));
     // (another episode at its path now: its title too)
@@ -1070,16 +1019,23 @@ async function showOpen() {
 let autoTimer;
 function sendSoon(wait = AUTO_WAIT) {
   clearTimeout(autoTimer);
-  if (mode === 'auto' && unsent()) autoTimer = setTimeout(() => void sendNow(), wait);
+  if (autoSends(mode, unsent())) autoTimer = setTimeout(() => void sendNow(), wait);
 }
 async function sendNow() {
   clearTimeout(autoTimer);
   const w = work;
   if (!w || !onWork()) return;
-  if (busy && mode === 'auto' && unsent()) return sendSoon(5000);
-  const elsewhere = onOtherBranch([...drafts.values()], w.branch).length;
-  if (!stopped && sendsItself({ mode, unsent: unsent(), offline: w.offline, busy, elsewhere })) await sendDrafts();
-  else if (elsewhere && mode === 'auto') syncState(otherBranchSaid(otherBranch()), 'err');
+  if (busy && autoSends(mode, unsent())) return sendSoon(5000);
+  const step = sendNowStep({
+    stopped: Boolean(stopped),
+    mode,
+    unsent: unsent(),
+    offline: w.offline,
+    busy,
+    elsewhere: onOtherBranch([...drafts.values()], w.branch).length,
+  });
+  if (step === 'send') await sendDrafts();
+  else if (step === 'other') syncState(otherBranchSaid(otherBranch()), 'err');
 }
 /** @param {boolean} [pressed] 送る pressed (said in a toast when done, as the server version's push) */
 async function sendDrafts(pressed = false) {
@@ -1101,21 +1057,9 @@ async function sendDrafts(pressed = false) {
     await trace('SendStart');
     const result = await sendAll(w, [...drafts.values()], edits);
     failed = new Set();
-    // (the drafts as the device has them now, typed during the send too)
-    const typed = new Map(drafts);
-    const next = new Map(drafts);
-    // the texts refused (their file put in _trash/ there, or another file now), as the device has them now: set aside
-    // (one typed back to the text read during the send, or given up: none left to set aside)
-    const refused = result.refused.map(d => typed.get(d.path)).filter(d => d !== undefined);
-    for (const d of result.refused) next.delete(d.path);
-    for (const { draft, to, blob, both } of result.sent) {
-      // (gone from the device while it was sent: what the author has is the text read, not the one sent)
-      const after = afterSend(typed.get(draft.path) ?? goneWhileSent(draft, remoteText(draft.path)), draft.text, blob, both);
-      // (its file moved elsewhere: what was typed since goes there with it; another text moved to its path stays)
-      if (next.get(draft.path) === typed.get(draft.path)) next.delete(draft.path);
-      if (after) next.set(to, { ...after, path: to });
-    }
-    const went = result.sent.filter(s => s.to !== s.draft.path).map(s => /** @type {[string, string]} */ ([s.draft.path, s.to]));
+    // (the drafts as the device has them now, typed during the send too; the texts refused, their file put in _trash/
+    // there or another file now, set aside as the device has them now)
+    const { next, refused, went } = afterSent(drafts, result, remoteText);
     // (what is left was typed during the send: on what the branch is now, of the branch sent to)
     const sent = await contents(
       { repo: w.repo, branch: w.branch, commit: result.commit, tree: result.tree, updated: result.updated, blobs: result.blobs, folders: result.folders },
@@ -1133,11 +1077,9 @@ async function sendDrafts(pressed = false) {
     const titles = episodes()
       .filter(e => sides.has(e.path))
       .map(e => titleAt(e.rel));
-    if (sides.size) {
-      syncState(`送りました。${titles.join('、')}はほかでも書き換えられていたので、両方の版を並べました（${result.message}）`, 'err');
-      toast('ほかでも書き換えられていた話があります。両方の版を並べました');
-    } else if (result.message) syncState(`送りました（${result.message}）`, 'ok');
-    else syncState('送る変更はありませんでした（GitHub にもう同じ内容があります）', 'ok');
+    const said = sentSaid(titles, sides.size > 0, result.message);
+    syncState(said.text, said.kind);
+    if (said.toast) toast(said.toast);
     renderWork();
     void noteNow();
     await showOpen();
@@ -1154,11 +1096,7 @@ async function sendDrafts(pressed = false) {
     thenWrite(() => store.put('prefs', `failed:${w.repo}`, true));
     showCounts();
     syncState(
-      err instanceof Overlapped
-        ? `${err.message}。「再読み込み」で読み直してください（重なった話の追加・名前の変更・削除・並べ替えは取り消し、書いた文章は残します）`
-        : err instanceof GitHubError && err.status === 0
-          ? `${err.message}。書いたものはこの端末に残っています`
-          : `送れませんでした: ${err.message}。書いたものはこの端末に残っています`,
+      sendFailedSaid(err instanceof Overlapped ? 'overlapped' : err instanceof GitHubError && err.status === 0 ? 'offline' : 'other', err.message),
       'err',
     );
   } finally {
@@ -1200,8 +1138,7 @@ export async function open(r) {
   $('work-title').value = r.full_name.split('/')[1];
   /** @type {Draft[]} */
   const kept = await store.all('drafts');
-  drafts = new Map(kept.filter(d => d.repo === r.full_name && !d.parked).map(d => [d.path, d]));
-  parked = kept.filter(d => d.repo === r.full_name && d.parked);
+  ({ drafts, parked } = draftsOf(kept, r.full_name));
   edits = (await store.get('prefs', `edits:${r.full_name}`)) ?? [];
   folded = (await store.get('prefs', `closed:${r.full_name}`)) ?? [];
   changed = new Map(Object.entries((await store.get('prefs', `changed:${r.full_name}`)) ?? {}));
@@ -1232,7 +1169,7 @@ async function treeClick(e) {
   const fold = t.closest('[data-fold]');
   if (fold instanceof HTMLElement && !ordering) {
     const path = /** @type {string} */ (fold.dataset.fold);
-    folded = folded.includes(path) ? folded.filter(p => p !== path) : [...folded, path];
+    folded = toggled(folded, path);
     renderToc();
     await store.put('prefs', `closed:${/** @type {NonNullable<typeof work>} */ (work).repo}`, folded);
   }
@@ -1254,7 +1191,7 @@ function wireDrag() {
     if (!dragging || !(node instanceof HTMLElement) || node.dataset.node === dragging) return;
     e.preventDefault();
     clear();
-    node.classList.add(node.classList.contains('chapter') && dragging.endsWith('.md') ? 'drop-into' : 'drop-before');
+    node.classList.add(dropClass(node.classList.contains('chapter'), dragging));
   });
   tree.addEventListener('drop', e => {
     const node = /** @type {HTMLElement} */ (e.target).closest('[data-node]');
@@ -1362,7 +1299,7 @@ export function wire(on) {
     forPlans,
     openEpisode,
     current: () => current,
-    episodes: () => episodes().map(e => ({ path: e.path, rel: e.rel, title: titleAt(e.rel), chars: charsOf(textOf(e.path) ?? '') })),
+    episodes: () => episodeRows(episodes(), titleAt, textOf),
     title: titleAt,
     back: () => {
       show('desk');

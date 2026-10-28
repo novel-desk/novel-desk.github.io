@@ -1,5 +1,22 @@
 import { describe, test, expect } from 'vitest';
-import { API, bytesOf, textOf, nextPage, imageType, filesOf, failure, japaneseText, japaneseScore } from '../../lib/github.js';
+import {
+  API,
+  bytesOf,
+  textOf,
+  nextPage,
+  imageType,
+  filesOf,
+  failure,
+  japaneseText,
+  japaneseScore,
+  apiUrl,
+  appRefused,
+  timeOf,
+  writtenBy,
+  ownAccount,
+  mergeMade,
+  statusOf,
+} from '../../lib/github.js';
 
 describe('github', () => {
   test('API: GitHub REST API (the only place the CSP lets the page reach)', () => {
@@ -76,4 +93,44 @@ describe('japaneseText', () => {
     expect(japaneseScore('あ漢！\n\t')).toBe(3);
     expect(japaneseScore('ｱ\u0001x')).toBe(-30);
   });
+});
+
+// FR-GH-01, FR-GH-02, FR-GH-09, FR-EDIT-02: the requests
+describe('the requests', () => {
+  test('apiUrl: under the API, or as given whole', () => {
+    expect(apiUrl('/repos/a/b')).toBe('https://api.github.com/repos/a/b');
+    expect(apiUrl('https://api.github.com/x?page=2')).toBe('https://api.github.com/x?page=2');
+  });
+  test('appRefused: 401 of the App’s token; not another token’s, not another status', () => {
+    expect(appRefused(401, '')).toBe(true);
+    expect(appRefused(401, 'jwt')).toBe(false);
+    expect(appRefused(404, '')).toBe(false);
+  });
+  test('timeOf: a commit’s date; none or not read, 0', () => {
+    expect(timeOf('2026-10-27T05:00:00Z')).toBe(Date.parse('2026-10-27T05:00:00Z'));
+    expect(timeOf(undefined)).toBe(0);
+    expect(timeOf('x')).toBe(0);
+  });
+  test('writtenBy: the author as author and committer; none known, nothing', () => {
+    const a = { name: '作者', email: 'a@example.com' };
+    expect(writtenBy(a)).toEqual({ author: a, committer: a });
+    expect(writtenBy(null)).toEqual({});
+    expect(writtenBy(undefined)).toEqual({});
+  });
+  test('ownAccount: no owner, or the user’s own login; else an organization', () => {
+    expect(ownAccount('', 'kuro')).toBe(true);
+    expect(ownAccount('kuro', 'kuro')).toBe(true);
+    expect(ownAccount('org', 'kuro')).toBe(false);
+  });
+  test('mergeMade: the merge commit; nothing to merge, none', async () => {
+    expect(await mergeMade(201, async () => ({ sha: 'm' }))).toBe('m');
+    expect(await mergeMade(204, async () => ({ sha: 'm' }))).toBe(null);
+  });
+});
+// NFR-USE-01: why a request failed, by GitHub's status when it is GitHub's answer
+test('statusOf: the status an error carries; none for another error', () => {
+  expect(statusOf(Object.assign(new Error('x'), { status: 409 }))).toBe(409);
+  expect(statusOf(Object.assign(new Error('x'), { status: 0 }))).toBe(0);
+  expect(statusOf(new Error('x'))).toBe(null);
+  expect(statusOf(null)).toBe(null);
 });

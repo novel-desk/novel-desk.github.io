@@ -166,3 +166,42 @@ describe('notes (FR-NOTE-01, FR-NOTE-05, FR-NOTE-06)', () => {
     expect(nt.trashNote({ ...layout, plot: 'notes/a.md' }, [], 'notes/a.md', 'S').edits).toEqual([{ key: ['plot', 'file'], value: null }]);
   });
 });
+
+// FR-NOTE-01, FR-NOTE-05, FR-PLOT-03: the screen 資料
+describe('the screen 資料', () => {
+  test('noteTitle: the heading, else the file name', () => {
+    expect(nt.noteTitle('# 世界観\n本文', 'notes/world.md')).toBe('世界観');
+    expect(nt.noteTitle('本文', 'notes/world.md')).toBe('world.md');
+  });
+  test('notesWhere: said when there is no notes folder', () => {
+    expect(nt.notesWhere('notes')).toBe('');
+    expect(nt.notesWhere('')).toContain('資料のフォルダが設定されていません');
+  });
+  test('sectionText, sectionStart: a box put back between the lines around it; where it begins', () => {
+    const section = { before: ['# 題', '前'], after: ['後'] };
+    expect(nt.sectionText(section, '箱\n中')).toBe('# 題\n前\n箱\n中\n後');
+    expect(nt.sectionText(null, '全体')).toBe('全体');
+    expect(nt.sectionStart(section.before)).toBe(6);
+    expect(nt.sectionStart([])).toBe(0);
+  });
+  test('addNoteAsk, addedNote: in a folder, or 「フォルダ/名前」; closed or empty, nothing; spaces, refused', () => {
+    expect(nt.addNoteAsk('キャラ')).toBe('「キャラ」に作成する資料の名前（ファイル名は英数字になります。例: alice）');
+    expect(nt.addNoteAsk('')).toContain('フォルダに入れるときは「フォルダ/名前」');
+    expect(nt.addedNote(null, '')).toBe(null);
+    expect(nt.addedNote('', 'キャラ')).toBe(null);
+    expect(nt.addedNote('  ', '')).toEqual({ error: '名前を入れてください' });
+    expect(nt.addedNote('a/b', 'キャラ')).toEqual({ folder: 'キャラ', name: 'a/b' });
+    expect(nt.addedNote('旧版/キャラ/alice', '')).toEqual({ folder: '旧版/キャラ', name: 'alice' });
+    expect(nt.addedNote('alice', '')).toEqual({ folder: '', name: 'alice' });
+  });
+  test('noteRenameAsk: the plot’s note by its file name (its 大箱 stay); another by its name', () => {
+    expect(nt.noteRenameAsk(true, 'notes/plot.md', 'プロット')).toEqual({
+      now: 'plot',
+      ask: 'プロットの資料の新しいファイル名（英数字と - _）。大箱の見出しは変えません',
+    });
+    expect(nt.noteRenameAsk(false, 'notes/world.md', '世界観')).toEqual({
+      now: '世界観',
+      ask: '資料の新しい名前（資料の 1 行目の見出しになります。ファイル名は英数字になり、英数字が無ければ今のままです）',
+    });
+  });
+});

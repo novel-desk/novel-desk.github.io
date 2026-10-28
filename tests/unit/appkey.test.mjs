@@ -11,6 +11,8 @@ import {
   deviceOf,
   HOUR,
   installUrl,
+  installationOf,
+  keptToken,
   jwtBody,
   manifestOf,
   ownerOf,
@@ -165,4 +167,22 @@ describe('appkey', () => {
     expect(appFormOf({ credentialId: null })).toBe('local');
     expect(appFormOf({})).toBe('local');
   });
+});
+
+// FR-GH-01: an installation's token kept for its hour, and the installation a request is about
+test('keptToken: kept and not ending soon; none, fresh asked, or ending within 5 minutes: asked again', () => {
+  const kept = { token: 't', expires: 10 * 60000 };
+  expect(keptToken(kept, false, 0)).toBe('t');
+  expect(keptToken(undefined, false, 0)).toBe(null);
+  expect(keptToken(kept, true, 0)).toBe(null);
+  expect(keptToken(kept, false, 6 * 60000)).toBe(null);
+});
+test('installationOf: on the owner (any case); none named, the first', () => {
+  const list = [
+    { id: 1, account: { login: 'Org' } },
+    { id: 2, account: { login: 'Kuro' } },
+  ];
+  expect(installationOf(list, 'kuro')).toBe(list[1]);
+  expect(installationOf(list, '')).toBe(list[0]);
+  expect(installationOf(list, 'other')).toBeUndefined();
 });

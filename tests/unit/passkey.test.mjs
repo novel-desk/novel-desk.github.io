@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest';
-import { APP_KEY_INFO, createOptions, getOptions, openFailure, passkeyName, prfOf, webauthnFailure } from '../../lib/passkey.js';
+import { APP_KEY_INFO, createOptions, getOptions, openFailure, passkeyName, prfOf, webauthnFailure, prfInCaps, asksPasskey } from '../../lib/passkey.js';
 
 const bytes = n => new Uint8Array(n).fill(7);
 
@@ -62,4 +62,16 @@ describe('passkey', () => {
     expect(openFailure('test')).toBe('パスキーを使えません（test）');
     expect(openFailure(undefined)).toBe('パスキーを使えません（undefined）');
   });
+});
+
+// DESK-SEC-01: PRF said by the browser; the key kept by the version before opened with its passkey
+test('prfInCaps: true, false, or not said', () => {
+  expect(prfInCaps({ 'extension:prf': true })).toBe(true);
+  expect(prfInCaps({ 'extension:prf': false })).toBe(false);
+  expect(prfInCaps({ conditionalGet: true })).toBe(null);
+});
+test('asksPasskey: kept by the version before with a passkey; not with none, nor kept here without one', () => {
+  expect(asksPasskey({ credentialId: new Uint8Array([1]) })).toBe(true);
+  expect(asksPasskey({ credentialId: null })).toBe(false);
+  expect(asksPasskey({ kind: 'local' })).toBe(false);
 });

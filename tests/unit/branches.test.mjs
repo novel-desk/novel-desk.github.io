@@ -1,5 +1,17 @@
 import { test, expect } from 'vitest';
-import { branchNameError, commitDate, mergeLines } from '../../lib/branches.js';
+import {
+  branchNameError,
+  commitDate,
+  mergedSaid,
+  mergeFailure,
+  mergeLines,
+  mergeMessage,
+  mergeSides,
+  mergeTarget,
+  onlyThat,
+  switchedSaid,
+  switchPlan,
+} from '../../lib/branches.js';
 
 // FR-GH-09
 test('branchNameError: a name git takes; empty, spaces, .., a dot or / at either end, .lock refused', () => {
@@ -35,4 +47,43 @@ test('mergeLines: what is not sent, the commits (8 at most), the episodes change
 test("commitDate: month/day hours:minutes in the author's time, two digits each", () => {
   expect(commitDate('2026-10-07T19:05:00Z')).toBe('10/08 04:05');
   expect(commitDate('2026-01-31T23:59:00+09:00')).toBe('01/31 23:59');
+});
+
+// FR-GH-09: the branch chosen: what is not sent goes first, to the branch it was written on
+test('switchPlan: none or the same: nothing; written on another branch: only that one; sent first; made when not listed', () => {
+  const o = { name: 'b', current: 'main', unsent: 0, other: '', listed: ['main', 'b'] };
+  expect(switchPlan({ ...o, name: null })).toBe(null);
+  expect(switchPlan({ ...o, name: 'main' })).toBe(null);
+  expect(switchPlan({ ...o, unsent: 2, other: 'x' })).toEqual({ name: 'b', refuse: onlyThat('x'), sendFirst: false, create: false });
+  expect(switchPlan({ ...o, name: 'x', unsent: 2, other: 'x', listed: ['main'] })).toEqual({ name: 'x', refuse: '', sendFirst: false, create: true });
+  expect(switchPlan({ ...o, unsent: 1 })).toEqual({ name: 'b', refuse: '', sendFirst: true, create: false });
+  expect(switchPlan(o)).toEqual({ name: 'b', refuse: '', sendFirst: false, create: false });
+  expect(switchPlan({ ...o, other: 'x' })).toEqual({ name: 'b', refuse: '', sendFirst: false, create: false });
+  expect(onlyThat('x')).toBe('未送信の変更は x で書いたものです。x に切り替えるか、「送る」で送ってから、ほかのブランチに切り替えてください');
+});
+test('switchedSaid: made and switched to, or switched to', () => {
+  expect(switchedSaid('b', true)).toBe('b を作成して切り替えました');
+  expect(switchedSaid('b', false)).toBe('b に切り替えました');
+});
+// FR-GH-09: what a merge brings, said before it is made
+test('mergeSides: before, not for a file added or renamed; after, not for one removed', () => {
+  expect(mergeSides('modified')).toEqual({ before: true, after: true });
+  expect(mergeSides('added')).toEqual({ before: false, after: true });
+  expect(mergeSides('renamed')).toEqual({ before: false, after: true });
+  expect(mergeSides('removed')).toEqual({ before: true, after: false });
+});
+test('mergeTarget: main when listed, else the first', () => {
+  expect(mergeTarget(['dev', 'main'])).toBe('main');
+  expect(mergeTarget(['dev', 'x'])).toBe('dev');
+});
+test('mergeMessage, mergedSaid, mergeFailure: the commit’s message; merged or nothing to merge; a conflict, not found, else why', () => {
+  expect(mergeMessage('dev', 'main')).toBe('dev を main にマージ（Novel Desk から）');
+  expect(mergedSaid(true, 'dev', 'main')).toBe('dev を main にマージしました');
+  expect(mergedSaid(false, 'dev', 'main')).toBe('main には、もう dev の内容が全部入っています');
+  expect(mergeFailure(409, 'x', 'dev', 'main')).toBe(
+    'main と dev が競合しているため、自動ではマージできません。GitHub か Working Copy で競合を解消してください',
+  );
+  expect(mergeFailure(404, 'x', 'dev', 'main')).toBe('main か dev が GitHub に見つかりません');
+  expect(mergeFailure(500, 'GitHub のエラー', 'dev', 'main')).toBe('マージできませんでした: GitHub のエラー');
+  expect(mergeFailure(null, 'オフライン', 'dev', 'main')).toBe('マージできませんでした: オフライン');
 });

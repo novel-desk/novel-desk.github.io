@@ -1,6 +1,6 @@
 // Choosing one from a list (a branch, the plot's note, a 中箱, a chapter), or typing one (with the list as suggestions),
 // in a dialog. As the server version's public/ui/picker.js
-import { esc } from '../lib/format.js';
+import { pickerList, pickerOptions, pickerTyped } from '../lib/picker.js';
 import { $ } from './dom.js';
 
 /**
@@ -12,10 +12,8 @@ export function pick({ title, items, current = '', value = '', placeholder = '',
     const dlg = /** @type {HTMLDialogElement} */ (/** @type {unknown} */ ($('picker')));
     $('picker-title').textContent = title;
     $('picker-help').textContent = help;
-    $('picker-list').innerHTML = items
-      .map((x, i) => `<button type="button" data-pick="${i}" class="${x === current ? 'current' : ''}">${esc(x)}${x === current ? '（いま）' : ''}</button>`)
-      .join('');
-    $('picker-options').innerHTML = items.map(x => `<option value="${esc(x)}">`).join('');
+    $('picker-list').innerHTML = pickerList(items, current);
+    $('picker-options').innerHTML = pickerOptions(items);
     $('picker-input').value = value;
     $('picker-input').placeholder = placeholder;
     let done = false;
@@ -32,7 +30,7 @@ export function pick({ title, items, current = '', value = '', placeholder = '',
     };
     $('picker-form').onsubmit = e => {
       e.preventDefault();
-      finish($('picker-input').value.trim() || null);
+      finish(pickerTyped($('picker-input').value));
     };
     $('picker-close').onclick = () => finish(null);
     // closed by Escape (a picker closed just before this one opened sends its close a moment later: not this one's)

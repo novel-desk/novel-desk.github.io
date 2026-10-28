@@ -1,7 +1,25 @@
 // The preview and the way to the next and previous episodes (FR-EDIT-05, FR-EDIT-06): the buttons at the foot, and in
 // the preview a swipe sideways, a pull on past its end, and the page sliding along. The place read stays when the
 // preview is switched on and off. From the server version's public/ui/reading.js; the desk gives what it needs
-import { esc } from '../lib/format.js';
+import {
+  episodeNav,
+  hintPlace,
+  hintStep,
+  hintText,
+  intoLine,
+  placeAt,
+  pullEnd,
+  pullMove,
+  pullStart,
+  scrollAfterMove,
+  scrollToPlace,
+  slideFrames,
+  swipeOf,
+  swipeStart,
+  WHEEL,
+  wheelDir,
+  wheelStep,
+} from '../lib/reading.js';
 import { $, busy } from './dom.js';
 import { lineAtInBox, lineInBox, setPreviewButton } from './textbox.js';
 
@@ -22,11 +40,7 @@ export async function renderPreview() {
   const prev = desk.neighbor(-1),
     next = desk.neighbor(1);
   const html = await busy('読み込んでいます…', desk.draw);
-  pv().innerHTML =
-    html +
-    `<nav class="ep-nav">${prev ? `<button class="ghost" data-go="-1">‹ ${esc(prev.title)}</button>` : '<span></span>'}${
-      next ? `<button class="ghost" data-go="1">${esc(next.title)} ›</button>` : '<span class="muted small">最後の話です</span>'
-    }</nav>`;
+  pv().innerHTML = html + episodeNav(prev, next);
 }
 // the preview on or off, drawn
 /** @param {boolean} on */
@@ -51,15 +65,7 @@ export async function goEpisode(d, atEnd = false, axis = 'Y') {
     page = () => (was ? pv() : area());
   /** @type {(el: HTMLElement, from: number, to: number, ms: number, easing: string) => Promise<unknown>} */
   const move = (el, from, to, ms, easing) =>
-    still.matches
-      ? Promise.resolve()
-      : el.animate(
-          [
-            { transform: `translate${axis}(${from}%)`, opacity: from ? 0 : 1 },
-            { transform: `translate${axis}(${to}%)`, opacity: to ? 0 : 1 },
-          ],
-          { duration: ms, easing, fill: 'forwards' },
-        ).finished;
+    still.matches ? Promise.resolve() : el.animate(slideFrames(axis, from, to), { duration: ms, easing, fill: 'forwards' }).finished;
   try {
     await move(page(), 0, -d * 25, 160, 'ease-in');
     staying = was;
@@ -76,8 +82,8 @@ export async function goEpisode(d, atEnd = false, axis = 'Y') {
       setReading(true);
     }
     // pulled back from the top of the next: the end of this one (just above the way on)
-    const nav = pv().querySelector('.ep-nav');
-    pv().scrollTop = atEnd && was && nav ? Math.max(0, nav.getBoundingClientRect().top - pv().getBoundingClientRect().top - pv().clientHeight + 40) : 0;
+    const navTops = [...pv().querySelectorAll('.ep-nav')].map(nav => nav.getBoundingClientRect().top - pv().getBoundingClientRect().top);
+    pv().scrollTop = scrollAfterMove({ atEnd, reading: was, navTops, height: pv().clientHeight });
     await move(page(), d * 25, 0, 240, 'ease-out');
   } finally {
     for (const el of [pv(), area()]) el.getAnimations().forEach(a => a.cancel());
@@ -92,25 +98,27 @@ const topIn = el => el.getBoundingClientRect().top - pv().getBoundingClientRect(
 export function previewPlace() {
   const p = pv();
   // (every line of the text is an element, and the room under the last is less than the preview's height: one is there)
-  const el = /** @type {HTMLElement} */ (
-    /** @type {HTMLElement[]} */ ([...p.querySelectorAll('[data-l]')]).find(e => topIn(e) + e.offsetHeight > p.scrollTop + 1)
-  );
-  return { line: Number(el.dataset.l), into: Math.max(0, p.scrollTop - topIn(el)) / (el.offsetHeight || 1) };
+  const rows = /** @type {HTMLElement[]} */ ([...p.querySelectorAll('[data-l]')]).map(e => ({
+    line: Number(e.dataset.l),
+    top: topIn(e),
+    height: e.offsetHeight,
+  }));
+  return placeAt(rows, p.scrollTop);
 }
 // the preview shown, at a place (a line no longer in the text: the top)
 /** @param {{ line: number, into: number }} at */
 export async function showPreviewAt(at) {
   await renderPreview();
   setReading(true);
-  const el = /** @type {HTMLElement | null} */ (pv().querySelector(`[data-l="${at.line}"]`));
-  pv().scrollTop = el ? topIn(el) + at.into * el.offsetHeight : 0;
+  const rows = /** @type {HTMLElement[]} */ ([...pv().querySelectorAll(`[data-l="${at.line}"]`)]).map(el => ({ top: topIn(el), height: el.offsetHeight }));
+  pv().scrollTop = scrollToPlace(rows, at.into);
 }
 // writing ⇄ the preview, the place kept
 export async function togglePreview() {
   const a = area();
   if (!reading()) {
     const l = lineAtInBox(a, a.scrollTop);
-    return showPreviewAt({ line: l.line, into: Math.max(0, a.scrollTop - l.top) / l.height });
+    return showPreviewAt({ line: l.line, into: intoLine(a.scrollTop, l.top, l.height) });
   }
   const at = previewPlace();
   setReading(false);
@@ -129,81 +137,59 @@ export function wireReading(d) {
   $('prev-episode').addEventListener('click', () => void goEpisode(-1));
   $('next-episode').addEventListener('click', () => void goEpisode(1));
   $('toggle-preview').addEventListener('click', () => void togglePreview());
-  const p = pv(),
-    PULL = 90;
+  const p = pv();
   p.addEventListener('click', e => {
     const b = /** @type {HTMLElement} */ (e.target).closest('[data-go]');
     if (b instanceof HTMLElement) void goEpisode(Number(b.dataset.go));
   });
-  const atBottom = () => p.scrollTop + p.clientHeight >= p.scrollHeight - 2,
-    atTop = () => p.scrollTop <= 0;
+  // the preview at its bottom, at its top
+  const at = () => ({ bottom: p.scrollTop + p.clientHeight >= p.scrollHeight - 2, top: p.scrollTop <= 0 });
   // 「次の話へ移動」: shown only once letting go would move on, laid over the preview's edge from outside it
   let shown = 0;
   /** @type {(d: number, on: boolean) => void} */
   const hint = (d, on) => {
     const h = $('pull-hint');
-    if (!on) {
-      if (shown === d) {
-        h.hidden = true;
-        shown = 0;
-      }
-      return;
-    }
+    const step = hintStep(shown, d, on);
+    shown = step.shown;
+    if (step.hide) h.hidden = true;
+    if (!step.show) return;
     const r = p.getBoundingClientRect();
-    h.textContent = d > 0 ? '次の話へ移動' : '前の話へ移動';
+    h.textContent = hintText(d);
     h.hidden = false;
-    shown = d;
-    h.style.top = `${d > 0 ? r.bottom - h.offsetHeight - 12 : r.top + 12}px`;
-    h.style.left = `${r.left + r.width / 2}px`;
+    const place = hintPlace(d, r, h.offsetHeight);
+    h.style.top = `${place.top}px`;
+    h.style.left = `${place.left}px`;
   };
-  // touch: starting at the bottom (or the top), a pull of PULL px past it, then letting go. Which edge is decided by
-  // the way the finger goes (a short episode is at both at once)
-  /** @type {number | null} */
-  let startY = null;
-  /** @type {Record<number, boolean>} */
-  let can = { 1: false, '-1': false };
-  let edge = 0,
-    ready = false;
+  /** @param {[number, boolean][]} list */
+  const hints = list => list.forEach(([d, on]) => hint(d, on));
+  // touch: starting at the bottom (or the top), a pull past it, then letting go (lib/reading.js pullMove)
+  let pull = pullStart({ 1: false, '-1': false }, 0);
   p.addEventListener(
     'touchstart',
     e => {
-      can = { 1: atBottom() && !!desk.neighbor(1), '-1': atTop() && !!desk.neighbor(-1) };
-      startY = can[1] || can[-1] ? e.touches[0].clientY : null;
-      edge = 0;
-      ready = false;
+      const now = at();
+      pull = pullStart({ 1: now.bottom && !!desk.neighbor(1), '-1': now.top && !!desk.neighbor(-1) }, e.touches[0].clientY);
     },
     { passive: true },
   );
   p.addEventListener(
     'touchmove',
     e => {
-      if (startY == null) return;
-      const dy = startY - e.touches[0].clientY,
-        dir = dy > 0 ? 1 : dy < 0 ? -1 : 0;
-      if (dir !== edge) {
-        if (edge) hint(edge, (ready = false));
-        edge = can[dir] ? dir : 0;
-      }
-      if (!edge) return;
-      if (!(edge > 0 ? atBottom() : atTop())) {
-        hint(edge, (ready = false));
-        startY = null;
-        return;
-      }
-      const on = dy * edge > PULL;
-      if (on !== ready) hint(edge, (ready = on));
+      const moved = pullMove(pull, e.touches[0].clientY, at());
+      pull = moved.pull;
+      hints(moved.hints);
     },
     { passive: true },
   );
   p.addEventListener('touchend', () => {
-    if (ready) {
-      hint(edge, false);
-      void goEpisode(edge, edge < 0);
+    const ended = pullEnd(pull);
+    pull = ended.pull;
+    if (ended.go) {
+      hint(ended.go, false);
+      void goEpisode(ended.go, ended.go < 0);
     }
-    startY = null;
-    ready = false;
   });
-  // a sideways swipe: left for the next, right for the previous. Not from the very left edge (Safari's back)
+  // a sideways swipe: left for the next, right for the previous (lib/reading.js swipeOf)
   /** @type {number | null} */
   let sx = null,
     sy = 0;
@@ -211,43 +197,27 @@ export function wireReading(d) {
     'touchstart',
     e => {
       const t = e.touches[0];
-      sx = e.touches.length === 1 && t.clientX > 24 ? t.clientX : null;
+      sx = swipeStart(e.touches.length, t.clientX);
       sy = t.clientY;
     },
     { passive: true },
   );
   p.addEventListener('touchend', e => {
-    if (sx == null || ready) return;
-    const t = e.changedTouches[0],
-      dx = t.clientX - sx,
-      dy = t.clientY - sy;
+    if (sx == null || pull.ready) return;
+    const t = e.changedTouches[0];
+    const d = swipeOf(t.clientX - sx, t.clientY - sy, Boolean(getSelection()?.toString()));
     sx = null;
-    if (Math.abs(dx) > 70 && Math.abs(dx) > Math.abs(dy) * 2 && !getSelection()?.toString()) void goEpisode(dx < 0 ? 1 : -1, false, 'X');
+    if (d) void goEpisode(d, false, 'X');
   });
-  // wheel and trackpad: going on past the bottom (or the top) for a while. Only a turn started there counts
-  let pushed = 0,
-    last = 0,
-    armed = 0;
+  // wheel and trackpad: going on past the bottom (or the top) for a while (lib/reading.js wheelStep)
+  let wheel = WHEEL;
   p.addEventListener(
     'wheel',
     e => {
-      const dir = e.deltaY > 0 && atBottom() && desk.neighbor(1) ? 1 : e.deltaY < 0 && atTop() && desk.neighbor(-1) ? -1 : 0;
-      const fresh = e.timeStamp - last > 300;
-      last = e.timeStamp;
-      if (fresh) armed = dir;
-      if (!dir || armed !== dir || Math.sign(pushed || dir) !== dir) {
-        hint(1, false);
-        hint(-1, false);
-        pushed = 0;
-      }
-      if (!dir || armed !== dir) return;
-      pushed += e.deltaY;
-      hint(dir, Math.abs(pushed) > 150);
-      if (Math.abs(pushed) > 400) {
-        pushed = 0;
-        hint(dir, false);
-        void goEpisode(dir, dir < 0);
-      }
+      const step = wheelStep(wheel, e.deltaY, e.timeStamp, wheelDir(e.deltaY, at(), { next: Boolean(desk.neighbor(1)), prev: Boolean(desk.neighbor(-1)) }));
+      wheel = step.wheel;
+      hints(step.hints);
+      if (step.go) void goEpisode(step.go, step.go < 0);
     },
     { passive: true },
   );

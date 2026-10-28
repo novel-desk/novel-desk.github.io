@@ -3,7 +3,22 @@
 // its name: not sent to until the author says so, FR-GH-12), and what this device keeps of a work moved to the new
 // name. Making and renaming a repository needs Administration, which the GitHub App does not have: a token with it is
 // put in each time, used for that one request and not kept
-import { adminFailure, isWorkKey, keptAfterForget, movedKey, newWorkFiles, repoName, whereIs, withWork } from '../lib/works.js';
+import {
+  adminSaid,
+  askById,
+  idToKeep,
+  isWorkKey,
+  keptAfterForget,
+  madeUnread,
+  movedKey,
+  newWorkFiles,
+  newWorkProblem,
+  renameStep,
+  repoName,
+  whereIs,
+  withWork,
+} from '../lib/works.js';
+import { statusOf } from '../lib/github.js';
 import { $, busy, toast } from './dom.js';
 import * as store from './db.js';
 import * as gh from './github.js';
@@ -88,9 +103,10 @@ export async function locate(r) {
   /** @type {number} */
   const keptId = (await store.get('prefs', `id:${r.full_name}`)) ?? 0;
   const byName = await gh.repoMeta(r.full_name);
-  const byId = keptId && byName?.id !== keptId ? await gh.repoById(keptId) : null;
+  const byId = askById(keptId, byName) ? await gh.repoById(keptId) : null;
   const where = whereIs(r.full_name, keptId, byName, byId);
-  if (where.kind === 'same' && !keptId && where.meta) await store.put('prefs', `id:${r.full_name}`, where.meta.id);
+  const id = idToKeep(where, keptId);
+  if (id !== null) await store.put('prefs', `id:${r.full_name}`, id);
   return where;
 }
 // the repository under the work's name taken as its own (FR-GH-12: the author made sure of it)
@@ -118,7 +134,7 @@ export const titleFor = async repo => (await store.get('prefs', `new-title:${rep
 
 // what GitHub said when making or renaming failed, said for the screen
 /** @param {unknown} err */
-const said = err => (err instanceof gh.GitHubError && err.status !== 0 ? adminFailure(err.status, err.message) : /** @type {Error} */ (err).message);
+const said = err => adminSaid(statusOf(err), /** @type {Error} */ (err).message);
 
 // 新しい作品: a private repository made (with the token that has Administration), then started as a work when the
 // GitHub App can read it; else the author is told to install the App on it
@@ -131,15 +147,14 @@ async function createWork(open, relist) {
     $('new-work-state').textContent = t;
     $('new-work-state').className = bad ? 'error' : 'muted small';
   };
-  if (!title) return say('題名を入れてください', true);
-  if (!name) return say('リポジトリ名は、英数字と . _ - で 100 文字までにしてください', true);
-  if (!admin) return say('Administration の権限を付けたトークンを入れてください（作成するときだけ使用し、この端末には保存しません）', true);
+  const problem = newWorkProblem({ title, name, admin });
+  if (problem) return say(problem, true);
   $('create-work').disabled = true;
   say('作成しています…', false);
   try {
     let made;
     try {
-      made = await gh.createRepo(admin, $('new-work-owner').value.trim(), name, title);
+      made = await gh.createRepo(admin, $('new-work-owner').value.trim(), /** @type {string} */ (name), title);
     } catch (err) {
       throw new Error(`リポジトリを作成できませんでした: ${said(err)}`, { cause: err });
     }
@@ -149,11 +164,7 @@ async function createWork(open, relist) {
     if (!(await gh.repoMeta(made.full_name))) {
       $('new-work-title').value = '';
       newDialog().close();
-      toast(
-        made.mine
-          ? `${made.full_name}（非公開）を作りました。GitHub App がこのリポジトリにインストールされていないため、まだ読めません。設定の「App をインストールするリポジトリを選ぶ」で、このリポジトリを選んでから、一覧から開いてください。開くと作品を始めます`
-          : `${made.full_name}（非公開）を作りました。GitHub App は作成したアカウントのリポジトリにしかインストールできないため、組織のこのリポジトリは Novel Desk では開けません`,
-      );
+      toast(madeUnread(made.full_name, made.mine));
       await relist();
       return;
     }
@@ -177,14 +188,14 @@ const renameDialog = () => /** @type {HTMLDialogElement} */ (/** @type {unknown}
 /** @param {Desk} desk */
 async function renameRepo(desk) {
   const r = desk.repo();
-  const name = repoName($('rename-repo-name').value);
   const admin = $('rename-admin-token').value.trim();
   const say = (/** @type {string} */ t) => {
     $('rename-repo-error').textContent = t;
   };
-  if (!name) return say('リポジトリ名は、英数字と . _ - で 100 文字までにしてください');
-  if (name === r.full_name.split('/')[1]) return renameDialog().close();
-  if (!admin) return say('Administration の権限を付けたトークンを入れてください（名前を変えるときだけ使い、この端末には残しません）');
+  const step = renameStep({ name: repoName($('rename-repo-name').value), now: r.full_name.split('/')[1], admin });
+  if ('say' in step) return say(step.say);
+  if ('close' in step) return renameDialog().close();
+  const name = step.go;
   try {
     // (said in the band over the dialog, its button not pressed again meanwhile: DESK-OPS-05)
     const meta = await busy(

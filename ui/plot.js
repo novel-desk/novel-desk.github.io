@@ -4,11 +4,36 @@
 // a plain note, written back line for line (FR-PLOT-07): every change is a change of the note not sent, as anything
 // typed. From the server version's public/ui/plot.js
 import * as plans from '../lib/episodes.js';
-import { esc, n } from '../lib/format.js';
+import { moreLabel } from '../lib/format.js';
 import { relOf } from '../lib/layout.js';
 import { picturePaths, renderMd } from '../lib/markdown.js';
 import { newNote, notesList } from '../lib/notes.js';
-import { boxFor, chapterFor, episodesFor, findCard, NEW_PLOT, parsePlot, plain, writePlot } from '../lib/plot.js';
+import {
+  addGroup,
+  boxChoices,
+  boxFor,
+  boxHead,
+  cardTitle,
+  chapterOf,
+  currentBox,
+  doubleTap,
+  findCard,
+  foundBody,
+  linkOf,
+  moveBox,
+  NEW_PLOT,
+  nextCardHead,
+  nextGroupHead,
+  parsePlot,
+  parseSpec,
+  PLOT_EMPTY,
+  plotBoardHtml,
+  plotPanelHtml,
+  removeAsk,
+  removeBox,
+  toolsLabel,
+  writePlot,
+} from '../lib/plot.js';
 import { $, show, toast } from './dom.js';
 import * as store from './db.js';
 import { openNote, plotPath, showBox } from './notes.js';
@@ -16,8 +41,6 @@ import { pick } from './picker.js';
 import { api } from './shared.js';
 
 /** @typedef {import('../lib/plot.js').Plot} Plot */
-/** @typedef {import('../lib/plot.js').Group} Group */
-/** @typedef {import('../lib/plot.js').Card} Card */
 
 /** @type {{ path: string, text: string, plot: Plot } | null} the plot as drawn last */
 let plotNote = null;
@@ -37,8 +60,7 @@ export async function openPlot() {
   folded = new Set((await store.get('prefs', foldKey())) ?? []);
   $('plot-board').innerHTML = '<p class="muted small">読み込み中…</p>';
   if (!(await loadPlot())) {
-    $('plot-board').innerHTML =
-      `<p class="muted small">プロットの資料がありません。「# 大箱」「## 中箱」の見出しで書いた資料が、ここで箱になります。</p><button id="plot-new">プロットを作成</button>`;
+    $('plot-board').innerHTML = PLOT_EMPTY;
     return;
   }
   renderPlot();
@@ -52,37 +74,13 @@ function renderPlot() {
   const { plot } = /** @type {NonNullable<typeof plotNote>} */ (plotNote);
   // (the line over the boxes, empty: put away while they are shown, as the server version's)
   $('plot-where').hidden = true;
-  const links = api.view().layout.links;
-  const episodes = linkable();
-  /** @type {(kind: string, at: string | number, count: number, i: number) => string} */
-  const tools = (kind, at, count, i) =>
-    `<span class="pbox-tools"><button class="ghost" data-up="${kind}:${at}" ${i === 0 ? 'disabled' : ''} title="上へ" aria-label="上へ">↑</button><button class="ghost" data-down="${kind}:${at}" ${i === count - 1 ? 'disabled' : ''} title="下へ" aria-label="下へ">↓</button><button class="ghost" data-edit="${kind}:${at}">編集</button><button class="ghost more-tools" data-more-tools title="ほかの操作" aria-label="ほかの操作">⋯</button><button class="ghost danger" data-remove="${kind}:${at}" title="この箱を削除" aria-label="この箱を削除" hidden>削除</button></span>`;
-  /** @type {(g: Group, gi: number, c: Card, ci: number) => string} */
-  const card = (g, gi, c, ci) => {
-    const eps = episodesFor(plot, c, links, episodes);
-    return `<div class="pcard"><div class="pcard-head"><b>${esc(c.head)}</b>${tools('c', `${gi}:${ci}`, g.cards.length, ci)}</div>${
-      plain(c.body) ? `<p class="pcard-sum">${esc(plain(c.body))}</p>` : ''
-    }<div class="pcard-eps">${eps.map(e => `<button class="ep-chip" data-open="${esc(e.path)}">${esc(e.title)} <small>${n(e.chars)} 字</small></button>`).join('')}${
-      eps.length ? '' : `<button class="ghost small" data-write="${gi}:${ci}" title="この中箱の見出しを題名にして、新しい話を作成">新しい話を作成</button>`
-    }</div></div>`;
-  };
-  $('plot-board').innerHTML =
-    plot.groups
-      .map(
-        (g, gi) =>
-          `<details class="pgroup" ${folded.has(g.head) ? '' : 'open'} data-g="${gi}"><summary>${tools('g', gi, plot.groups.length, gi)}${esc(g.bare ? '（見出しの前）' : g.head)} <small>${g.cards.length} 箱</small></summary>${
-            plain(g.body) ? `<p class="pcard-sum">${esc(plain(g.body))}</p>` : ''
-          }<div class="pcards">${g.cards.map((c, ci) => card(g, gi, c, ci)).join('')}</div><button class="ghost small" data-add-card="${gi}">中箱を追加</button></details>`,
-      )
-      .join('') + '<button class="plot-add-group" id="plot-add-group">大箱を追加</button>';
+  $('plot-board').innerHTML = plotBoardHtml(plot, folded, api.view().layout.links, linkable());
   // a box shows three lines of its text; one with more gets 「続きを表示」
   for (const sum of /** @type {NodeListOf<HTMLElement>} */ ($('plot-board').querySelectorAll('.pcard-sum'))) {
     if (sum.scrollHeight <= sum.clientHeight + 2) continue;
     sum.insertAdjacentHTML('afterend', '<button class="ghost small sum-more" data-more>続きを表示</button>');
   }
 }
-/** @param {string} spec 「g:<大箱>」 or 「c:<大箱>:<中箱>」 */
-const parseSpec = spec => /** @type {['g' | 'c', number, number]} */ (spec.split(':').map((x, i) => (i ? Number(x) : x)));
 // a box written by itself, in the note's editor (「‹ 箱」 back here)
 /** @param {string} spec */
 async function editBox(spec) {
@@ -90,7 +88,7 @@ async function editBox(spec) {
   if ($('plot').hidden) return;
   const [kind, gi, ci] = parseSpec(spec);
   const note = /** @type {NonNullable<typeof plotNote>} */ (plotNote);
-  const want = kind === 'g' ? note.plot.groups[gi].head : note.plot.groups[gi].cards[ci].head;
+  const want = boxHead(note.plot, kind, gi, ci);
   // (the note was read when the boxes were drawn: it opens)
   await openNote(note.path, { label: '‹ 箱', title: 'プロットの箱の画面に戻る', go: () => void openPlot() });
   showBox(kind, gi, ci, want);
@@ -121,7 +119,7 @@ async function writeFrom(gi, ci) {
   const v = api.view();
   const titled = v.toc.map(it => ({ type: it.type, path: it.path, title: api.title(it.rel) }));
   const chapters = titled.filter(it => it.type === 'chapter');
-  let chapter = chapters.length ? chapterFor(titled, g.head)?.path : '';
+  let chapter = chapterOf(titled, g.head);
   if (chapter === undefined) {
     const choice = await pick({
       title: 'どの章に作成しますか',
@@ -131,7 +129,7 @@ async function writeFrom(gi, ci) {
     if (!choice) return;
     chapter = chapters.find(x => x.title === choice)?.path ?? '';
   }
-  const title = c.head.replace(/^中箱[\d０-９\-－]+[：:]?\s*/, '') || c.head;
+  const title = cardTitle(c.head);
   let plan;
   try {
     plan = plans.addEpisode(api.forPlans(), chapter, title);
@@ -183,62 +181,35 @@ async function boardClick(e) {
   const note = /** @type {NonNullable<typeof plotNote>} */ (plotNote);
   if (b.id === 'plot-add-group') {
     // a new 大箱 goes after the last 「大箱N」, before the sections that follow it
-    /** @type {(g: Group) => boolean} */
-    const numbered = g => /^大箱[\d０-９]+/.test(g.head);
-    const head = prompt('大箱の見出し（例: 大箱3：承②「バディの誕生」）', `大箱${note.plot.groups.filter(numbered).length + 1}：`);
-    if (head?.trim())
-      changePlot(p => {
-        const last = p.groups.findLastIndex(numbered);
-        p.groups.splice(last < 0 ? p.groups.length : last + 1, 0, { head: head.trim(), body: [''], cards: [] });
-      });
+    const head = prompt('大箱の見出し（例: 大箱3：承②「バディの誕生」）', nextGroupHead(note.plot));
+    if (head?.trim()) changePlot(p => addGroup(p, head.trim()));
     return;
   }
   if (d.addCard !== undefined) {
-    const gi = Number(d.addCard),
-      g = note.plot.groups[gi],
-      num = /^大箱([\d０-９]+)/.exec(g.head)?.[1];
-    const head = prompt('中箱の見出し（例: 中箱3-1：ダリウスの授業）', num ? `中箱${num}-${g.cards.length + 1}：` : '');
+    const gi = Number(d.addCard);
+    const head = prompt('中箱の見出し（例: 中箱3-1：ダリウスの授業）', nextCardHead(note.plot.groups[gi]));
     if (head?.trim()) changePlot(p => void p.groups[gi].cards.push({ head: head.trim(), body: [''] }));
     return;
   }
-  /** @type {(spec: string, by: number) => void} */
-  const moveBy = (spec, by) =>
-    changePlot(p => {
-      const [kind, gi, ci] = parseSpec(spec);
-      const list = kind === 'g' ? p.groups : p.groups[gi].cards,
-        at = kind === 'g' ? gi : ci,
-        to = at + by;
-      // the part before the first 大箱 stays first
-      const groups = /** @type {Group[]} */ (list);
-      if (to < 0 || to >= list.length || (kind === 'g' && (groups[to].bare || groups[at].bare))) return false;
-      [list[at], list[to]] = [list[to], list[at]];
-    });
-  if (d.up) return moveBy(d.up, -1);
-  if (d.down) return moveBy(d.down, 1);
+  if (d.up) return changePlot(p => moveBox(p, /** @type {string} */ (d.up), -1));
+  if (d.down) return changePlot(p => moveBox(p, /** @type {string} */ (d.down), 1));
   // 削除 waits behind ⋯, away from 編集
   if ('moreTools' in d) {
     const del = /** @type {HTMLElement} */ (b.parentElement?.querySelector('[data-remove]'));
     del.hidden = !del.hidden;
-    b.textContent = del.hidden ? '⋯' : '×';
+    b.textContent = toolsLabel(del.hidden);
     return;
   }
   if ('more' in d) {
     const open = /** @type {HTMLElement} */ (b.previousElementSibling).classList.toggle('open');
-    b.textContent = open ? '閉じる' : '続きを表示';
+    b.textContent = moreLabel(open);
     return;
   }
   if (d.edit) return editBox(d.edit);
   if (d.remove) {
-    const [kind, gi, ci] = parseSpec(d.remove);
-    const g = note.plot.groups[gi];
-    const what = kind === 'g' ? g : g.cards[ci];
-    if (
-      !confirm(
-        `「${what.head || '見出しの前'}」${kind === 'g' ? `と、その中の中箱 ${g.cards.length} 個` : ''}を削除しますか？（プロットの資料から削除します。対応している話は残ります）`,
-      )
-    )
-      return;
-    return changePlot(p => void (kind === 'g' ? p.groups.splice(gi, 1) : p.groups[gi].cards.splice(ci, 1)));
+    const spec = d.remove;
+    if (!confirm(removeAsk(note.plot, spec))) return;
+    return changePlot(p => removeBox(p, spec));
   }
   if (d.open) {
     await api.openEpisode(d.open);
@@ -281,28 +252,32 @@ export async function renderPlotPanel() {
   // (its pictures shown, as the server version's)
   /** @type {Record<string, string>} */
   const urls = {};
-  const body = found ? found.c.body.join('\n') : '';
+  const body = foundBody(found);
   for (const pic of picturePaths(body, p.path)) urls[pic] = await api.pictureUrl(pic);
-  panel.innerHTML = found
-    ? `<div class="plot-panel-head"><b>${esc(found.c.head)}</b><span class="grow"></span><button class="ghost small" data-plot-pick>中箱を変更</button><button class="ghost small" data-plot-open>プロット</button></div><div class="preview plot-panel-body">${renderMd(body, p.path, pic => urls[pic])}</div>`
-    : `<div class="plot-panel-head"><span class="muted small">${box ? `中箱「${esc(box)}」が見つかりません` : 'この話に対応するプロットの中箱はありません'}</span><span class="grow"></span><button class="ghost small" data-plot-pick>中箱を選択</button></div>`;
+  panel.innerHTML = plotPanelHtml(
+    found,
+    box,
+    renderMd(body, p.path, pic => urls[pic]),
+  );
 }
 // (its button is on the panel, which shows it only with the plot, for the episode open)
 async function pickBox() {
   const path = api.current();
   // (its button is on the panel only with the plot)
   const p = /** @type {NonNullable<typeof plotNote>} */ (await loadPlot());
-  const heads = p.plot.groups.flatMap(g => g.cards.map(c => c.head));
-  const episode = linkable().find(e => e.path === path);
-  const current = (episode && findCard(p.plot, boxFor(p.plot, episode, api.view().layout.links))?.c.head) || '';
+  const current = currentBox(
+    p.plot,
+    linkable().find(e => e.path === path),
+    api.view().layout.links,
+  );
   const chosen = await pick({
     title: 'この話の中箱',
-    items: [...heads, ...(current ? ['（対応を解除）'] : [])],
+    items: boxChoices(p.plot, current),
     current,
     help: 'この話を書くもとになるプロットの中箱を選んでください',
   });
   if (!chosen) return;
-  if (await setLink(path, chosen === '（対応を解除）' ? '' : chosen)) await renderPlotPanel();
+  if (await setLink(path, linkOf(chosen))) await renderPlotPanel();
 }
 
 export function wirePlot() {
@@ -342,13 +317,14 @@ export function wirePlot() {
     if (e.pointerType !== 'touch') return;
     const edit = boxEdit(/** @type {Element} */ (e.target)),
       now = performance.now();
-    if (edit && lastTap && lastTap.edit === edit.dataset.edit && now - lastTap.at < 400 && Math.hypot(e.clientX - lastTap.x, e.clientY - lastTap.y) < 30) {
+    const tap = edit && { edit: /** @type {string} */ (edit.dataset.edit), at: now, x: e.clientX, y: e.clientY };
+    if (tap && doubleTap(lastTap, tap)) {
       lastTap = null;
       e.preventDefault();
       getSelection()?.removeAllRanges();
       return void editBox(/** @type {string} */ (edit.dataset.edit));
     }
-    lastTap = edit ? { edit: /** @type {string} */ (edit.dataset.edit), at: now, x: e.clientX, y: e.clientY } : null;
+    lastTap = tap;
   });
   $('plot-peek').addEventListener('click', () => {
     peek = peek === api.current() ? null : api.current();

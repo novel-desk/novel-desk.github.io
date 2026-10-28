@@ -1,6 +1,6 @@
 // FR-WORK-08: the record of a work's writing drawn (public/lib/record.js)
 import { describe, expect, test } from 'vitest';
-import { allMonths, barChart, daysAndMonths, japanDate, lastDays, lastOfDays, signed } from '../../lib/record.js';
+import { allMonths, barChart, daysAndMonths, daysToCount, japanDate, lastDays, lastOfDays, recordHtml, recordTable, signed } from '../../lib/record.js';
 
 describe('record', () => {
   test('the last days, each one: a day not kept added nothing, nor the first', () => {
@@ -93,5 +93,44 @@ describe('points', () => {
       { day: '2026-10-21', sha: 'b' },
       { day: '2026-10-22', sha: 'd' },
     ]);
+  });
+});
+
+// FR-WORK-08: the record's screen, as bars and tables
+describe('the screen', () => {
+  test('recordTable: the newest first, the days that changed only, the first one as 「—」', () => {
+    const html = recordTable(
+      [
+        { at: '2026-10-20', chars: 1000, added: null },
+        { at: '2026-10-21', chars: 1000, added: 0 },
+        { at: '2026-10-22', chars: 900, added: -100 },
+        { at: '2026-10-23<', chars: 2500, added: 1600 },
+      ],
+      '日',
+    );
+    expect(html.startsWith('<table class="rec-table"><thead><tr><th>日</th>')).toBe(true);
+    expect(html).toContain(
+      '<tbody><tr><td>2026-10-23&lt;</td><td class="num">＋1,600字</td><td class="num">2,500字</td></tr><tr><td>2026-10-22</td><td class="num">−100字</td><td class="num">900字</td></tr><tr><td>2026-10-20</td><td class="num">—</td><td class="num">1,000字</td></tr></tbody>',
+    );
+    expect(html).not.toContain('2026-10-21');
+  });
+  test('recordHtml: why GitHub’s history is not there, the last 30 days and every month', () => {
+    const ends = { '2026-09-30': 100, '2026-10-01': 300 };
+    const html = recordHtml(ends, 'GitHub の履歴を<読めませんでした');
+    expect(html.startsWith('<p class="error">GitHub の履歴を&lt;読めませんでした</p><h2>日ごと（直近 30 日）</h2><svg')).toBe(true);
+    expect(html).toContain('<th>日</th>');
+    expect(html).toContain('<h2>月ごと</h2><svg');
+    expect(html).toContain('<th>月</th>');
+    expect(html).toContain('<td>2026-10</td><td class="num">＋200字</td>');
+    expect(html).toContain('増えた字数は、その日（その月）の終わりの合計の字数から');
+    expect(recordHtml({}, '').startsWith('<h2>日ごと（直近 30 日）</h2><table')).toBe(true);
+  });
+  test('daysToCount: the days the device has not noted', () => {
+    const last = [
+      { day: '2026-10-20', sha: 'a' },
+      { day: '2026-10-21', sha: 'b' },
+    ];
+    expect(daysToCount(last, { '2026-10-21': 5 })).toEqual([{ day: '2026-10-20', sha: 'a' }]);
+    expect(daysToCount(last, {})).toEqual(last);
   });
 });

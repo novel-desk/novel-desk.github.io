@@ -4,7 +4,8 @@
 import { filesOf, bytesOf, japaneseText, textOf } from '../lib/github.js';
 import { CONFIG, firstLayout, parseLayout, tableOfContents, episodesOf } from '../lib/layout.js';
 import { foldersOf } from '../lib/changes.js';
-import { extOf, layoutOf } from '../lib/merge.js';
+import { layoutOf } from '../lib/merge.js';
+import { namedBranch, shasToLook } from '../lib/view.js';
 import * as gh from './github.js';
 import * as store from './db.js';
 
@@ -107,8 +108,8 @@ export async function readFiles(repo, defaultBranch, chosen) {
   if (chosen) gone = chosen;
   let files = await readBranch(repo, defaultBranch, heads);
   const { config } = await configOf(files, false);
-  const branch = config === null ? '' : parseLayout(config).layout.branch;
-  if (branch && branch !== defaultBranch && branch !== gone) {
+  const branch = namedBranch(config === null ? '' : parseLayout(config).layout.branch, defaultBranch, gone);
+  if (branch) {
     const named = await readIfThere(repo, branch, heads);
     if (named) files = named;
     else gone ||= branch;
@@ -176,19 +177,9 @@ export async function readShas(work, shas) {
  * @param {boolean} offline @returns {Promise<import('../lib/merge.js').Look>}
  */
 export async function lookOf(repo, drafts, was, now, offline) {
-  /** @type {(string | undefined)[]} */
-  const shas = [];
-  /** @type {Set<string>} */
-  const kinds = new Set();
-  for (const d of drafts) {
-    if (d.op || !d.base || now.blobs[d.path]?.sha === d.base) continue;
-    shas.push(d.base, was.blobs[d.path]?.sha);
-    kinds.add(extOf(d.path));
-  }
-  for (const [q, { sha }] of Object.entries(now.blobs)) if (kinds.has(extOf(q)) && sha !== was.blobs[q]?.sha) shas.push(sha);
   /** @type {Record<string, string | null>} */
   const texts = {};
-  await each([...new Set(shas.filter(s => s !== undefined))], 6, async sha => {
+  await each(shasToLook(drafts, was, now), 6, async sha => {
     texts[sha] = await textAt(repo, sha, offline);
   });
   return { texts, was: layoutOf(was.config), now: layoutOf(now.config) };

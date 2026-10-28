@@ -1,15 +1,17 @@
 // The app: the GitHub App (made once, its key opened with a passkey each time), the repository chosen, and the desk. No
 // server: the page talks to GitHub's API only, and keeps what it needs on this device
-import { installHint, isIos, switchNow } from './lib/install.js';
+import { installHint, isIos, isStandalone, switchNow } from './lib/install.js';
 import { $, busy, show, toast } from './ui/dom.js';
 import * as store from './ui/db.js';
 import * as desk from './ui/desk.js';
 import * as gh from './ui/github.js';
 import * as vault from './ui/vault.js';
 import { api } from './ui/shared.js';
+import { statusOf } from './lib/github.js';
 import { importBox, showWorks, wireWorks } from './ui/works.js';
 import { appOf, madeApp, startManifest } from './ui/appkey.js';
-import { appFormOf, appSettingsUrl, authorOf, HOUR, installUrl, returnOf, sameOwner, startedHere } from './lib/appkey.js';
+import { appFormOf, authorOf, installUrl, returnOf, startedHere } from './lib/appkey.js';
+import { afterInstall, leaveLinks, linkState, othersDrafts, screenSaid, themeColor, themeOf, waitingFlow } from './lib/settings.js';
 import { forgetDevice, keepWork, worksHere } from './ui/repo.js';
 
 // started: every module came and linked (boot.js reloads the page once when they do not)
@@ -85,7 +87,7 @@ const whoseApp = app => app.who().catch(() => null);
 async function checkLogin(who) {
   const owner = await store.get('prefs', 'owner');
   const left = (await store.all('drafts')).length;
-  if (left && who && !sameOwner(owner, who)) {
+  if (othersDrafts(left, owner, who)) {
     if (
       !confirm(
         `この端末に、前にログインしていた人の未送信の書きかけが ${left} 件あります。削除して続けますか？（中身は表示しません。キャンセルすると、この GitHub Appを保管しません）`,
@@ -146,8 +148,8 @@ function screenInfo() {
   document.body.append(probe);
   const { paddingTop, paddingBottom } = getComputedStyle(probe);
   probe.remove();
-  const home = matchMedia('(display-mode: standalone)').matches || /** @type {any} */ (navigator).standalone === true;
-  return `この端末の画面: ${innerWidth}×${innerHeight}、倍率 ${devicePixelRatio}、上の余白 ${parseFloat(paddingTop)}、下の余白 ${parseFloat(paddingBottom)}（${home ? 'ホーム画面のアプリ' : 'ブラウザ'}）`;
+  const home = isStandalone(matchMedia('(display-mode: standalone)').matches, /** @type {any} */ (navigator).standalone);
+  return screenSaid({ width: innerWidth, height: innerHeight, ratio: devicePixelRatio, top: parseFloat(paddingTop), bottom: parseFloat(paddingBottom), home });
 }
 // 作品の一覧 (the server version's shelf): no work in the address
 async function chooseRepo() {
@@ -172,31 +174,28 @@ async function openSettings() {
   $('relink').hidden = true;
   const app = /** @type {import('./ui/github.js').App} */ (appInUse);
   let who = null;
-  let state = 'GitHub App で連携しています';
+  /** @type {{ installs: number } | { status: number | null }} */
+  let asked;
   try {
     who = await app.who();
     // (installed nowhere: uninstalled on GitHub)
-    if (!(await app.installedOn()).length)
-      state = 'GitHub App が、どのリポジトリにもインストールされていません。「App をインストールするリポジトリを選ぶ」で、作品のリポジトリを選んでください。';
+    asked = { installs: (await app.installedOn()).length };
   } catch (err) {
-    if (err instanceof gh.GitHubError && (err.status === 401 || err.status === 404)) {
-      state = 'GitHub App との連携が無効になっています。GitHub がこの App の認証を拒否しました。GitHub で App を削除した場合も、この表示になります。';
-      $('relink').hidden = false;
-    }
+    asked = { status: statusOf(err) };
   }
-  $('gh-state').textContent = state;
+  const state = linkState(asked);
+  $('relink').hidden = !state.relink;
+  $('gh-state').textContent = state.text;
   $('me').textContent = who ? `GitHub の ${who.login}` : '';
 }
 // 連携をやめるとき: an App made here, its own page to delete it on
 function showLeave() {
-  const slug = appVault?.slug;
-  $('app-repos-link').setAttribute('href', slug ? installUrl(slug) : 'https://github.com/settings/installations');
+  const links = leaveLinks(appVault?.slug);
+  $('app-repos-link').setAttribute('href', links.repos);
   const link = $('leave-app-link');
-  link.setAttribute('href', slug ? appSettingsUrl(slug) : 'https://github.com/settings/apps');
-  link.textContent = slug ? `「${slug}」の Advanced のページ` : 'GitHub App の一覧';
-  $('leave-app-then').textContent = slug
-    ? 'を開き、「Delete GitHub App」を押して、App の名前を入れます。'
-    : 'でこの端末の App を開き、Advanced の「Delete GitHub App」を押して、App の名前を入れます。';
+  link.setAttribute('href', links.app);
+  link.textContent = links.label;
+  $('leave-app-then').textContent = links.then;
 }
 
 // --- the App's installation tokens refused by GitHub (401, asked for again): said, with what to do (the App made
@@ -266,7 +265,7 @@ addEventListener('pageshow', resetMakeApp);
 async function showPaste() {
   /** @type {Pending | undefined} */
   const p = await store.get('prefs', 'app-manifest');
-  $('app-paste-form').hidden = !(p && Date.now() - p.at < HOUR);
+  $('app-paste-form').hidden = !waitingFlow(p, Date.now());
 }
 // GitHub came back with the App made: taken only by the flow started here (its state, within the hour, once). Back
 // somewhere else (another browser, or Safari and not the app on the home screen): not taken there, and the code shown
@@ -330,13 +329,14 @@ async function installed(leave) {
     $('app-install-error').textContent = err.message;
     return;
   }
-  if (!repos.length) {
+  const next = afterInstall(repos);
+  if (next.kind === 'none') {
     $('app-install-link').setAttribute('href', installUrl(/** @type {string} */ (v.slug)));
     show('app-install');
     if (leave) location.assign(installUrl(/** @type {string} */ (v.slug)));
     return;
   }
-  if (repos.length === 1) return openRepo({ full_name: repos[0].full_name, default_branch: repos[0].default_branch, visibility: repos[0].visibility });
+  if (next.kind === 'one') return openRepo({ full_name: next.repo.full_name, default_branch: next.repo.default_branch, visibility: next.repo.visibility });
   await chooseRepo();
   importBox().open = true;
 }
@@ -491,7 +491,7 @@ $('token-notice-close').addEventListener('click', hideNotice);
 /** @type {any} the browser's offer to install the app (Chrome), kept for the button */
 let offer = null;
 function showInstall() {
-  const standalone = matchMedia('(display-mode: standalone)').matches || /** @type {any} */ (navigator).standalone === true;
+  const standalone = isStandalone(matchMedia('(display-mode: standalone)').matches, /** @type {any} */ (navigator).standalone);
   const hint = installHint({ standalone, ios: isIos(navigator), offered: offer !== null });
   $('install-ios').hidden = hint !== 'ios';
   $('install-app').hidden = hint !== 'button';
@@ -523,13 +523,11 @@ function setTheme(t) {
     else localStorage.removeItem('theme');
   } catch {}
   // the browser's bar follows: one color for both, or back to the device's (as the server version's)
-  for (const m of /** @type {NodeListOf<HTMLMetaElement>} */ (document.querySelectorAll('meta[name="theme-color"]')))
-    m.content = t === 'dark' ? '#16171a' : t === 'light' ? '#f2eee6' : m.media.includes('dark') ? '#16171a' : '#f2eee6';
+  for (const m of /** @type {NodeListOf<HTMLMetaElement>} */ (document.querySelectorAll('meta[name="theme-color"]'))) m.content = themeColor(t, m.media);
   for (const b of /** @type {NodeListOf<HTMLElement>} */ (document.querySelectorAll('[data-theme-pick]'))) b.classList.toggle('on', b.dataset.themePick === t);
 }
 try {
-  const t = localStorage.getItem('theme');
-  setTheme(t === 'light' || t === 'dark' ? t : '');
+  setTheme(themeOf(localStorage.getItem('theme')));
 } catch {
   setTheme('');
 }

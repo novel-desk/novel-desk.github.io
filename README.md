@@ -233,6 +233,6 @@ npm run check:ui    # push の前に 1 回: 画面の試験（Chrome と WebKit�
 - `docs/`: Novel Desk だけの要件（`requirements.md`）と、サーバー版との違い（`server-differences.md`）
 - `tools/server_diff.mjs`、`tools/server-diff-allowed.txt`: サーバー版の `style.css` と `index.html` と比べる点検（`npm run check:server`）と、理由のある違いの一覧。サーバー版のフォルダは `NOVEL_WRITER_DIR`（無ければ `~/novel-writer`）で、`git show` で読むだけです
 - `ui/`: I/O の層（IndexedDB、パスキー、GitHub の API、目次と本文、送る処理、入力補助のバー、プレビューと前後の話、画像、履歴、資料、プロット、キャラ、横の資料、記録、リリース、ブランチ、未送信の一覧、トレース検証の記録）。`ui/shared.js` は、書く画面（desk.js）がほかの画面に渡す窓口です
-- `lib/`: 純粋な関数（TOML とその書き換え、novel.toml と目次、未送信の変更、話の追加・題名の変更・削除・並べ替えの決まり、資料と画像、プロット、キャラ、記録、リリース、ブランチ、差分、Markdown、commit メッセージ、積み直し、文字コード）
+- `lib/`: 純粋な関数（TOML とその書き換え、novel.toml と目次、未送信の変更、話の追加・題名の変更・削除・並べ替えの決まり、資料と画像、プロット、キャラ、記録、リリース、ブランチ、差分、Markdown、commit メッセージ、積み直し、文字コード）。画面に出す文言と HTML（目次、資料の一覧、横の資料、プロットの箱、キャラのカード、履歴、リリース、作品の一覧、未送信の一覧、設定）、プレビューから前後の話へ移る操作（引っ張る、横にスワイプする、ホイール）の判断、入力補助のバーで入れる文字、送る処理と読み込みで決める部分も、`lib/` に置きます。`ui/` と `app.js` には、画面の部品とつなぐ薄いコードだけを置きます
 - `sw.js`、`manifest.webmanifest`: オフライン用の控えと、ホーム画面に追加するための設定
 - `formal/`: 送る処理の TLA+ のモデルと、トレース検証のモデル（`tools/trace_check.mjs`、`tools/trace/`）

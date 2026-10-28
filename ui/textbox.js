@@ -1,6 +1,7 @@
 // The text box of the episode: the input bar, where things are laid out in it. From the server version's
 // public/ui/textbox.js
 import { lineBreaks } from '../lib/format.js';
+import { barText, caretScroll, laidLine, lineAt, linesBefore, pageShift, previewFace } from '../lib/textbox.js';
 
 /** @typedef {import('./dom.js').El} El */
 
@@ -65,9 +66,9 @@ export function inBoxCopy(area, fill) {
 export function lineInBox(area, n) {
   const lines = area.value.split('\n');
   return inBoxCopy(area, copy => {
-    copy.textContent = n ? lines.slice(0, n).join('\n') + (lines[n - 1] ? '' : '​') : '';
+    copy.textContent = linesBefore(lines, n);
     const it = document.createElement('div');
-    it.textContent = lines[n] || '​';
+    it.textContent = laidLine(lines[n]);
     copy.append(it);
     return () => ({ top: it.offsetTop, height: it.offsetHeight });
   });
@@ -80,14 +81,16 @@ export function lineAtInBox(area, y) {
     for (let from = 0; from < lines.length; from += 200) {
       for (const line of lines.slice(from, from + 200)) {
         const d = document.createElement('div');
-        d.textContent = line || '​';
+        d.textContent = laidLine(line);
         copy.append(d);
       }
       if (copy.offsetHeight > y + 1) break;
     }
-    const divs = /** @type {HTMLCollectionOf<HTMLElement>} */ (copy.children);
-    let i = 0;
-    while (i + 1 < divs.length && divs[i + 1].offsetTop <= y) i++;
+    const divs = /** @type {HTMLElement[]} */ ([...copy.children]);
+    const i = lineAt(
+      divs.map(d => d.offsetTop),
+      y,
+    );
     return { line: i, top: divs[i].offsetTop, height: divs[i].offsetHeight };
   });
 }
@@ -97,8 +100,8 @@ export function lineAtInBox(area, y) {
 // above the keyboard while writing, `view` shows the text as read
 /** @param {El} bar @param {HTMLTextAreaElement} area @param {El} page @param {() => void} view */
 export function inputBar(bar, area, page, view) {
-  /** @type {(text: string, caretFromEnd?: number) => void} */
-  const put = (text, caretFromEnd = 0) => {
+  /** @type {(text: string, caretFromEnd: number) => void} */
+  const put = (text, caretFromEnd) => {
     area.focus();
     if (!document.execCommand('insertText', false, text)) insertAt(area, text);
     if (caretFromEnd) area.selectionStart = area.selectionEnd = area.selectionEnd - caretFromEnd;
@@ -112,7 +115,7 @@ export function inputBar(bar, area, page, view) {
       h = `${vv.height}px`,
       moved = page.style.height !== h;
     page.style.height = h;
-    page.style.transform = vv.pageTop ? `translateY(${vv.pageTop}px)` : '';
+    page.style.transform = pageShift(vv.pageTop);
     // the caret's line follows at once, every time the page gets shorter
     if (moved) showCaret();
   };
@@ -126,7 +129,8 @@ export function inputBar(bar, area, page, view) {
       copy.append(mark);
       return () => ({ y: mark.offsetTop, line: mark.offsetHeight });
     });
-    if (y < area.scrollTop || y + line > area.scrollTop + area.clientHeight - 8) area.scrollTop = Math.max(0, y - area.clientHeight / 2);
+    const to = caretScroll({ y, line, scrollTop: area.scrollTop, height: area.clientHeight });
+    if (to !== null) area.scrollTop = to;
   };
   // the keyboard slides in (and iOS shifts the page) after the first resize: measure again until it settles
   let settle = 0;
@@ -183,13 +187,9 @@ export function inputBar(bar, area, page, view) {
       view();
       return;
     }
-    if (b.dataset.ins) return put(b.dataset.ins);
-    if (b.dataset.wrap) {
-      const [o, c] = [...b.dataset.wrap];
-      return sel ? put(o + sel + c) : put(o + c, 1);
-    }
-    // ルビ (the bar's last kind of button): ｜選んだ文字《》 with the caret in 《》; nothing chosen: ｜《》 with the caret after ｜
-    return sel ? put(`｜${sel}《》`, 1) : put('｜《》', 2);
+    // 「」 …… ―― 全角スペース, or ルビ (the bar's last kind of button)
+    const { text, back } = barText(b.dataset, sel);
+    put(text, back);
   });
 }
 
@@ -201,8 +201,9 @@ const ICON_EYE =
 // the preview button: an open book while writing, a pen while reading
 /** @param {El} btn @param {boolean} reading */
 export function setPreviewButton(btn, reading) {
-  btn.innerHTML = reading ? ICON_PEN : ICON_EYE;
-  btn.title = reading ? '編集に戻る' : 'プレビュー';
+  const face = previewFace(reading);
+  btn.innerHTML = { pen: ICON_PEN, book: ICON_EYE }[face.icon];
+  btn.title = face.title;
   btn.setAttribute('aria-label', btn.title);
   btn.classList.toggle('on', reading);
 }

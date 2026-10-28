@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest';
-import { esc, charsOf, n, lineBreaks, rowTimes, when, whenLong } from '../../lib/format.js';
+import { esc, charsOf, n, lineBreaks, moreLabel, newName, rowTimes, when, whenLong } from '../../lib/format.js';
 
 describe('format', () => {
   test('esc: the five characters of HTML, anything made text', () => {
@@ -46,4 +46,17 @@ describe('format', () => {
     expect(rowTimes({}, now)).toEqual({});
     expect(rowTimes({ x: a })).toEqual({ x: when(a) });
   });
+});
+
+// FR-PLOT-01, FR-NOTE-07: a box's text cut to three lines, opened whole by its button
+test('moreLabel: 閉じる while open, else 続きを表示', () => {
+  expect(moreLabel(true)).toBe('閉じる');
+  expect(moreLabel(false)).toBe('続きを表示');
+});
+// FR-EDIT-08, FR-NOTE-05: a new name typed: nothing to change when closed, empty, or the name now
+test('newName: trimmed; null when closed, nothing typed, or the same', () => {
+  expect(newName('  alice ', 'bob')).toBe('alice');
+  expect(newName(null, 'bob')).toBe(null);
+  expect(newName('   ', 'bob')).toBe(null);
+  expect(newName(' bob ', 'bob')).toBe(null);
 });

@@ -3,17 +3,16 @@
 // before this device noted any are counted, once, from the commits of the work's branch on GitHub: each day's last
 // commit, its episodes as novel.toml now takes them (the server version's src/record.rs). Drawn by lib/record.js
 import { filesOf, textOf } from '../lib/github.js';
-import { esc, charsOf, n } from '../lib/format.js';
+import { charsOf } from '../lib/format.js';
 import { episodesOf, tableOfContents } from '../lib/layout.js';
 import { foldersOf } from '../lib/changes.js';
-import { allMonths, barChart, daysAndMonths, japanDate, lastDays, lastOfDays, signed } from '../lib/record.js';
+import { daysToCount, japanDate, lastOfDays, recordHtml } from '../lib/record.js';
 import { $, show } from './dom.js';
 import * as store from './db.js';
 import * as gh from './github.js';
 import { api } from './shared.js';
 import { bytes, each } from './work.js';
 
-/** @typedef {import('../lib/record.js').Point} Point */
 /** @typedef {{ days: Record<string, number>, history: boolean }} Kept the record kept on the device for a work */
 
 /** @param {string} repo */
@@ -32,8 +31,7 @@ async function fromHistory(kept) {
   const w = api.work();
   const commits = await gh.branchCommits(w.repo, w.branch);
   const layout = api.view().layout;
-  for (const { day, sha } of lastOfDays(commits, japanDate(Date.now()))) {
-    if (day in kept.days) continue;
+  for (const { day, sha } of daysToCount(lastOfDays(commits, japanDate(Date.now())), kept.days)) {
     const { tree } = await gh.commitOf(w.repo, sha);
     const { blobs } = filesOf((await gh.treeFiles(w.repo, tree)).tree);
     const paths = Object.keys(blobs);
@@ -47,18 +45,6 @@ async function fromHistory(kept) {
   }
   kept.history = true;
 }
-
-// the rows of a table: the newest first, those that changed only (the first: its count, its start not known)
-/** @type {(points: Point[]) => string} */
-const rows = points =>
-  points
-    .filter(p => p.added !== 0)
-    .reverse()
-    .map(p => `<tr><td>${esc(p.at)}</td><td class="num">${p.added === null ? '—' : `${signed(p.added)}字`}</td><td class="num">${n(p.chars)}字</td></tr>`)
-    .join('');
-/** @type {(points: Point[], what: string) => string} */
-const table = (points, what) =>
-  `<table class="rec-table"><thead><tr><th>${what}</th><th class="num">増えた字数</th><th class="num">合計</th></tr></thead><tbody>${rows(points)}</tbody></table>`;
 
 export async function openRecord() {
   const w = api.work();
@@ -80,11 +66,7 @@ export async function openRecord() {
       failed = `GitHub の履歴を読めませんでした（${err.message}）。この端末で書いた日だけを出しています`;
     }
   }
-  const { days, months } = daysAndMonths(kept.days);
-  $('record-body').innerHTML =
-    `${failed ? `<p class="error">${esc(failed)}</p>` : ''}<h2>日ごと（直近 30 日）</h2>${barChart(lastDays(days, 30))}${table(days, '日')}
-    <h2>月ごと</h2>${barChart(allMonths(months))}${table(months, '月')}
-    <p class="muted small">増えた字数は、その日（その月）の終わりの合計の字数から、前の日（前の月）の終わりの合計を引いたものです。削除した分は差し引きます。最初の日と月は、その前が分からないので「—」です。この端末で書いた日は書くたびに残し、それより前の日は GitHub の commit から分かる日だけです（その日の最後の commit の字数）。</p>`;
+  $('record-body').innerHTML = recordHtml(kept.days, failed);
 }
 
 export function wireRecord() {

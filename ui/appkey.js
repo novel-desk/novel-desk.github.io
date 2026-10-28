@@ -4,7 +4,7 @@
 // installation of the App a token for an hour, used for the requests about that installation's repositories, and
 // asked for again before it ends and when GitHub refuses it (ui/github.js). The commits are written as the author,
 // not as the App
-import { appName, base64url, deviceOf, jwtBody, manifestOf, ownerOf, renewNow, suffixOf } from '../lib/appkey.js';
+import { appName, base64url, deviceOf, installationOf, jwtBody, keptToken, manifestOf, ownerOf, suffixOf } from '../lib/appkey.js';
 import * as store from './db.js';
 import * as gh from './github.js';
 import { lockApp } from './vault.js';
@@ -34,14 +34,13 @@ export function appOf(appId, key, author) {
   // the installation on the owner of the repository a request is about (none: the first one)
   /** @param {string} url */
   const installationFor = async url => {
-    const owner = ownerOf(url);
-    return (await listed()).find(x => !owner || x.account.login.toLowerCase() === owner);
+    return installationOf(await listed(), ownerOf(url));
   };
   // an installation's token: the one kept, unless it is to be asked for again
   /** @param {number} id @param {boolean} fresh */
   const tokenOf = async (id, fresh) => {
-    const kept = tokens.get(id);
-    if (kept && !fresh && !renewNow(kept, Date.now())) return kept.token;
+    const kept = keptToken(tokens.get(id), fresh, Date.now());
+    if (kept !== null) return kept;
     const made = (await gh.requestAs(await jwt(), 'POST', `/app/installations/${id}/access_tokens`, {})).json;
     tokens.set(id, { token: made.token, expires: Date.parse(made.expires_at) });
     return made.token;
