@@ -78,7 +78,7 @@ test('read in on the notes screen: the note open follows GitHub, its caret kept;
   await page.locator('#note-body').fill('# 世界観\n\nここで書いた。\n');
   work.push({ 'notes/world.md': '# 世界観\n\nほかで書いた。\n' });
   await inFront(page);
-  await expect(page.locator('#toast')).toHaveText('ほかの端末の更新を読み込みました');
+  await expect(page.locator('#toast')).toHaveText('ほかの端末の更新を読み込みました（話の本文は変わっていません）');
   await expect(page.locator('#note-body')).toHaveValue('# 世界観\n\nここで書いた。\n');
   await expect(page.locator('#note-state')).toHaveText('端末に保存済み（未送信）');
   await leave(page);

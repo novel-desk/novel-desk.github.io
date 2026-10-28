@@ -179,7 +179,7 @@ test('written elsewhere while open: read in when the app is back in front; the c
   await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
   await expect(page.locator('#body')).toHaveValue('# 第1話 はじまり\n\n朝が来た。ほかで足した。\n');
   expect(await page.locator('#body').evaluate(a => /** @type {HTMLTextAreaElement} */ (a).selectionStart)).toBe(3);
-  await expect(page.locator('#toast')).toHaveText('ほかの端末の更新を読み込みました');
+  await expect(page.locator('#toast')).toHaveText('ほかの端末の更新を読み込みました（はじまり、駅で）');
   await page.locator('#body').fill('ここで書いた\n');
   work.push({ 'chapters/01_first.md': '# 第1話 はじまり\n\nまたほかで。\n' });
   await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
@@ -313,7 +313,7 @@ test('written elsewhere while open: the open episode deleted, the first opened, 
   // another episode changed: the open one left as it is
   work.push({ 'chapters/01_first.md': '# 第1話 はじまり\n\nほかで\n' });
   await inFront(page);
-  await expect(page.locator('#toast')).toHaveText('ほかの端末の更新を読み込みました');
+  await expect(page.locator('#toast')).toHaveText('ほかの端末の更新を読み込みました（はじまり）');
   await expect(page.locator('#body')).toHaveValue(WORK_FILES['chapters/02_second.md']);
   // the open one changed while its preview is open: drawn again
   await page.getByRole('button', { name: 'プレビュー' }).click();
@@ -358,7 +358,7 @@ test('read in while open, 再読み込み pressed meanwhile: the reading in give
   await expect(page.locator('#sync-state')).toHaveText(/GitHub から読みました/);
   await page.locator('#tree .node', { hasText: '駅で' }).click();
   await expect(page.locator('#body')).toHaveValue('# 第2話 駅で\n\n二度目\n');
-  await expect(page.locator('#toast')).not.toHaveText('ほかの端末の更新を読み込みました');
+  await expect(page.locator('#toast')).not.toHaveText(/^ほかの端末の更新を読み込みました/);
 });
 
 // FR-GH-12, FR-WORK-05: another repository under the work's name, and no copy of the work on this device: said, nothing
@@ -495,7 +495,7 @@ test('read in while open: the new version not given, nothing changes; the open e
   await page.locator('#body').fill('ここで書いた\n');
   work.push({ 'chapters/01_first.md': '# 第1話 はじまり\n\nほかでも\n' });
   await inFront(page);
-  await expect(page.locator('#toast')).toHaveText('ほかの端末の更新を読み込みました');
+  await expect(page.locator('#toast')).toHaveText('ほかの端末の更新を読み込みました（first、駅で）');
   await expect(page.locator('#body')).toHaveValue('ここで書いた\n');
   await page.locator('#tree .node', { hasText: '駅で' }).click();
   await expect(page.locator('#body')).toHaveValue('# 第2話 駅で\n\nほかで\n');
@@ -507,7 +507,7 @@ test('a work with nothing left to send deleted: asked once, deleted', async ({ p
   await page.getByRole('button', { name: 'この作品を削除' }).click();
   await page.getByRole('button', { name: '送ってから削除' }).click();
   await expect(page.locator('#shelf')).toBeVisible();
-  await expect(page.locator('#toast')).toHaveText('作品を削除しました');
+  await expect(page.locator('#toast')).toHaveText('作品「試験の作品」を削除しました');
   expect(gh.calls.filter(c => !c.startsWith('GET'))).toEqual([]);
 });
 

@@ -3,7 +3,6 @@
 // as a change not sent. A box of the plot or a person of the characters is written here by itself (its lines only).
 // From the server version's public/ui/notes.js
 import { trashStamp, cleanTitle } from '../lib/episodes.js';
-import { noteStateSaid } from '../lib/desk.js';
 import { newName, whenLong } from '../lib/format.js';
 import { historyDraft } from '../lib/history.js';
 import { picturePaths, relPath, renderMd } from '../lib/markdown.js';
@@ -13,6 +12,7 @@ import {
   addNoteAsk,
   newNote,
   noteRenameAsk,
+  noteStateSaid,
   notesList,
   notesWhere,
   noteTitle,
@@ -131,7 +131,7 @@ export async function readInNotes() {
     setKeepingCaret(area(), text);
     // (the preview open drawn again, as the server version's)
     if (!$('note-preview').hidden) $('note-preview').innerHTML = await previewHtml();
-    toast('ほかの端末の更新を読み込みました');
+    toast(`資料「${$('note-name').textContent}」に、ほかの端末の更新を読み込みました`);
   }
   showState();
 }

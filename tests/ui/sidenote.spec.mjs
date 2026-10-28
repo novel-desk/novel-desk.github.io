@@ -258,3 +258,29 @@ test.describe('an iPad standing', () => {
     await expect(page.getByRole('button', { name: '資料を横に出す' })).toBeHidden();
   });
 });
+
+// B7: on a wide screen, the text box as wide as the paper (its scrollbar at the right edge), the text 46em wide in the middle
+test('a wide screen: the text box reaches the right edge; the text kept in the middle, as wide as before', async ({ page, gh, work }) => {
+  await page.setViewportSize({ width: 1920, height: 900 });
+  work.push({ 'novel.toml': TOML, 'notes/world.md': '# 世界\n空は青い\n' });
+  await openWork(page);
+  const edges = () =>
+    page.evaluate(() => {
+      const b = /** @type {HTMLElement} */ (document.getElementById('body')),
+        p = /** @type {HTMLElement} */ (document.querySelector('main.paper'));
+      const r = b.getBoundingClientRect(),
+        c = getComputedStyle(b);
+      return { right: r.right, paper: p.getBoundingClientRect().right, text: r.width - parseFloat(c.paddingLeft) - parseFloat(c.paddingRight) };
+    });
+  const e = await edges();
+  expect(e.right).toBe(e.paper);
+  // 46em of 14px, less the padding of 22px on each side
+  expect(e.text).toBeCloseTo(644 - 44, 0);
+  // beside a note too
+  await page.getByRole('button', { name: '資料を横に出す' }).click();
+  const n = await edges();
+  expect(n.right).toBe(n.paper);
+  // (the note beside it, a wide panel, keeps its own padding: not the text's)
+  await page.locator('#side-note [data-side-note]', { hasText: '世界' }).click();
+  await expect(page.locator('#side-note .side-note-body')).toHaveCSS('padding-left', '20px');
+});

@@ -204,4 +204,10 @@ describe('the screen 資料', () => {
       ask: '資料の新しい名前（資料の 1 行目の見出しになります。ファイル名は英数字になり、英数字が無ければ今のままです）',
     });
   });
+  // FR-SAVE-07, FR-NOTE-04: a note open with both versions side by side said first; a draft not sent; else nothing
+  test('noteStateSaid: both versions said first, then a draft not sent; nothing otherwise', () => {
+    expect(nt.noteStateSaid('a\n――― ここから、ほかの版\nb', true)).toBe(nt.BOTH_SAID);
+    expect(nt.noteStateSaid('本文', true)).toBe('端末に保存済み（未送信）');
+    expect(nt.noteStateSaid('本文', false)).toBe('');
+  });
 });

@@ -99,7 +99,7 @@ test('numbered episodes renumbered elsewhere: written into the same one where it
   await page.locator('#body').fill('一の本文\n一の続き\n三行目\n');
   work.push({ ...numbered({ '01.md': '一の話', '02.md': '二の話' }), 'chapters/01.md': '一の本文\n一の続き\n', 'chapters/02.md': '二の本文\n' });
   await inFront(page);
-  await expect(page.locator('#toast')).toHaveText('ほかの端末の更新を読み込みました');
+  await expect(page.locator('#toast')).toHaveText('ほかの端末の更新を読み込みました（一の話、二の話）');
   await expect(page.locator('#episode-title')).toHaveValue('一の話');
   await expect(page.locator('#body')).toHaveValue('一の本文\n一の続き\n三行目\n');
   await expect.poll(async () => (await stored(page, 'drafts')).map(d => d.path)).toEqual(['chapters/01.md']);
@@ -229,7 +229,7 @@ test('an episode and a note renamed elsewhere (the heading, the file name): writ
     'notes/setting.md': '# 舞台\n\n空は青い。\n',
   });
   await inFront(page);
-  await expect(page.locator('#toast')).toHaveText('ほかの端末の更新を読み込みました');
+  await expect(page.locator('#toast')).toHaveText('ほかの端末の更新を読み込みました（はじまり）');
   // (the note open is the one renamed, written on as it was)
   await expect(page.locator('#note-body')).toHaveValue('# 世界観\n\n空は青い。\n海もある。\n');
   await page.locator('#note-body').fill('# 世界観\n\n空は青い。\n海もある。\n山もある。\n');
@@ -273,7 +273,7 @@ test('a text set aside: the work not taken off the list for it; summed up withou
   await page.locator('#body').fill('# 第1話 はじまり\n\n待っている\n');
   work.push({ 'chapters/02_second.md': '# 第2話 駅で（新しく）\n' });
   await inFront(page);
-  await expect(page.locator('#toast')).toHaveText('ほかの端末の更新を読み込みました');
+  await expect(page.locator('#toast')).toHaveText('ほかの端末の更新を読み込みました（駅で（新しく））');
   await page.locator('#tree .node', { hasText: '駅で' }).click();
   await page.locator('#body').fill('# 第2話 駅で（新しく）\n\nここでも\n');
   await page.getByRole('button', { name: '未送信の一覧' }).click();
@@ -312,7 +312,7 @@ test('the only episode put in _trash/ elsewhere: none open, the text kept; sent 
   // a file that is not UTF-8 put at its path elsewhere: not sent beside it
   work.push({ 'chapters/01_first.md': /** @type {any} */ (Buffer.from([0x82, 0xff, 0xff])) });
   await inFront(page);
-  await expect(page.locator('#toast')).toHaveText('ほかの端末の更新を読み込みました');
+  await expect(page.locator('#toast')).toHaveText('ほかの端末の更新を読み込みました（first）');
   await page.getByRole('button', { name: '未送信の一覧' }).click();
   await page.locator('#unsent [data-unpark-send="0"]').click();
   await expect(page.locator('#toast')).toHaveText(

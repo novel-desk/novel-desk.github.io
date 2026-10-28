@@ -293,7 +293,6 @@ test('the page left while a send of 「送るを押したときだけ」 is on i
   await page.locator('#sync-mode').selectOption('auto');
   await page.getByRole('button', { name: '送る（1）' }).click();
   await expect(page.locator('#sync-state')).toHaveText(/^送りました（/);
-  await page.unrouteAll();
   h = await holdOnce(page, 'GET', '/git/trees/');
   await page.locator('#reload-work').click();
   await h.came;
@@ -443,4 +442,38 @@ test('two tabs: a draft written in the other tab while this one sends stays on t
   // (this tab's writes done: what the device keeps now)
   await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 300)));
   expect((await stored(page, 'drafts')).map(d => d.text)).toEqual(['# 第1話 はじまり\n\nほかのタブで書いた\n']);
+});
+
+// B6: 「GitHub に送信」 under the text, shown only with something to send (not when the work is not synced), sends as 送る
+test('GitHub に送信 under the text: shown with something to send, sends as 送る; not while sending, nor when not synced', async ({ page, gh, work }) => {
+  await openWork(page);
+  const foot = page.getByRole('button', { name: 'GitHub に送信' });
+  await expect(foot).toBeHidden();
+  await write(page, 'はじまり', '# 第1話 はじまり\n\n下から送る。\n');
+  await expect(foot).toBeVisible();
+  const h = await holdOnce(page, 'PATCH', '/git/refs/heads/');
+  await foot.click();
+  await h.came;
+  await expect(foot).toBeDisabled();
+  h.release();
+  // what went said where the author is (the state above 送る is not in sight under the text)
+  await expect(page.locator('#toast')).toHaveText(/^GitHub に送りました（\d+\/\d+ はじまり ＋\d+字）$/);
+  await expect(page.locator('#sync-state')).toHaveText(/^送りました（/);
+  expect(work.text('chapters/01_first.md')).toBe('# 第1話 はじまり\n\n下から送る。\n');
+  await expect(foot).toBeHidden();
+  await expect(page.locator('#save-state')).toHaveText('GitHub に保存済み');
+  // a phone's width: the state beside it in a word, back in full on a wider screen
+  await page.setViewportSize({ width: 375, height: 700 });
+  await page.locator('#body').fill('# 第1話 はじまり\n\n電話で書いた。\n');
+  await expect(foot).toBeVisible();
+  await expect(page.locator('#save-state')).toHaveText('未送信');
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await expect(page.locator('#save-state')).toHaveText('端末に保存済み（未送信）');
+  await page.setViewportSize({ width: 375, height: 700 });
+  await expect(page.locator('#save-state')).toHaveText('未送信');
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.locator('#sync-mode').selectOption('off');
+  await expect(page.locator('#toast')).toHaveText('同期の設定を「同期しない」にしました');
+  await write(page, '駅で', '# 第2話 駅で\n');
+  await expect(foot).toBeHidden();
 });

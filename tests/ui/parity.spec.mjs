@@ -243,7 +243,7 @@ test('a note: the preview drawn again when read in; a name of spaces said; one w
   work.push({ 'notes/memo.md': 'ほかの所で\n' });
   await inFront(page);
   await expect(page.locator('#note-preview')).toHaveText('ほかの所で');
-  await expect(page.locator('#toast')).toHaveText('ほかの端末の更新を読み込みました');
+  await expect(page.locator('#toast')).toHaveText('資料「memo.md」に、ほかの端末の更新を読み込みました');
   await page.locator('#note-preview-toggle').click();
   await page.getByRole('button', { name: 'この資料の履歴' }).click();
   await expect(page.locator('#versions-title')).toHaveText('「memo.md」の履歴');
