@@ -6,6 +6,7 @@ import * as db from './lib/memory-db.mjs';
 import { Device, FakeGitHub, FakeRepo, FILES, fetchOver, headTexts, keptTexts } from './lib/device.mjs';
 import { readFiles } from '../../ui/work.js';
 import { stillHolds } from '../../lib/works.js';
+import { sideBySide } from '../../lib/merge.js';
 
 vi.mock('../../ui/db.js', () => import('./lib/memory-db.mjs'));
 
@@ -29,9 +30,10 @@ const scheduled = (fake, s) => {
 /** @param {string[]} tokens @param {string[]} texts the tokens not in any of the texts */
 const lost = (tokens, texts) => tokens.filter(t => !texts.some(x => x.includes(t)));
 
-// FR-SAVE-01, FR-SAVE-04, FR-SAVE-06, NFR-COMP-02, NFR-MAINT-02: a send while the author types and GitHub is written to elsewhere,
-// in any order: nothing typed and nothing written elsewhere is lost; the branch only moves forward; sent once more
-// with nothing in its way, everything typed is on GitHub
+// FR-SAVE-01, FR-SAVE-04, FR-SAVE-05, FR-SAVE-06, DESK-SAVE-01, NFR-COMP-02, NFR-MAINT-02: a send while the author types and GitHub
+// is written to elsewhere, in any order: nothing typed and nothing written elsewhere is lost; the branch only moves
+// forward; GitHub never gets a place with both versions side by side; the places side by side tidied and sent once
+// more with nothing in its way, everything typed is on GitHub
 test('a send against typing and writes elsewhere, in any order: nothing lost, the branch never forced back', async () => {
   await fc.assert(
     fc.asyncProperty(
@@ -72,14 +74,18 @@ test('a send against typing and writes elsewhere, in any order: nothing lost, th
         expect(lost(written, there)).toEqual([]);
         expect(lost(typed, [...there, ...keptTexts(device)])).toEqual([]);
         expect(repo.descends(repo.refs.main, first)).toBe(true);
-        // sent again, nothing in the way: everything typed is on GitHub, and nothing is left to send
+        // sent again, nothing in the way (a text with places side by side tidied first, as the author does: it is not
+        // sent till then): everything typed is on GitHub, and nothing is left to send
         globalThis.fetch = fetchOver(fake);
         await device.readIn();
-        if (device.changes.size) await device.send();
-        if (device.changes.size) await device.send();
+        for (let i = 0; i < 3 && device.changes.size; i++) {
+          device.tidy();
+          await device.send();
+        }
         expect(lost(typed, Object.values(headTexts(repo)))).toEqual([]);
         expect(lost(written, Object.values(headTexts(repo)))).toEqual([]);
         expect(device.changes.size).toBe(0);
+        expect([...repo.blobs.values()].filter(b => sideBySide(b.toString()))).toEqual([]);
       },
     ),
     runs(2000),

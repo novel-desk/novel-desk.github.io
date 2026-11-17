@@ -2,14 +2,14 @@
 // renamed, put in the trash and reordered, and sending and reading again. The work, the changes not sent and the
 // episode open are this module's: the others call open() and the functions it gives them
 import { moveFiles, rebase, relabel, settle, unsentList, withoutOp, writeFile } from '../lib/changes.js';
-import { afterSend, draftKey, draftOf, goneWhileSent, sameVersion, typedOver } from '../lib/drafts.js';
+import { afterSend, draftKey, draftOf, goneWhileSent, keptAfterSend, sameVersion, typedOver } from '../lib/drafts.js';
 import * as plans from '../lib/episodes.js';
 import { charsOf, esc, n, rowTimes, whenLong } from '../lib/format.js';
 import { imageType } from '../lib/github.js';
 import { episodesOf, isEpisode, titleOf } from '../lib/layout.js';
 import { isNote } from '../lib/notes.js';
 import { picturePaths, relPath, renderMd } from '../lib/markdown.js';
-import { keptBoth } from '../lib/merge.js';
+import { mergeLines } from '../lib/merge.js';
 import { noteHeading } from '../lib/notes.js';
 import { editToml } from '../lib/tomledit.js';
 import { AUTO_WAIT, keptMode, onOtherBranch, sendsItself, stamped, syncMode, writtenOn } from '../lib/sync.js';
@@ -20,8 +20,10 @@ import {
   changedKey,
   episodeAfter,
   episodeToOpen,
+  fileName,
   footState,
   hasConflict,
+  heldCount,
   neighborOf,
   readInSaid,
   readSaid,
@@ -39,7 +41,7 @@ import * as store from './db.js';
 import { bytes, contents, converted, load, lookOf, readShas } from './work.js';
 import { Overlapped, sendAll } from './send.js';
 import { GitHubError, headOf, lastChange } from './github.js';
-import { evenBreaks, inputBar, insertAt, setKeepingCaret } from './textbox.js';
+import { evenBreaks, inputBar, insertAt, setKeepingCaret, setKeepingPlace } from './textbox.js';
 import { showHistory, wireHistory } from './history.js';
 import { pickImage } from './images.js';
 import { api } from './shared.js';
@@ -116,6 +118,12 @@ const episodes = () => episodesOf(shown().toc);
 const episodePaths = () => episodes().map(e => e.path);
 /** @param {string} rel */
 const titleAt = rel => titleOf(shown().layout, rel, shown().headings);
+// what a file is called on the screen (lib/desk.js fileName)
+/** @param {string} path @param {string} text */
+const nameAt = (path, text) => {
+  const e = findEpisode(path);
+  return fileName(e && titleAt(e.rel), path, text);
+};
 /** @param {string} path */
 const findEpisode = path => episodes().find(e => e.path === path);
 // the work as the plans of lib/episodes.js take it
@@ -759,11 +767,19 @@ async function unpark(d, how) {
   const w = /** @type {NonNullable<typeof work>} */ (work);
   const text = /** @type {string} */ (d.text);
   const next = new Map(drafts);
-  next.set(d.path, { repo: w.repo, path: d.path, base: w.blobs[d.path]?.sha ?? '', text: there ? keptBoth(text, there).text : text, at: Date.now() });
+  // (another file there now: the two put side by side where they differ, lib/merge.js mergeLines without a base; the
+  // text it was written from is another file's)
+  next.set(d.path, { repo: w.repo, path: d.path, base: w.blobs[d.path]?.sha ?? '', text: there ? mergeLines(null, text, there).text : text, at: Date.now() });
   keep(next);
   renderWork();
   await sendDrafts();
-  toast(unsent() ? '送信できませんでした。書いたものはこの端末に残っています' : '送信しました。GitHub の版と並べて残しています');
+  toast(
+    hasConflict(textOf(d.path) ?? '')
+      ? `${d.path} の書きかけと GitHub の版の違う所を並べて、この端末に残しました（まだ送っていません）。「――― ここから」の行を探して整理すると、次の送信で GitHub に送ります`
+      : unsent()
+        ? '送信できませんでした。書いたものはこの端末に残っています'
+        : `${d.path} の書きかけを GitHub に送信しました`,
+  );
 }
 // the texts read from another encoding than UTF-8 (FR-WORK-03), episodes and notes: kept as drafts, made UTF-8, so
 // that the next send puts them on GitHub as UTF-8 (the server version does it when the work is taken in)
@@ -1057,16 +1073,25 @@ function follow(moves) {
   }
   followNote(moves);
 }
-// the episode open, after the work changed under it (read in, or sent): gone, the first one opened; else, with no
-// draft of it, what the branch has now shown, the caret and the place read where they were (FR-SAVE-08)
+// the episode open, after the work changed under it (read in, or sent): gone, the first one opened; with a draft of it
+// that a send put together with what was written elsewhere (or held back), that draft shown; else, with no draft of
+// it, what the branch has now shown, the caret and the place read where they were (FR-SAVE-08)
 async function showOpen() {
+  const area = /** @type {HTMLTextAreaElement} */ ($('body'));
   if (current && !findEpisode(current)) {
     const first = episodes()[0];
     if (first) await openEpisode(first.path, false);
     else openNone();
-  } else if (current && !drafts.has(current)) {
+  } else if (current && drafts.has(current)) {
+    // (its draft put together with what was written elsewhere by a send, or with places side by side in it: shown,
+    // the caret on the same line of it)
     const text = textOf(current);
-    const area = /** @type {HTMLTextAreaElement} */ ($('body'));
+    if (text !== null && text !== area.value) {
+      setKeepingPlace(area, text);
+      showCounts();
+    }
+  } else if (current) {
+    const text = textOf(current);
     // (another episode at its path now: its title too)
     if (document.activeElement !== $('episode-title'))
       $('episode-title').value = titleAt(/** @type {import('../lib/layout.js').TocEpisode} */ (findEpisode(current)).rel);
@@ -1096,7 +1121,8 @@ async function sendNow() {
   if (!w || !onWork()) return;
   if (busy && mode === 'auto' && unsent()) return sendSoon(5000);
   const elsewhere = onOtherBranch([...drafts.values()], w.branch).length;
-  if (!stopped && sendsItself({ mode, unsent: unsent(), offline: w.offline, busy, elsewhere })) await sendDrafts();
+  // (a text held back, places side by side in it, goes only when 送る is pressed: lib/desk.js heldCount)
+  if (!stopped && sendsItself({ mode, unsent: unsent() - heldCount(drafts), offline: w.offline, busy, elsewhere })) await sendDrafts();
   else if (elsewhere && mode === 'auto') syncState(otherBranchSaid(otherBranch()), 'err');
 }
 /** @param {boolean} [pressed] 送る pressed (said in a toast when done, as the server version's push) */
@@ -1119,6 +1145,13 @@ async function sendDrafts(pressed = false) {
     await trace('SendStart');
     const result = await sendAll(w, [...drafts.values()], edits);
     failed = new Set();
+    // what the branch is now, of the branch sent to, and the texts that tell the files of the changes apart on it
+    // (read first: nothing waits from the drafts taken to the drafts kept, so that nothing typed meanwhile is lost)
+    const sent = await contents(
+      { repo: w.repo, branch: w.branch, commit: result.commit, tree: result.tree, updated: result.updated, blobs: result.blobs, folders: result.folders },
+      false,
+    );
+    const look = await lookOf(w.repo, [...drafts.values()], w, sent, false);
     // (the drafts as the device has them now, typed during the send too)
     const typed = new Map(drafts);
     const next = new Map(drafts);
@@ -1126,20 +1159,17 @@ async function sendDrafts(pressed = false) {
     // (one typed back to the text read during the send, or given up: none left to set aside)
     const refused = result.refused.map(d => typed.get(d.path)).filter(d => d !== undefined);
     for (const d of result.refused) next.delete(d.path);
-    for (const { draft, to, blob, both } of result.sent) {
+    for (const { draft, to, text, blob } of result.sent) {
       // (gone from the device while it was sent: what the author has is the text read, not the one sent)
-      const after = afterSend(typed.get(draft.path) ?? goneWhileSent(draft, remoteText(draft.path)), draft.text, blob, both);
+      const after = afterSend(typed.get(draft.path) ?? goneWhileSent(draft, remoteText(draft.path)), draft.text, blob, text);
       // (its file moved elsewhere: what was typed since goes there with it; another text moved to its path stays)
       if (next.get(draft.path) === typed.get(draft.path)) next.delete(draft.path);
       if (after) next.set(to, { ...after, path: to });
     }
     const went = result.sent.filter(s => s.to !== s.draft.path).map(s => /** @type {[string, string]} */ ([s.draft.path, s.to]));
-    // (what is left was typed during the send: on what the branch is now, of the branch sent to)
-    const sent = await contents(
-      { repo: w.repo, branch: w.branch, commit: result.commit, tree: result.tree, updated: result.updated, blobs: result.blobs, folders: result.folders },
-      false,
-    );
-    const settled = settle(next, w.blobs, result.blobs, await lookOf(w.repo, [...next.values()], w, sent, false));
+    // (what is left was typed during the send, or held back: on what the branch is now)
+    // (the texts held back, places side by side in them, kept as they are now: lib/drafts.js keptAfterSend)
+    const settled = settle(keptAfterSend(next, typed, result.held), w.blobs, result.blobs, look);
     const { changes: left, parked: moved } = settled;
     for (const [path, d] of left) left.set(path, { ...d, branch: w.branch });
     work = sent;
@@ -1147,11 +1177,12 @@ async function sendDrafts(pressed = false) {
     follow([...went, ...settled.moved]);
     await readMoved();
     refreshView();
-    const sides = new Set(result.sent.filter(s => s.both).map(s => s.draft.path));
-    const titles = episodes()
-      .filter(e => sides.has(e.path))
-      .map(e => titleAt(e.rel));
-    const said = sentSaid({ message: result.message, both: sides.size ? titles : [] });
+    const said = sentSaid({
+      message: result.message,
+      merged: result.sent.filter(s => s.merged).map(s => nameAt(s.to, /** @type {string} */ (s.text))),
+      placed: result.held.filter(h => h.placed).map(h => nameAt(h.to, h.text)),
+      left: result.held.filter(h => !h.placed).map(h => nameAt(h.to, h.text)),
+    });
     syncState(said.text, said.kind);
     renderWork();
     void noteNow();
@@ -1161,7 +1192,7 @@ async function sendDrafts(pressed = false) {
     showCounts();
     showUpdated();
     thenWrite(() => store.del('prefs', `failed:${w.repo}`));
-    if (pressed || sides.size) toast(said.toast);
+    if (pressed || result.sent.some(s => s.merged) || result.held.some(h => h.placed)) toast(said.toast);
     await trace('Sent');
   } catch (err) {
     void traceFailed(err);

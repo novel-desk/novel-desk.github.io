@@ -1,8 +1,10 @@
 // Sends every change not sent yet as one commit (Git Data API: blobs, a tree on the branch's, a commit, the branch
 // moved forward, never forced). When the branch moved on since it was read, the new tree is read, and the changes go
-// on top of it: a text changed there too keeps both versions side by side (lib/merge.js); a text whose file moved
-// there goes where it is now; a text whose file is put in _trash/ there, or is another file now, is not sent
-// (`refused`: the desk keeps it aside for the author); an operation (an
+// on top of it: a text changed there too is put together with the one there line by line (lib/merge.js mergeLines);
+// a text with places side by side in it (both versions of lines written in two places) is not sent (`held`: the desk
+// keeps it, and says so, until the author has tidied them); a text whose file moved there goes where it is now; a text
+// whose file is put in _trash/ there, or is another file now, is not sent (`refused`: the desk keeps it aside for the
+// author); an operation (an
 // episode added, renamed, put in the trash, the order changed) whose files changed there is not sent, and the screen
 // says so
 import { changeParts, changePart, commitSubject, japanDay, kindsOf } from '../lib/commit.js';
@@ -23,10 +25,13 @@ import * as store from './db.js';
 /**
  * What a send did: the commit and tree the branch is at now, its files, and for each change the text taken from it
  * (none for one that held no text), where it went (its file moved elsewhere: there, lib/merge.js placeOf), the blob it
- * went into ('' for a file deleted) and whether the other version was put beside it; the texts not sent because their
- * file is put in _trash/ there or is another file now (lib/merge.js placeOf).
+ * went into ('' for a file deleted), the text that went and whether it took in what was written there (`merged`); the
+ * texts held back, places side by side in them (lib/send.js sentText): where they go, the text they are now, the blob
+ * there now and whether this send put the places there (`placed`); the texts not sent because their file is put in
+ * _trash/ there or is another file now (lib/merge.js placeOf).
  * When nothing is left to send, no commit is made: the branch as it is now
- * @typedef {{ commit: string, tree: string, updated: number, blobs: Work['blobs'], folders: string[], sent: { draft: Draft, to: string, text: string | undefined, blob: string, both: boolean }[], refused: Draft[], message: string }} Sent
+ * @typedef {{ draft: Draft, to: string, text: string, theirs: string, placed: boolean }} Held
+ * @typedef {{ commit: string, tree: string, updated: number, blobs: Work['blobs'], folders: string[], sent: { draft: Draft, to: string, text: string | undefined, blob: string, merged: boolean }[], held: Held[], refused: Draft[], message: string }} Sent
  */
 
 // An operation not sent: the branch changed under these files elsewhere
@@ -83,15 +88,22 @@ export async function sendAll(work, drafts, edits) {
       look,
     );
     const refused = plan.filter(p => p.how === 'refused').map(p => p.draft);
+    /** @type {Held[]} */
+    const held = [];
     for (const { draft, how, to, mode, theirs } of plan.filter(p => p.how !== 'refused')) {
       const was = theirs ? await textAt(work.repo, theirs) : '';
       if (was === null) throw new Error(`${to} は GitHub で UTF-8 でない形に変わっているので、送れません`);
       const mine = /** @type {string} */ (draft.text);
-      // (changed there too: both side by side; only renamed there: what was written, under the heading given there)
-      const { text, both } = sentText(how, mine, was, look.texts[draft.base]);
+      // (changed there too: put together line by line; only renamed there: what was written, under the heading given
+      // there; places side by side in it: kept on the device)
+      const { text, merged, placed, held: kept } = sentText(how, mine, was, look.texts[draft.base]);
+      if (kept) {
+        held.push({ draft, to, text, theirs, placed });
+        continue;
+      }
       const blob = await gh.newBlob(work.repo, text);
       await store.put('blobs', blob, new TextEncoder().encode(text));
-      sent.push({ draft, to, text, blob, both });
+      sent.push({ draft, to, text, blob, merged });
       entries.push({ path: to, mode, type: /** @type {const} */ ('blob'), sha: /** @type {string | null} */ (blob) });
       [there[to], after[to]] = [was, text];
     }
@@ -110,7 +122,7 @@ export async function sendAll(work, drafts, edits) {
         blob = /** @type {string} */ (d.sha);
         after[d.path] = (await textAt(work.repo, blob).catch(() => null)) ?? '';
       }
-      sent.push({ draft: d, to: d.path, text: d.text, blob, both: false });
+      sent.push({ draft: d, to: d.path, text: d.text, blob, merged: false });
       entries.push(opEntry(d, blobs, blob));
     }
     // novel.toml: its keys set on the one there now (what else changed in it there stays)
@@ -126,8 +138,11 @@ export async function sendAll(work, drafts, edits) {
         entries.push({ path: CONFIG, mode: blobs[CONFIG]?.mode ?? '100644', type: /** @type {const} */ ('blob'), sha: /** @type {string | null} */ (blob) });
       }
     }
-    // (nothing left to send: every text refused, and novel.toml as it is)
-    if (!entries.length) return { commit, tree, updated: Date.now(), blobs, folders, sent: [], refused, message: '' };
+    // (nothing left to send: every text refused or held back, and novel.toml as it is)
+    if (!entries.length) {
+      if (held.length) await trace('Hold');
+      return { commit, tree, updated: Date.now(), blobs, folders, sent: [], held, refused, message: '' };
+    }
     const was = viewOf(read, new Map(), []);
     const now = viewOf({ ...read, config }, new Map(), []);
     const listed = kindsOf([...ops, ...configChange({ repo: work.repo, edits: edits.length, config, configNow, blob: blobs[CONFIG]?.sha })]).map(k => ({
@@ -163,6 +178,6 @@ export async function sendAll(work, drafts, edits) {
       throw err;
     }
     await trace('Move');
-    return { commit: newCommit, tree: newTree, updated: Date.now(), blobs: blobsAfter(blobs, entries), folders, sent, refused, message };
+    return { commit: newCommit, tree: newTree, updated: Date.now(), blobs: blobsAfter(blobs, entries), folders, sent, held, refused, message };
   }
 }

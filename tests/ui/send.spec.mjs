@@ -2,7 +2,15 @@
 // when the branch moved on elsewhere
 import { test, expect, noPasskey, openRepo, openWork, stored, WORK_FILES } from './lib/test.mjs';
 import { japanDay } from '../../lib/commit.js';
-import { OTHER_DEVICE_MARK } from '../../lib/merge.js';
+import { END_MARK, MINE_MARK, OTHER_DEVICE_MARK } from '../../lib/merge.js';
+
+/** @param {string} mine @param {string} theirs one place with both versions side by side (their lines) */
+const sides = (mine, theirs) => `${MINE_MARK}\n${mine}${OTHER_DEVICE_MARK}\n${theirs}${END_MARK}\n`;
+// what is said of a text held back, places side by side in it (lib/desk.js sentSaid)
+const TIDY = '「――― ここから」の行を探して整理すると、次の送信で GitHub に送ります';
+/** @param {string} title */
+const placed = title =>
+  `「${title}」は、ほかの端末での変更と同じ所を書き換えていたため、その所に両方の版を並べて、この端末に残しました（GitHub には送っていません）。${TIDY}`;
 
 /** @param {import('@playwright/test').Page} page @param {string} title @param {string} text */
 async function write(page, title, text) {
@@ -36,22 +44,83 @@ test('the episodes written go as one commit, its message as the server version m
   await expect(page.locator('#tree .node.active .t')).toHaveText('改札で');
 });
 
-test('the branch moved on: what changed only here goes on top; what changed there too keeps both versions side by side', async ({ page, gh, work }) => {
+// FR-SAVE-04, FR-SAVE-05, FR-SAVE-06, DESK-SAVE-01: the branch moved on: what changed only here goes on top; an episode written there
+// in the same line: the two versions of that line side by side, kept on this device, not sent (GitHub never has
+// them), said where 送る was pressed; once tidied, it goes
+test('the branch moved on: what changed only here goes on top; the same line written there too: side by side, not sent until tidied', async ({
+  page,
+  gh,
+  work,
+}) => {
   await openWork(page);
   await write(page, 'はじまり', '# 第1話 はじまり\n\nここで書いた。\n');
   await write(page, '駅で', '# 第2話 駅で\n\nここで書いた二。\n');
   const other = work.push({ 'chapters/02_second.md': '# 第2話 駅で\n\nほかで書いた。\n', 'chapters/04_new.md': '# 第4話 新しい\n' });
   await page.getByRole('button', { name: '送る（2）' }).click();
-  await expect(page.locator('#sync-state')).toHaveText(/駅ではほかでも書き換えられていたので、両方の版を並べました/);
+  await expect(page.locator('#toast')).toHaveText(new RegExp(`^GitHub に送りました（[^）]*はじまり[^）]*）。${placed('駅で').replace(/[（）「」]/g, '.')}$`));
+  await expect(page.locator('#sync-state')).toHaveText(/駅で」は、ほかの端末での変更と同じ所を書き換えていたため/);
   expect(work.head().parents).toEqual([other]);
   expect(work.text('chapters/01_first.md')).toBe('# 第1話 はじまり\n\nここで書いた。\n');
-  expect(work.text('chapters/02_second.md')).toBe(`# 第2話 駅で\n\nここで書いた二。\n\n${OTHER_DEVICE_MARK}\n\n# 第2話 駅で\n\nほかで書いた。\n`);
   expect(work.text('chapters/04_new.md')).toBe('# 第4話 新しい\n');
-  // the screen shows what is there now
-  await expect(page.locator('#body')).toHaveValue(work.text('chapters/02_second.md') ?? '');
+  // GitHub keeps its version; this device has the two versions of the line side by side, the rest once, written on
+  // what GitHub has now
+  expect(work.text('chapters/02_second.md')).toBe('# 第2話 駅で\n\nほかで書いた。\n');
+  const both = `# 第2話 駅で\n\n${sides('ここで書いた二。\n', 'ほかで書いた。\n')}`;
+  await expect(page.locator('#body')).toHaveValue(both);
+  await expect.poll(async () => (await stored(page, 'drafts')).map(d => d.text)).toEqual([both]);
   await expect(page.locator('#save-state')).toHaveText('両方の版が並んでいます。「――― ここから」の行を探して整理してください');
   await expect(page.locator('#tree .node.active .conflict')).toHaveText('競合');
   await expect(page.locator('#tree .node .t')).toContainText(['新しい']);
+  // pressed again before it is tidied: still not sent, said
+  const head = work.refs.main;
+  await page.getByRole('button', { name: '送る（1）' }).click();
+  await expect(page.locator('#toast')).toHaveText(`「駅で」は、両方の版を並べた所が残っているため、GitHub に送っていません。${TIDY}`);
+  expect(work.refs.main).toBe(head);
+  // tidied: it goes, over what GitHub has now
+  await page.locator('#body').fill('# 第2話 駅で\n\nここで書いた二。ほかで書いた。\n');
+  await expect(page.locator('#tree .node.active .conflict')).toHaveCount(0);
+  await page.getByRole('button', { name: '送る（1）' }).click();
+  await expect(page.locator('#toast')).toHaveText(/^GitHub に送りました（/);
+  expect(work.text('chapters/02_second.md')).toBe('# 第2話 駅で\n\nここで書いた二。ほかで書いた。\n');
+  await expect(page.locator('.unsent-tag')).toHaveCount(0);
+});
+
+// FR-SAVE-04, FR-SAVE-06, FR-SAVE-08: the branch moved on, the same episode written there in other lines: the two put
+// together line by line and sent, nothing twice (as the episodes that were doubled whole had it: 2026-11-16〜17); what
+// is typed while it is sent goes into what went, the caret where it was in the text
+test('the same episode written there in other lines: both taken in and sent, nothing twice; typed meanwhile, put in it, the caret kept', async ({
+  page,
+  gh,
+  work,
+}) => {
+  const lines = ['# 第1話 はじまり', '', '朝が来た。', '', '昼が来た。', '', '夜が来た。'];
+  const text = (/** @type {string[]} */ l) => l.map(x => `${x}\n`).join('');
+  work.push({ 'chapters/01_first.md': text(lines) });
+  await openWork(page);
+  const mine = text([...lines.slice(0, 6), '夜が来た。ここで書いた。']);
+  await page.locator('#body').fill(mine);
+  work.push({ 'chapters/01_first.md': text([...lines.slice(0, 2), '朝が来た。ほかで書いた。', ...lines.slice(3)]) });
+  // typed while the send is on its way, at the end
+  let first = true;
+  await page.route('**/git/refs/heads/main', async route => {
+    if (route.request().method() !== 'PATCH' || !first) return route.fallback();
+    first = false;
+    await page.locator('#body').press('End');
+    await page.locator('#body').pressSequentially('続き');
+    await expect.poll(async () => (await stored(page, 'drafts'))[0]?.text).toBe(`${mine}続き`);
+    return route.fallback();
+  });
+  await page.getByRole('button', { name: '送る（1）' }).click();
+  await expect(page.locator('#toast')).toHaveText(/^GitHub に送りました（[^）]*）。「はじまり」は、ほかの端末での変更を取り込みました$/);
+  const merged = text([...lines.slice(0, 2), '朝が来た。ほかで書いた。', ...lines.slice(3, 6), '夜が来た。ここで書いた。']);
+  expect(work.text('chapters/01_first.md')).toBe(merged);
+  await expect(page.locator('#body')).toHaveValue(`${merged}続き`);
+  expect(await page.locator('#body').evaluate(a => /** @type {HTMLTextAreaElement} */ (a).selectionStart)).toBe(`${merged}続き`.length);
+  await expect(page.locator('#save-state')).toHaveText('端末に保存済み（未送信）');
+  await page.getByRole('button', { name: '送る（1）' }).click();
+  await expect(page.locator('#send')).toHaveText('送る');
+  expect(work.text('chapters/01_first.md')).toBe(`${merged}続き`);
+  await expect(page.locator('#body')).toHaveValue(`${merged}続き`);
 });
 
 test('the branch moved between reading it and moving it: read again and sent', async ({ page, gh, work }) => {
@@ -103,15 +172,23 @@ test('reading again: the episodes come as they are on GitHub, but one with a dra
   await expect(page.locator('#save-state')).toHaveText('端末に保存済み（未送信）');
   await page.locator('#tree .node', { hasText: '駅で' }).click();
   await expect(page.locator('#body')).toHaveValue('# 第2話 駅で\n\nほかで変えた\n');
-  // the draft, sent, keeps the other version too: it was written from the text before
+  // the draft, sent: put together with the other version (it was written from the text before); the same line
+  // written on both: side by side, kept on this device
   await page.getByRole('button', { name: '送る（1）' }).click();
-  await expect(page.locator('#sync-state')).toHaveText(/はじまりはほかでも書き換えられていた/);
-  expect(work.text('chapters/01_first.md')).toBe(`# 第1話 はじまり\n\n下書き\n\n${OTHER_DEVICE_MARK}\n\n# 第1話 はじまり\n\nほかで\n`);
+  await expect(page.locator('#toast')).toHaveText(placed('はじまり'));
+  expect(work.text('chapters/01_first.md')).toBe('# 第1話 はじまり\n\nほかで\n');
+  await page.locator('#tree .node', { hasText: 'はじまり' }).click();
+  await expect(page.locator('#body')).toHaveValue(`# 第1話 はじまり\n\n${sides('下書き\n', 'ほかで\n')}`);
 });
 
-// FR-SAVE-03, FR-GH-04: 自動 (the default): what was written goes by itself a while after the last key, and when the
-// page is left, handled as 送る (what changed elsewhere too keeps both versions)
-test('自動: sent by itself after a pause in writing, and when the page is left; both versions kept as 送る keeps them', async ({ page, gh, work }) => {
+// FR-SAVE-03, FR-GH-04, FR-SAVE-05, DESK-SAVE-01: 自動 (the default): what was written goes by itself a while after the last key, and
+// when the page is left, handled as 送る (the same line changed elsewhere too: side by side, kept on the device, said
+// in a toast); a text held back so does not go by itself
+test('自動: sent by itself after a pause in writing, and when the page is left; held back as 送る holds it, and not sent by itself', async ({
+  page,
+  gh,
+  work,
+}) => {
   await page.clock.install();
   await openWork(page);
   await expect(page.locator('#sync-mode')).toHaveValue('auto');
@@ -129,8 +206,16 @@ test('自動: sent by itself after a pause in writing, and when the page is left
     Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
     document.dispatchEvent(new Event('visibilitychange'));
   });
-  await expect(page.locator('#sync-state')).toHaveText(/駅ではほかでも書き換えられていたので、両方の版を並べました/);
-  expect(work.text('chapters/02_second.md')).toBe(`# 第2話 駅で\n\nここで書いた。\n\n${OTHER_DEVICE_MARK}\n\n# 第2話 駅で\n\nほかで書いた。\n`);
+  await expect(page.locator('#toast')).toHaveText(placed('駅で'));
+  expect(work.text('chapters/02_second.md')).toBe('# 第2話 駅で\n\nほかで書いた。\n');
+  // typed on, places side by side still in it: not sent by itself
+  await page.evaluate(() => Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true }));
+  const head = work.refs.main;
+  await page.locator('#body').press('End');
+  await page.locator('#body').pressSequentially('追記');
+  await page.clock.fastForward(61000);
+  await expect(page.locator('#send')).toHaveText('送る（1）');
+  expect(work.refs.main).toBe(head);
 });
 
 // FR-SAVE-03: GitHub not reached: kept on the device, and sent when the device is back online

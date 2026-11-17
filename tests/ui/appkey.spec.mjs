@@ -77,7 +77,7 @@ const keptKey = page =>
 /** @param {import('./lib/fake-github.mjs').FakeGitHub} gh */
 const tokensAsked = gh => gh.appCalls.filter(c => /^POST \/app\/installations\/\d+\/access_tokens$/.test(c)).length;
 
-// FR-GH-01, NFR-SEC-15, NFR-SEC-16: kept as a key that cannot be taken out; the repositories it is installed on
+// FR-GH-01, NFR-SEC-15, NFR-SEC-16, DESK-SAVE-02: kept as a key that cannot be taken out; the repositories it is installed on
 // offered; the commits written as the author; opened again without asking (no passkey here); gone on logging out
 test('started with the App’s private key: kept so that it cannot be taken out; its repositories; commits by the author; gone on logging out', async ({
   page,
@@ -113,7 +113,12 @@ test('started with the App’s private key: kept so that it cannot be taken out;
   await page.getByRole('button', { name: '送る（1）' }).click();
   await expect(page.locator('#sync-state')).toHaveText(/^送りました（/);
   expect(work.text('chapters/01_first.md')).toBe('# 第1話 はじまり\n\nApp で書いた\n');
-  expect(gh.written.at(-1)).toEqual({ author: AUTHOR, committer: AUTHOR });
+  // (dated now, in Japan's time zone, whatever the device's: lib/github.js writtenBy; GitHub, given no date, writes UTC)
+  const { author, committer } = /** @type {any} */ (gh.written.at(-1));
+  expect(committer).toEqual(author);
+  expect({ ...author, date: '' }).toEqual({ ...AUTHOR, date: '' });
+  expect(author.date).toMatch(/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\+09:00$/);
+  expect(Math.abs(Date.parse(author.date) - Date.now())).toBeLessThan(60000);
   // one installation token for all of it, asked for with a JWT GitHub took
   expect(tokensAsked(gh)).toBe(1);
   // opened again: straight in

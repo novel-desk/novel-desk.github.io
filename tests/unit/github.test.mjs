@@ -13,6 +13,7 @@ import {
   appRefused,
   timeOf,
   writtenBy,
+  japanTime,
   ownAccount,
   mergeMade,
   statusOf,
@@ -111,11 +112,16 @@ describe('the requests', () => {
     expect(timeOf(undefined)).toBe(0);
     expect(timeOf('x')).toBe(0);
   });
-  test('writtenBy: the author as author and committer; none known, nothing', () => {
+  // DESK-SAVE-02: the commits dated in Japan's time, whatever the device's time zone, as the server version's (GitHub, given no date,
+  // writes the time in UTC)
+  test('japanTime, writtenBy: the author as author and committer, dated in Japan’s time; none known, nothing', () => {
+    const at = Date.parse('2026-11-16T15:30:05.250Z');
+    expect(japanTime(at)).toBe('2026-11-17T00:30:05+09:00');
     const a = { name: '作者', email: 'a@example.com' };
-    expect(writtenBy(a)).toEqual({ author: a, committer: a });
-    expect(writtenBy(null)).toEqual({});
-    expect(writtenBy(undefined)).toEqual({});
+    const who = { ...a, date: '2026-11-17T00:30:05+09:00' };
+    expect(writtenBy(a, at)).toEqual({ author: who, committer: who });
+    expect(writtenBy(null, at)).toEqual({});
+    expect(writtenBy(undefined, at)).toEqual({});
   });
   test('ownAccount: no owner, or the user’s own login; else an organization', () => {
     expect(ownAccount('', 'kuro')).toBe(true);

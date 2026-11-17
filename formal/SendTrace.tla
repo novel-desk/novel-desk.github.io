@@ -12,7 +12,7 @@ VARIABLES gh, read, draft, screen, composing, pc, s, typed, written,
   i,     \* the lines taken
   took   \* the model's steps taken (tools/trace_check.mjs counts them)
 
-D == INSTANCE Send WITH Here <- {h1, h2, h3}, There <- {t1, t2}, Tries <- 3, Commits <- 1000, Kept <- TRUE, Forced <- FALSE, Cleared <- FALSE
+D == INSTANCE Send WITH Here <- {h1, h2, h3}, There <- {t1, t2}, Tries <- 3, Commits <- 1000, Kept <- TRUE, Forced <- FALSE, Cleared <- FALSE, Held <- TRUE
 
 model == <<gh, read, draft, screen, composing, pc, s, typed, written>>
 
@@ -26,15 +26,17 @@ Shows(e) ==
   /\ Has(e, "composing") => composing' = e.composing
 
 \* (an input that leaves the text as it was, the word converted by the input method, is no step of the model: what
-\* the line says must be the model as it is)
+\* the line says must be the model as it is. The places side by side tidied are an input too: Tidy)
 Act(n) ==
-  CASE n = "Type" -> (\E c \in {h1, h2, h3} : D!Type(c)) \/ UNCHANGED model
+  CASE n = "Type" -> (\E c \in {h1, h2, h3} : D!Type(c)) \/ D!Tidy \/ UNCHANGED model
+    [] n = "Tidy" -> D!Tidy
     [] n = "Compose" -> (\E c \in {h1, h2, h3} : D!Compose(c)) \/ UNCHANGED model
     [] n = "Converted" -> D!Converted
     [] n = "Write" -> \E c \in {t1, t2} : D!Write(c)
     [] n = "ReadIn" -> D!ReadIn
     [] n = "SendStart" -> D!SendStart
     [] n = "Build" -> D!Build
+    [] n = "Hold" -> D!Hold
     [] n = "Move" -> D!Move
     [] n = "Moved" -> D!Moved
     [] n = "Failed" -> D!Failed
@@ -42,7 +44,7 @@ Act(n) ==
     [] OTHER -> FALSE
 
 \* the model's steps, and whether a line took each (several may fit one line): tools/trace_check.mjs counts them
-Steps == {"Type", "Compose", "Converted", "Write", "ReadIn", "SendStart", "Build", "Move", "Moved", "Failed", "Sent"}
+Steps == {"Type", "Compose", "Converted", "Tidy", "Write", "ReadIn", "SendStart", "Build", "Hold", "Move", "Moved", "Failed", "Sent"}
 Count == took' = took \cup {n \in Steps : model' # model /\ Act(n)}
 
 Init == D!Init /\ i = 0 /\ took = {} /\ TLCSet(1, 0)

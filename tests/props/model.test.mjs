@@ -230,9 +230,13 @@ test('typed, operated, sent, read again, written, deleted, moved and renumbered 
       /** @type {Model} */
       const m = { typed: [], written: [], of: new Map(), trashed: new Set(), n: 0 };
       await fc.asyncModelRun(() => ({ model: m, real: { device, repo } }), cmds);
-      // at the end, read again and sent with nothing in the way: everything typed is on GitHub, or set aside on the device
+      // at the end, read again and sent with nothing in the way (a text with places side by side tidied first, as the
+      // author does: it is not sent till then): everything typed is on GitHub, or set aside on the device
       await device.readIn();
-      for (let i = 0; i < 3 && device.changes.size; i++) await device.send();
+      for (let i = 0; i < 3 && device.changes.size; i++) {
+        device.tidy();
+        await device.send();
+      }
       expect(device.changes.size).toBe(0);
       expect(lost(m.typed, [...Object.values(headTexts(repo)), ...keptTexts(device)])).toEqual([]);
       expect(lost(m.written, Object.values(headTexts(repo)))).toEqual([]);

@@ -25,7 +25,9 @@ test("the days from GitHub's commits, today from the device; the months; counted
   await expect(days.nth(0)).toHaveText(/^\d{4}-\d{2}-\d{2}＋3字43字$/);
   await expect(page.locator('.rec-chart')).toHaveCount(2);
   const months = page.locator('.rec-table').nth(1).locator('tbody tr');
-  await expect(months.last()).toHaveText('2026-10—43字');
+  // (October's end: with today's 3 characters while today is in October; the month of today is a row of its own after it)
+  const october = new Date(Date.now() + 9 * 3600 * 1000).toISOString().startsWith('2026-10');
+  await expect(months.last()).toHaveText(october ? '2026-10—43字' : '2026-10—40字');
   // counted once: opened again, GitHub is not asked for the commits again
   const asked = gh.calls.filter(c => c.includes('/commits?sha=main&per_page=100')).length;
   await page.getByRole('button', { name: '‹ 原稿へ' }).click();
