@@ -145,7 +145,12 @@ test('one button: the manifest and its state posted; the key kept, not extractab
   await page.getByRole('button', { name: '送る（1）' }).click();
   await expect(page.locator('#sync-state')).toHaveText(/^送りました（/);
   expect(work.text('chapters/01_first.md')).toBe('# 第1話 はじまり\n\nApp を作って書いた\n');
-  expect(gh.written.at(-1)).toEqual({ author: changed, committer: changed });
+  // (dated now, in Japan's time zone: DESK-SAVE-02)
+  const { author, committer } = /** @type {any} */ (gh.written.at(-1));
+  expect(committer).toEqual(author);
+  expect({ ...author, date: '' }).toEqual({ ...changed, date: '' });
+  expect(author.date).toMatch(/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\+09:00$/);
+  expect(Math.abs(Date.parse(author.date) - Date.now())).toBeLessThan(60000);
   // opened again: straight in, the author not asked again
   await page.reload();
   await expect(page.locator('#episode-title')).toHaveValue('はじまり');

@@ -4,7 +4,9 @@
    send an operation whose files changed there: Overlapped; ui/desk.js rebaseChanges on reading the branch again, and
    lib/changes.js rebase, which gives the operation up and keeps the text typed in it as a draft where the file came
    from, on the blob it was written on). One episode at "a", renamed to "b"; a text is the set of the letters in it and
-   a blob is its text. A text written alone (no operation) is sent as Send.tla says: both versions kept. *)
+   a blob is its text. A text written alone (no operation) is sent as Send.tla says: put together with the one there
+   (the two sets put together). A text held back because both wrote the same lines (Send.tla's Hold) is not followed
+   here: the traces of this model put together texts written in other lines. *)
 EXTENDS Naturals, FiniteSets
 
 CONSTANTS Here, There, Tries, Commits, Checked, KeptText, Idle
@@ -26,7 +28,7 @@ VARIABLES
   read,     \* the commit and the files this device read
   ch,       \* the changes not sent, by path
   pc,       \* the send: "idle", "taken", "built", "moved"
-  s,        \* the send's values: the changes taken, the head read, the files it makes, the files kept both
+  s,        \* the send's values: the changes taken, the head read, the files it makes, the files put together with the ones there
   typed,    \* the letters typed on this device
   written   \* the letters written elsewhere
 
@@ -98,8 +100,8 @@ SendStart ==
   /\ UNCHANGED <<gh, read, ch, typed, written>>
 
 \* the head read: an operation whose files changed there is not sent (Overlapped: the send stops, the changes kept);
-\* else the files it makes: an operation's as it says; a text written alone, both versions when the one there is not
-\* the one it was written on
+\* else the files it makes: an operation's as it says; a text written alone, the two put together when the one there is
+\* not the one it was written on (lib/merge.js mergeLines)
 Build ==
   /\ pc = "taken"
   /\ IF Checked /\ Overlaps(s.taken, gh.f) # {}
@@ -137,7 +139,7 @@ Failed ==
   /\ UNCHANGED <<gh, read, ch, typed, written>>
 
 \* the send done (lib/drafts.js afterSend): a change goes when its text is still the one taken (a gone file, a blob
-\* put there: no text); typed on meanwhile, it stays, a draft on the blob sent (on the blob it was, when both kept)
+\* put there: no text); typed on meanwhile, it stays, a draft on the blob sent, what was typed put in the text sent
 Sent ==
   /\ pc = "moved"
   /\ read' = [n |-> s.head, f |-> s.files]
@@ -145,8 +147,9 @@ Sent ==
              LET c == ch[p] IN
              IF c.kind = "none" \/ (c.kind \in {"gone", "sha"} /\ s.taken[p].kind = c.kind) \/ (c.kind = "text" /\ s.taken[p].kind = "text" /\ c.text = s.taken[p].text)
                THEN NoChange
-             ELSE IF p \in s.both THEN c
-             ELSE [kind |-> "text", text |-> c.text, base |-> BaseOf(s.files, p), op |-> FALSE]]
+             \* (a change with no text, an operation's made while the send was on its way: as it is)
+             ELSE IF c.kind # "text" THEN c
+             ELSE [kind |-> "text", text |-> c.text \cup s.files[p].text, base |-> BaseOf(s.files, p), op |-> FALSE]]
   /\ pc' = "idle" /\ s' = S0
   /\ UNCHANGED <<gh, typed, written>>
 

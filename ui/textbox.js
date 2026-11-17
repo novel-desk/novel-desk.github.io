@@ -1,6 +1,7 @@
 // The text box of the episode: the input bar, where things are laid out in it. From the server version's
 // public/ui/textbox.js
 import { lineBreaks } from '../lib/format.js';
+import { placeAfter } from '../lib/merge.js';
 import { barText, caretScroll, laidLine, lineAt, linesBefore, pageShift, previewFace } from '../lib/textbox.js';
 
 /** @typedef {import('./dom.js').El} El */
@@ -11,6 +12,16 @@ export function setKeepingCaret(area, text) {
   const [a, b, top] = [area.selectionStart, area.selectionEnd, area.scrollTop];
   area.value = text;
   area.setSelectionRange(Math.min(a, text.length), Math.min(b, text.length));
+  area.scrollTop = top;
+}
+// put a text in the box that the one in it was put together with line by line (a draft put together with what was
+// written elsewhere by a send, or held back with places side by side: lib/merge.js mergeLines): the caret on the same
+// line of it (FR-SAVE-08), the scroll where it was
+/** @param {HTMLTextAreaElement} area @param {string} text */
+export function setKeepingPlace(area, text) {
+  const [was, a, b, top] = [area.value, area.selectionStart, area.selectionEnd, area.scrollTop];
+  area.value = text;
+  area.setSelectionRange(placeAfter(was, text, a), placeAfter(was, text, b));
   area.scrollTop = top;
 }
 // line and paragraph separators typed or pasted in the box (an iPhone puts them): made line breaks, the caret and the

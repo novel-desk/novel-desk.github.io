@@ -2,7 +2,7 @@
 // in writing, the app left), and what is written elsewhere is read in there too; the note open keeps its text and
 // caret while it has a draft (FR-SAVE-03, FR-SAVE-08, FR-GH-04)
 import { test, expect, openWork, stored, WORK_FILES } from './lib/test.mjs';
-import { OTHER_DEVICE_MARK } from '../../lib/merge.js';
+import { END_MARK, MINE_MARK, OTHER_DEVICE_MARK } from '../../lib/merge.js';
 
 const TOML = `${WORK_FILES['novel.toml']}\n\n[notes]\ndir = "notes"\n`;
 // notes of the work (made up for the tests)
@@ -46,9 +46,10 @@ test('自動 on the notes screen: a note sent after a pause in writing, and when
   await expect.poll(() => work.text('notes/world.md')).toBe('# 世界観\n\n山もある。\n');
 });
 
-// FR-SAVE-08: written elsewhere while the notes screen is shown: read in there. The note open with no draft shows the
-// new text, the caret where it was; with a draft, its text stays and is sent with the other version beside it. The
-// list shows a note made elsewhere; a note deleted elsewhere while open is closed and said
+// FR-SAVE-08, FR-SAVE-05: written elsewhere while the notes screen is shown: read in there. The note open with no draft
+// shows the new text, the caret where it was; with a draft, its text stays; sent, the same line written on both is
+// side by side in it, kept on the device and said. The list shows a note made elsewhere; a note deleted elsewhere while
+// open is closed and said
 test('read in on the notes screen: the note open follows GitHub, its caret kept; its draft kept; the list drawn again; a note gone closed', async ({
   page,
   gh,
@@ -74,7 +75,8 @@ test('read in on the notes screen: the note open follows GitHub, its caret kept;
   work.push({ 'notes/world.md': '# 世界観\n\n空は青い。ほかで足した。\n' });
   await inFront(page);
   await expect(page.locator('#note-name')).toHaveText('世界観');
-  // a draft: kept as it is, the other version beside it when sent
+  // a draft: kept as it is; sent, the same line written on both: the two versions of it side by side, kept on this
+  // device (GitHub keeps its version)
   await page.locator('#note-body').fill('# 世界観\n\nここで書いた。\n');
   work.push({ 'notes/world.md': '# 世界観\n\nほかで書いた。\n' });
   await inFront(page);
@@ -82,10 +84,10 @@ test('read in on the notes screen: the note open follows GitHub, its caret kept;
   await expect(page.locator('#note-body')).toHaveValue('# 世界観\n\nここで書いた。\n');
   await expect(page.locator('#note-state')).toHaveText('端末に保存済み（未送信）');
   await leave(page);
-  await expect.poll(() => work.text('notes/world.md')).toBe(`# 世界観\n\nここで書いた。\n\n${OTHER_DEVICE_MARK}\n\n# 世界観\n\nほかで書いた。\n`);
-  // (sent: the note open shows both versions, as the branch has it)
-  await expect(page.locator('#note-body')).toHaveValue(`# 世界観\n\nここで書いた。\n\n${OTHER_DEVICE_MARK}\n\n# 世界観\n\nほかで書いた。\n`);
+  await expect(page.locator('#toast')).toHaveText(/^「世界観」は、ほかの端末での変更と同じ所を書き換えていたため、その所に両方の版を並べて/);
+  await expect(page.locator('#note-body')).toHaveValue(`# 世界観\n\n${MINE_MARK}\nここで書いた。\n${OTHER_DEVICE_MARK}\nほかで書いた。\n${END_MARK}\n`);
   await expect(page.locator('#note-state')).toHaveText(/^両方の版が並んでいます/);
+  expect(work.text('notes/world.md')).toBe('# 世界観\n\nほかで書いた。\n');
   // the list: a note made elsewhere shown
   await page.getByRole('button', { name: '‹ 一覧' }).click();
   work.push({ 'notes/sea.md': '# 海\n' });

@@ -6,8 +6,10 @@ import {
   changedKey,
   episodeAfter,
   episodeToOpen,
+  fileName,
   footState,
   hasConflict,
+  heldCount,
   neighborOf,
   readInSaid,
   readSaid,
@@ -18,7 +20,7 @@ import {
   unsentCount,
   updatedOf,
 } from '../../lib/desk.js';
-import { CONFLICT_MARK } from '../../lib/merge.js';
+import { CONFLICT_MARK, END_MARK, MINE_MARK } from '../../lib/merge.js';
 
 /** @param {Record<string, object>} o @returns {Map<string, any>} */
 const changes = o => new Map(Object.entries(o).map(([path, c]) => [path, { repo: 'o/r', path, base: '', at: 0, ...c }]));
@@ -44,22 +46,37 @@ describe('desk', () => {
     expect(readInSaid(['一', '二', '三', '四'])).toBe('ほかの端末の更新を読み込みました（一、二 ほか 2 話）');
   });
   // B6: what went said in the toast too (pressed under the text, the state above 送る is not in sight)
-  test('sentSaid: what went, in the state and in the toast; nothing to send; both versions side by side', () => {
-    expect(sentSaid({ message: '10/27 はじまり ＋5字', both: [] })).toEqual({
+  // FR-SAVE-05, DESK-SAVE-01: a text written elsewhere too said, sent or kept on the device, and how it goes
+  test('sentSaid: what went, in the state and in the toast; nothing to send; taken in what was written elsewhere; kept on the device with places side by side', () => {
+    const none = { merged: [], placed: [], left: [] };
+    expect(sentSaid({ message: '10/27 はじまり ＋5字', ...none })).toEqual({
       text: '送りました（10/27 はじまり ＋5字）',
       kind: 'ok',
       toast: 'GitHub に送りました（10/27 はじまり ＋5字）',
     });
-    expect(sentSaid({ message: '', both: [] })).toEqual({
+    expect(sentSaid({ message: '', ...none })).toEqual({
       text: '送る変更はありませんでした（GitHub にもう同じ内容があります）',
       kind: 'ok',
       toast: '送る変更はありませんでした（GitHub にもう同じ内容があります）',
     });
-    expect(sentSaid({ message: '10/27 はじまり ＋5字、駅で ＋1字', both: ['はじまり', '駅で'] })).toEqual({
-      text: '送りました。はじまり、駅ではほかでも書き換えられていたので、両方の版を並べました（10/27 はじまり ＋5字、駅で ＋1字）',
-      kind: 'err',
-      toast: '送りました（10/27 はじまり ＋5字、駅で ＋1字）。はじまり、駅ではほかでも書き換えられていたので、両方の版を並べました',
+    expect(sentSaid({ message: '10/27 はじまり ＋5字、駅で ＋1字', ...none, merged: ['はじまり', '駅で'] })).toEqual({
+      text: '送りました（10/27 はじまり ＋5字、駅で ＋1字）。「はじまり」「駅で」は、ほかの端末での変更を取り込みました',
+      kind: 'ok',
+      toast: 'GitHub に送りました（10/27 はじまり ＋5字、駅で ＋1字）。「はじまり」「駅で」は、ほかの端末での変更を取り込みました',
     });
+    const tidy = '「――― ここから」の行を探して整理すると、次の送信で GitHub に送ります';
+    const placed = '「駅で」は、ほかの端末での変更と同じ所を書き換えていたため、その所に両方の版を並べて、この端末に残しました（GitHub には送っていません）';
+    expect(sentSaid({ message: '10/27 はじまり ＋5字', ...none, placed: ['駅で'] })).toEqual({
+      text: `送りました（10/27 はじまり ＋5字）。${placed}。${tidy}`,
+      kind: 'err',
+      toast: `GitHub に送りました（10/27 はじまり ＋5字）。${placed}。${tidy}`,
+    });
+    expect(sentSaid({ message: '', merged: [], placed: ['駅で'], left: ['人物', '世界'] })).toEqual({
+      text: `${placed}。「人物」「世界」は、両方の版を並べた所が残っているため、GitHub に送っていません。${tidy}`,
+      kind: 'err',
+      toast: `${placed}。「人物」「世界」は、両方の版を並べた所が残っているため、GitHub に送っていません。${tidy}`,
+    });
+    expect(sentSaid({ message: '', ...none, left: ['駅で'] }).text).toBe(`「駅で」は、両方の版を並べた所が残っているため、GitHub に送っていません。${tidy}`);
   });
   test('briefOf: nothing without a work or not synced; 送信失敗, 未送信, 送信済み', () => {
     const s = { read: true, mode: /** @type {const} */ ('auto'), bad: false, unsent: 0 };
@@ -96,7 +113,21 @@ describe('desk', () => {
     expect(footState({ ...s, text: CONFLICT_MARK, draft: true, short: true })).toMatch(/^両方の版が並んでいます/);
     expect(footState({ ...s, text: `前\n${CONFLICT_MARK}\n後`, draft: true })).toMatch(/^両方の版が並んでいます/);
     expect(hasConflict(`a${CONFLICT_MARK}`)).toBe(true);
+    expect(hasConflict(`a\n${END_MARK}\n`)).toBe(true);
     expect(hasConflict('a')).toBe(false);
+  });
+  // FR-SAVE-05, DESK-SAVE-01: a text sent or held back named: an episode by its title, else its heading, else its path
+  test('fileName: an episode by its title; else by the heading of its text; else by its path', () => {
+    expect(fileName('駅で', 'chapters/02.md', '# 第2話 駅で\n')).toBe('駅で');
+    expect(fileName(undefined, 'notes/world.md', '# 世界観\n本文\n')).toBe('世界観');
+    expect(fileName(undefined, 'notes/memo.txt', '見出しの無い本文\n')).toBe('notes/memo.txt');
+  });
+  // FR-SAVE-05, DESK-SAVE-01: a text held back goes only when 送る is pressed, which says why
+  test('heldCount: the changes whose texts have places side by side (an operation without a text: not)', () => {
+    expect(
+      heldCount(changes({ 'a.md': { text: `前\n${MINE_MARK}\n` }, 'b.md': { text: '本文' }, 'c.md': { sha: 's1', op: 'op1' }, 'd.md': { text: END_MARK } })),
+    ).toBe(2);
+    expect(heldCount(new Map())).toBe(0);
   });
   test('readSaid: 同期しない, offline, else read at the time', () => {
     expect(readSaid({ mode: 'off', offline: true, when: '10:00' })).toEqual({ text: expect.stringMatching(/^同期しない設定です/), kind: '' });

@@ -188,10 +188,13 @@ test('renamed here and changed elsewhere: not sent, said; read again, the rename
   await expect(page.locator('#tree .node .t')).toHaveText(['first', 'second', 'part', 'third']);
   await expect(page.locator('#episode-title')).toHaveValue('first');
   await expect(page.locator('#body')).toHaveValue('ここで書いた\n');
-  // sent now: both versions side by side, nothing lost
+  // sent now: the same lines written on both, side by side, nothing lost; kept on this device until tidied
   await page.getByRole('button', { name: '送る（1）' }).click();
-  await expect(page.locator('#sync-state')).toHaveText(/両方の版を並べました/);
-  expect(work.text('chapters/01_first.md')).toMatch(/^ここで書いた\n\n――― ここから、ほかの端末で書かれた版 ―――\n\nほかで書いた\n$/);
+  await expect(page.locator('#toast')).toHaveText(/^「first」は、ほかの端末での変更と同じ所を書き換えていたため、その所に両方の版を並べて/);
+  await expect(page.locator('#body')).toHaveValue(
+    '――― ここから、この端末で書いた版 ―――\nここで書いた\n――― ここから、ほかの端末で書かれた版 ―――\nほかで書いた\n――― 並べた版はここまで ―――\n',
+  );
+  expect(work.text('chapters/01_first.md')).toBe('ほかで書いた\n');
 });
 
 // FR-EDIT-02, FR-TOC-01: the counts and the last change

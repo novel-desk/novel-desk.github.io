@@ -26,7 +26,7 @@ import { $, busy, show, toast } from './dom.js';
 import { showHistory } from './history.js';
 import { pickImage, renderImages, wireImages } from './images.js';
 import { api } from './shared.js';
-import { evenBreaks, inBoxCopy, inputBar, insertAt, setKeepingCaret, setPreviewButton } from './textbox.js';
+import { evenBreaks, inBoxCopy, inputBar, insertAt, setKeepingCaret, setKeepingPlace, setPreviewButton } from './textbox.js';
 
 /** @type {string | null} the note open */
 let notePath = null;
@@ -117,7 +117,17 @@ export async function readInNotes() {
     toast('この資料は、ほかの所で削除されたか、動かされました（書きかけがあれば「未送信の一覧」に残しています）');
     return openNotes();
   }
-  if (api.drafts().has(path)) return;
+  const draft = api.drafts().get(path);
+  if (draft) {
+    // (its draft put together by a send with what was written elsewhere, or held back with places side by side in it:
+    // shown, the caret on the same line of it; the whole note, the lines open alone given up)
+    if (draft.text !== undefined && draft.text !== noteText()) {
+      noteSection = null;
+      $('note-whole').hidden = true;
+      setKeepingPlace(area(), draft.text);
+    }
+    return showState();
+  }
   const text = (await api.texts([path]))[path];
   // (one that cannot be read now, not UTF-8: what is written left as it is, and said)
   if (text === null) {

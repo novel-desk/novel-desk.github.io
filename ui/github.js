@@ -166,9 +166,9 @@ export const newTree = async (repo, base, tree) => (await send('POST', `/repos/$
 /** @param {string} repo @param {string} message @param {string} tree @param {string} parent */
 export const newCommit = async (repo, message, tree, parent) =>
   (await send('POST', `/repos/${repoPath(repo)}/git/commits`, { message, tree, parents: [parent], ...writtenBy() })).sha;
-// who a commit is written by: the author (GitHub would write it as the App; so it does when the author is not known
-// yet)
-const writtenBy = () => byAuthor(app?.author);
+// who a commit is written by, and now in Japan's time (lib/github.js writtenBy): the author (GitHub would write it as
+// the App; so it does when the author is not known yet)
+const writtenBy = () => byAuthor(app?.author, Date.now());
 // moves the branch onto the commit, only forward (a branch moved on elsewhere since: GitHubError 422)
 /** @param {string} repo @param {string} branch @param {string} commit */
 export const moveBranch = (repo, branch, commit) => send('PATCH', `/repos/${repoPath(repo)}/git/refs/heads/${refPath(branch)}`, { sha: commit, force: false });

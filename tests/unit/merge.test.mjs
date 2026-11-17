@@ -1,19 +1,215 @@
 import { describe, test, expect } from 'vitest';
-import { extOf, keptBoth, layoutOf, nameOf, placeOf, sendPlan, underHeading, OTHER_DEVICE_MARK, CONFLICT_MARK } from '../../lib/merge.js';
+import {
+  extOf,
+  hunksOf,
+  layoutOf,
+  mergeLines,
+  nameOf,
+  placeAfter,
+  placeOf,
+  sendPlan,
+  sideBySide,
+  underHeading,
+  CONFLICT_MARK,
+  END_MARK,
+  MINE_MARK,
+  OTHER_DEVICE_MARK,
+} from '../../lib/merge.js';
 import { firstLayout, parseLayout } from '../../lib/layout.js';
+
+// one place with both versions side by side (`mine`, `theirs`: their lines, each with its line end)
+/** @param {string} mine @param {string} theirs */
+const sides = (mine, theirs) => `${MINE_MARK}\n${mine}${OTHER_DEVICE_MARK}\n${theirs}${END_MARK}\n`;
+// a text of lines, each with its line end
+/** @param {string[]} lines */
+const text = lines => lines.map(l => `${l}\n`).join('');
 
 describe('merge', () => {
   // FR-SAVE-05
-  test('the mark of both versions starts with the mark the screen looks for', () => {
+  test('the lines that put two versions side by side: the server version’s; the second starts with the mark the screen looks for', () => {
     expect(OTHER_DEVICE_MARK.startsWith(CONFLICT_MARK)).toBe(true);
     // (the server version's mark, which the screen looks for in texts it wrote too)
     expect(CONFLICT_MARK).toBe('――― ここから、ほかの');
+    // (the server version's src/merge.rs SAVED and END_MARK: a text side by side reads the same, whichever wrote it)
+    expect([MINE_MARK, OTHER_DEVICE_MARK, END_MARK]).toEqual([
+      '――― ここから、この端末で書いた版 ―――',
+      '――― ここから、ほかの端末で書かれた版 ―――',
+      '――― 並べた版はここまで ―――',
+    ]);
   });
-  // FR-SAVE-04, FR-SAVE-06
-  test('keptBoth: mine first, the mark, theirs; the same text (other line ends too) is no conflict', () => {
-    expect(keptBoth('私の版\n\n', 'ほかの版\n')).toEqual({ text: `私の版\n\n${OTHER_DEVICE_MARK}\n\nほかの版\n`, both: true });
-    expect(keptBoth('同じ\n二行', '同じ\r\n二行')).toEqual({ text: '同じ\n二行', both: false });
-    expect(keptBoth('同じ\r\n二行', '同じ\n二行')).toEqual({ text: '同じ\r\n二行', both: false });
+  // FR-SAVE-05: a place tidied only in part is still there (a line of the three left)
+  test('sideBySide: any of the three lines, or the start of the second (the server version’s other marks); none, not', () => {
+    expect(sideBySide(`前\n${MINE_MARK}\n後\n`)).toBe(true);
+    expect(sideBySide(`前\n${CONFLICT_MARK}所（GitHub や Working Copy）で書かれた版 ―――\n`)).toBe(true);
+    expect(sideBySide(`前\n${END_MARK}`)).toBe(true);
+    expect(sideBySide('――― ここから\n本文\n')).toBe(false);
+    expect(sideBySide('')).toBe(false);
+  });
+  // FR-SAVE-06: the changes between two versions, small for a long episode changed in a few lines
+  test('hunksOf: none for the same lines; a line changed, added, removed; the middle by its longest common subsequence, the first match taken', () => {
+    const L = (/** @type {string} */ s) => [...s];
+    expect(hunksOf(L('abc'), L('abc'))).toEqual([]);
+    expect(hunksOf([], [])).toEqual([]);
+    expect(hunksOf(L('abc'), L('axc'))).toEqual([{ from: 1, to: 2, at: 1, end: 2 }]);
+    expect(hunksOf(L('ac'), L('abc'))).toEqual([{ from: 1, to: 1, at: 1, end: 2 }]);
+    expect(hunksOf(L('abc'), L('ac'))).toEqual([{ from: 1, to: 2, at: 1, end: 1 }]);
+    // (a line repeated: the first ones matched; the lines both share at the end kept: a line typed before an empty line
+    // is a line changed, not one added and the empty line removed)
+    expect(hunksOf(['', ''], ['a', ''])).toEqual([{ from: 0, to: 1, at: 0, end: 1 }]);
+    expect(hunksOf(L('aa'), L('aaa'))).toEqual([{ from: 2, to: 2, at: 2, end: 3 }]);
+    expect(hunksOf(L('aaa'), L('aa'))).toEqual([{ from: 2, to: 3, at: 2, end: 2 }]);
+    expect(hunksOf(L('pxxq'), L('rxs'))).toEqual([
+      { from: 0, to: 1, at: 0, end: 1 },
+      { from: 2, to: 4, at: 2, end: 3 },
+    ]);
+    expect(hunksOf(L('abcb'), L('babc'))).toEqual([
+      { from: 0, to: 0, at: 0, end: 1 },
+      { from: 3, to: 4, at: 4, end: 4 },
+    ]);
+    expect(hunksOf(L('ab'), L('ba'))).toEqual([
+      { from: 0, to: 1, at: 0, end: 0 },
+      { from: 2, to: 2, at: 1, end: 2 },
+    ]);
+    // every pair of texts of up to three lines of two kinds: the changes make one into the other, and the lines they
+    // leave are a longest common subsequence of the two
+    /** @param {string} a @param {string} b @returns {number} */
+    const lcs = (a, b) => (!a || !b ? 0 : a[0] === b[0] ? 1 + lcs(a.slice(1), b.slice(1)) : Math.max(lcs(a.slice(1), b), lcs(a, b.slice(1))));
+    const all = [''];
+    for (let n = 0; n < 3; n++) for (const t of all.filter(t => t.length === n)) all.push(`${t}a`, `${t}b`);
+    for (const a of all)
+      for (const b of all) {
+        let out = '',
+          at = 0,
+          kept = 0;
+        for (const h of hunksOf(L(a), L(b))) {
+          expect(h.from >= at && h.to >= h.from && h.end >= h.at).toBe(true);
+          kept += h.from - at;
+          out += a.slice(at, h.from) + b.slice(h.at, h.end);
+          at = h.to;
+        }
+        expect([out + a.slice(at), kept + a.length - at]).toEqual([b, lcs(a, b)]);
+      }
+  });
+  // FR-SAVE-04, FR-SAVE-06: written in two places, in other lines: both taken, nothing twice
+  test('mergeLines: what only one side changed is taken, each side’s; the same change once; lines removed on one side, removed', () => {
+    const base = text(['# 第1話', '', '一', '', '二', '', '三']);
+    expect(
+      mergeLines(base, text(['# 第1話', '', '一を書き換えた', '', '二', '', '三']), text(['# 第1話', '', '一', '', '二', '', '三を書き換えた', '四'])),
+    ).toEqual({
+      text: text(['# 第1話', '', '一を書き換えた', '', '二', '', '三を書き換えた', '四']),
+      both: false,
+    });
+    // (the other side's change before this side's, in the text)
+    expect(mergeLines(base, text(['# 第1話', '', '一', '', '二', '', '三と']), text(['# 第1話 朝', '', '一', '', '二', '', '三']))).toEqual({
+      text: text(['# 第1話 朝', '', '一', '', '二', '', '三と']),
+      both: false,
+    });
+    expect(mergeLines(base, text(['# 第1話', '', '一', '', '二と', '', '三']), text(['# 第1話', '', '一', '', '二と', '', '三と']))).toEqual({
+      text: text(['# 第1話', '', '一', '', '二と', '', '三と']),
+      both: false,
+    });
+    expect(mergeLines(base, text(['# 第1話', '', '二', '', '三']), text(['# 第1話', '', '一', '', '二', '', '三', '四']))).toEqual({
+      text: text(['# 第1話', '', '二', '', '三', '四']),
+      both: false,
+    });
+    expect(mergeLines(base, text(['# 第1話', '', '一', '', '二', '', '三', '四']), text(['# 第1話', '', '一', '', '三']))).toEqual({
+      text: text(['# 第1話', '', '一', '', '三', '四']),
+      both: false,
+    });
+  });
+  // FR-SAVE-05, FR-SAVE-06: only the lines both changed are side by side, the lines both versions share at the start
+  // and the end of the place once
+  test('mergeLines: the same lines changed on both sides, lines added at the same place: those lines side by side, nothing else twice', () => {
+    const base = text(['一', '', '二', '', '三']);
+    expect(mergeLines(base, text(['一', '', '二をここで', '', '三']), text(['一', '', '二をほかで', '', '三']))).toEqual({
+      text: text(['一', '']) + sides('二をここで\n', '二をほかで\n') + text(['', '三']),
+      both: true,
+    });
+    expect(mergeLines(base, text(['一', '', '二', '', '三', 'ここで足した']), text(['一', '', '二', '', '三', 'ほかで足した']))).toEqual({
+      text: text(['一', '', '二', '', '三']) + sides('ここで足した\n', 'ほかで足した\n'),
+      both: true,
+    });
+    // (changes that touch, with no line between them, are one place; its first and last lines, the same on both
+    // sides, once)
+    expect(mergeLines(base, text(['一', '', '二', 'ここで', '', '三']), text(['一', '', '二', 'ほかで', '', '三']))).toEqual({
+      text: text(['一', '', '二']) + sides('ここで\n', 'ほかで\n') + text(['', '三']),
+      both: true,
+    });
+    expect(mergeLines(text(['一', '二', '三']), text(['一', '二と', '三']), text(['一', '二', '三と']))).toEqual({
+      text: text(['一']) + sides('二と\n三\n', '二\n三と\n'),
+      both: true,
+    });
+    // (one side's change takes in the other's, longer: one place over both; each side's lines of it)
+    expect(mergeLines(text(['a', 'b', 'c', 'd', 'e']), text(['a', 'B', 'C', 'D', 'e']), text(['a', 'b', 'X', 'd', 'e']))).toEqual({
+      text: text(['a']) + sides('B\nC\nD\n', 'b\nX\nd\n') + text(['e']),
+      both: true,
+    });
+    expect(mergeLines(text(['a', 'b', 'c', 'd', 'e']), text(['a', 'b', 'C2', 'D2', 'e']), text(['a', 'B1', 'C1', 'd', 'e']))).toEqual({
+      text: text(['a']) + sides('b\nC2\nD2\n', 'B1\nC1\nd\n') + text(['e']),
+      both: true,
+    });
+    // (a line changed here at the start, one added there at the end: not one place)
+    expect(mergeLines('\n\n', 'a\n\n', '\n\nx')).toEqual({ text: 'a\n\nx\n', both: false });
+    // (removed here, added to there at its end: one place)
+    expect(mergeLines(text(['a', 'b']), '', text(['a', 'b', 'c']))).toEqual({ text: sides('', 'a\nb\nc\n'), both: true });
+    // (the two versions of the place sharing their last lines, or one the other's start: those lines once)
+    expect(mergeLines(text(['p', 'q']), text(['m', 's']), text(['t', 's']))).toEqual({ text: sides('m\n', 't\n') + text(['s']), both: true });
+    expect(mergeLines(text(['p', 'q', 'r']), text(['m', 's', 'u']), text(['t', 's', 'u']))).toEqual({
+      text: sides('m\n', 't\n') + text(['s', 'u']),
+      both: true,
+    });
+    expect(mergeLines(text(['y']), text(['x', 'x']), text(['x', 'x', 'x']))).toEqual({ text: text(['x', 'x']) + sides('', 'x\n'), both: true });
+    expect(mergeLines(text(['y']), text(['x', 'x', 'x']), text(['x', 'x']))).toEqual({ text: text(['x', 'x']) + sides('x\n', ''), both: true });
+    // (one side's lines the same as the other's start: the rest side by side)
+    expect(mergeLines(text(['p']), text(['x']), text(['x', 'y']))).toEqual({ text: text(['x']) + sides('', 'y\n'), both: true });
+  });
+  // FR-SAVE-04, FR-SAVE-06: the text it was written from not known: nothing taken as removed, the same lines once
+  test('mergeLines without the base: every place where the two differ side by side; the lines both have once', () => {
+    expect(mergeLines(null, text(['一', 'ここで', '三']), text(['一', 'ほかで', '三', '四']))).toEqual({
+      text: text(['一']) + sides('ここで\n', 'ほかで\n') + text(['三']) + sides('', '四\n'),
+      both: true,
+    });
+    expect(mergeLines(null, text(['一']), text(['一']))).toEqual({ text: text(['一']), both: false });
+  });
+  // FR-SAVE-06: the same text, other line ends: no conflict, mine as it is
+  test('mergeLines: line ends of either kind; the same text is mine as it is; a last line without a line end stays so', () => {
+    expect(mergeLines('同じ\n二行', '同じ\r\n二行', '同じ\n二行\n')).toEqual({ text: '同じ\r\n二行', both: false });
+    expect(mergeLines(text(['a', 'b', 'c']).replace(/\n/g, '\r\n'), text(['a', 'B', 'c']), 'a\r\nb\r\nc\r\nd\r\n')).toEqual({
+      text: text(['a', 'B', 'c', 'd']),
+      both: false,
+    });
+    // (the line that ends a place side by side keeps its line end: what is typed after it goes on a line of its own)
+    expect(mergeLines(text(['a', 'b']), 'a\nb\nここ', 'a\nb\nほか')).toEqual({ text: text(['a', 'b']) + sides('ここ\n', 'ほか\n'), both: true });
+    expect(mergeLines(text(['a', 'b', 'c']), 'a\nB\nc', 'a\nX\nc')).toEqual({ text: `a\n${sides('B\n', 'X\n')}c`, both: true });
+    expect(mergeLines(text(['a', 'b']), 'A\nb', text(['a', 'b', 'c']))).toEqual({ text: 'A\nb\nc', both: false });
+    expect(mergeLines('', '', text(['c']))).toEqual({ text: text(['c']), both: false });
+  });
+  // FR-SAVE-06: the case of the work that found it: an episode of 2,300 lines changed in a few lines in two places
+  test('mergeLines: a long episode changed in a few lines in two places: those lines only, never the whole text twice', () => {
+    const lines = Array.from({ length: 2300 }, (_, i) => `段落${i}`);
+    const base = text(lines);
+    const mine = text(lines.map(l => (l === '段落10' ? '段落10をここで' : l === '段落1200' ? '段落1200をここで' : l)));
+    const theirs = text([...lines.map(l => (l === '段落2200' ? '段落2200をほかで' : l === '段落1200' ? '段落1200をほかで' : l)), '最後にほかで']);
+    const merged = mergeLines(base, mine, theirs);
+    expect(merged.both).toBe(true);
+    expect(merged.text).toBe(
+      text([...lines.slice(0, 10), '段落10をここで', ...lines.slice(11, 1200)]) +
+        sides('段落1200をここで\n', '段落1200をほかで\n') +
+        text([...lines.slice(1201, 2200), '段落2200をほかで', ...lines.slice(2201), '最後にほかで']),
+    );
+    // (without the base, the lines both have once)
+    expect(mergeLines(null, mine, theirs).text.split('\n').length).toBeLessThan(2300 + 20);
+  });
+  // FR-SAVE-08: the caret on the line it was on, once the text is put together
+  test('placeAfter: the same place on a line both have, lines added or removed before it; the start of what a changed line became', () => {
+    expect(placeAfter('一\n二\n三', 'ほか\n一\n二\n三', 3)).toBe(6);
+    expect(placeAfter('一\n二\n三', '一\n三', 5)).toBe(3);
+    expect(placeAfter('一\n二二\n三', '一\nほか\n三', 4)).toBe(2);
+    expect(placeAfter('一\n二二\n三', '一\nほか\n三', 2)).toBe(2);
+    expect(placeAfter('一\n二', '一', 3)).toBe(1);
+    expect(placeAfter('一\n二', `一\n${MINE_MARK}\n二`, 3)).toBe(4 + MINE_MARK.length);
+    expect(placeAfter('一\n二', '一\n二\nほか', 1)).toBe(1);
+    expect(placeAfter('a\nb\nc\nd\ne', 'a\nX\nY\nc\nd\ne', 6)).toBe(8);
   });
   // FR-SAVE-04, FR-SAVE-06: the same file, changed there or not
   const f = (/** @type {Record<string, string>} */ paths) => Object.fromEntries(Object.entries(paths).map(([p, sha]) => [p, { sha, mode: '100644' }]));

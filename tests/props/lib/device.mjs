@@ -1,13 +1,15 @@
 // A device of the property tests (tests/props): the real modules of sending and reading (ui/send.js, ui/work.js,
 // ui/github.js over lib/) talking to the fake GitHub of the screen tests (tests/ui/lib/fake-github.mjs) through
 // fetch, and what the desk (ui/desk.js) does around them, step by step as it does it: a text typed kept as a change
-// (keepText), an operation's plan made changes (apply), a send and what is left after it (sendDrafts), the work read
+// (keepText), the places side by side in the texts tidied by the author, an operation's plan made changes (apply), a
+// send and what is left after it (sendDrafts: the texts held back with places side by side too), the work read
 // again and the operations whose files changed elsewhere given up (readIn, rebaseChanges), and the texts whose file is
 // gone there or is another file now set aside (lib/changes.js settle, the send's refused). The store on the device
 // (ui/db.js) is the in-memory one of memory-db.mjs (the tests mock it). Nothing here reaches the real GitHub
 import { FakeGitHub, FakeRepo, TOKEN } from '../../ui/lib/fake-github.mjs';
 import { moveFiles, rebase, relabel, settle, writeFile } from '../../../lib/changes.js';
-import { afterSend, draftOf, goneWhileSent, typedOver } from '../../../lib/drafts.js';
+import { afterSend, draftOf, goneWhileSent, keptAfterSend, typedOver } from '../../../lib/drafts.js';
+import { sideBySide } from '../../../lib/merge.js';
 import { episodesOf } from '../../../lib/layout.js';
 import { editToml } from '../../../lib/tomledit.js';
 import { viewOf } from '../../../lib/view.js';
@@ -125,6 +127,19 @@ export class Device {
     else next.delete(path);
     this.changes = next;
   }
+  // the places side by side tidied by the author: in each text that has them, the lines that mark them taken out (both
+  // versions' lines kept)
+  tidy() {
+    for (const [path, c] of this.changes)
+      if (typeof c.text === 'string' && sideBySide(c.text))
+        this.type(
+          path,
+          c.text
+            .split('\n')
+            .filter(l => !sideBySide(l))
+            .join('\n'),
+        );
+  }
   // the work as the plans of lib/episodes.js take it (ui/desk.js forPlans)
   shown() {
     const v = this.view();
@@ -160,6 +175,11 @@ export class Device {
   async send() {
     const w = this.work;
     const result = await sendAll(w, [...this.changes.values()], this.edits);
+    const work = await contents(
+      { repo: w.repo, branch: w.branch, commit: result.commit, tree: result.tree, updated: result.updated, blobs: result.blobs, folders: result.folders },
+      false,
+    );
+    const look = await lookOf(w.repo, [...this.changes.values()], w, work, false);
     const typed = new Map(this.changes);
     const next = new Map(this.changes);
     for (const d of result.refused) {
@@ -167,16 +187,13 @@ export class Device {
       if (now) this.aside(now);
       next.delete(d.path);
     }
-    for (const { draft, to, blob, both } of result.sent) {
-      const after = afterSend(typed.get(draft.path) ?? goneWhileSent(draft, this.remoteText(draft.path)), draft.text, blob, both);
+    for (const { draft, to, text, blob } of result.sent) {
+      const after = afterSend(typed.get(draft.path) ?? goneWhileSent(draft, this.remoteText(draft.path)), draft.text, blob, text);
       if (next.get(draft.path) === typed.get(draft.path)) next.delete(draft.path);
       if (after) next.set(to, { ...after, path: to });
     }
-    this.work = await contents(
-      { repo: w.repo, branch: w.branch, commit: result.commit, tree: result.tree, updated: result.updated, blobs: result.blobs, folders: result.folders },
-      false,
-    );
-    const { changes: left, parked } = settle(next, w.blobs, result.blobs, await lookOf(w.repo, [...next.values()], w, this.work, false));
+    this.work = work;
+    const { changes: left, parked } = settle(keptAfterSend(next, typed, result.held), w.blobs, result.blobs, look);
     for (const d of parked) this.aside(d);
     this.changes = left;
     this.edits = [];

@@ -3,7 +3,7 @@
 // in _trash/) is never put back where it was, nor into a new file made there: it is refused, stays on the device, is
 // said, and the author chooses what to do with it (as the server version refuses such a save: FR-TOC-06, FR-NOTE-06)
 import { test, expect, openWork, stored, WORK_FILES } from './lib/test.mjs';
-import { OTHER_DEVICE_MARK } from '../../lib/merge.js';
+import { END_MARK, MINE_MARK, OTHER_DEVICE_MARK } from '../../lib/merge.js';
 
 // notes of the work (made up for the tests)
 const NOTES = {
@@ -120,13 +120,19 @@ test('numbered episodes renumbered elsewhere: written into the same one where it
   await expect(page.locator('#send')).toBeDisabled();
   await expect.poll(() => aside(page)).toEqual([['chapters/01.md', '一の本文\nもう一度\n']]);
   expect(work.text('chapters/01.md')).toBe('新しい話の本文\n');
-  // sent by the author: beside the new episode's text (said, and chosen)
+  // sent by the author: beside the new episode's text, where they differ (said, and chosen): kept on this device until
+  // tidied, GitHub's as it is (FR-SAVE-05)
   await page.getByRole('button', { name: '未送信の一覧' }).click();
   await page.locator('#unsent [data-unpark-send="0"]').click();
-  await expect(page.locator('#sync-state')).toHaveText(/^送りました/);
-  await expect(page.locator('#unsent')).toBeHidden();
+  await expect(page.locator('#toast')).toHaveText(
+    'chapters/01.md の書きかけと GitHub の版の違う所を並べて、この端末に残しました（まだ送っていません）。「――― ここから」の行を探して整理すると、次の送信で GitHub に送ります',
+  );
+  // (the list shows it as a change not sent)
+  await expect(page.locator('#unsent')).toBeVisible();
+  await page.locator('#close-unsent').click();
   await expect.poll(() => aside(page)).toEqual([]);
-  expect(work.text('chapters/01.md')).toBe(`一の本文\nもう一度\n\n${OTHER_DEVICE_MARK}\n\n新しい話の本文\n`);
+  await expect(page.locator('#body')).toHaveValue(`${MINE_MARK}\n一の本文\nもう一度\n${OTHER_DEVICE_MARK}\n新しい話の本文\n${END_MARK}\n`);
+  expect(work.text('chapters/01.md')).toBe('新しい話の本文\n');
 });
 
 // FR-TOC-04: two episodes written here, swapped elsewhere (renumbered): each text goes into its own episode, where it

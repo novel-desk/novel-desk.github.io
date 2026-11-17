@@ -1,12 +1,17 @@
 // The trace of formal/Send.tla in the model's terms (tools/trace_check.mjs): the screen test tests/ui/trace.spec.mjs
 // writes it (tests/ui/lib/trace.mjs). One episode is followed: its text on the branch, as read, in the draft and in
-// the text box, each as the set of its letters; the commits by their number on the branch (the first one 0)
+// the text box, each as the set of its letters, and whether it is marked (places side by side in it: lib/merge.js
+// sideBySide); the commits by their number on the branch (the first one 0)
+import { sideBySide } from '../../lib/merge.js';
 import { CONSTANTS, bool, letters, rec, str } from './tla.mjs';
 
 /** @param {{ n: number, text: string }} c */
-const commit = c => rec({ n: String(c.n), text: letters(c.text) });
+const commit = c => rec({ n: String(c.n), text: letters(c.text), marked: bool(sideBySide(c.text)) });
 /** @param {{ text: string, base: string } | null} d */
-const draft = d => (d ? rec({ has: 'TRUE', text: letters(d.text), base: letters(d.base) }) : rec({ has: 'FALSE', text: '{}', base: '{}' }));
+const draft = d =>
+  d
+    ? rec({ has: 'TRUE', text: letters(d.text), base: letters(d.base), marked: bool(sideBySide(d.text)) })
+    : rec({ has: 'FALSE', text: '{}', base: '{}', marked: 'FALSE' });
 
 /** @param {any[]} lines @returns {{ data: string }} */
 export function toModel(lines) {
