@@ -4,6 +4,10 @@ import {
   briefOf,
   changedEpisodes,
   changedKey,
+  discardOf,
+  discardOff,
+  discardSaid,
+  discardStep,
   episodeAfter,
   episodeToOpen,
   fileName,
@@ -133,6 +137,55 @@ describe('desk', () => {
     expect(readSaid({ mode: 'off', offline: true, when: '10:00' })).toEqual({ text: expect.stringMatching(/^同期しない設定です/), kind: '' });
     expect(readSaid({ mode: 'auto', offline: true, when: '10:00' })).toEqual({ text: expect.stringMatching(/^オフラインです/), kind: 'err' });
     expect(readSaid({ mode: 'manual', offline: false, when: '10:00' })).toEqual({ text: 'GitHub から読みました（10:00）', kind: 'ok' });
+  });
+  // DESK-SAVE-03: what 書きかけを捨てて読み込み直す gives up: a text written over GitHub's version (places side by side
+  // in it too); none with no text written; not one of an operation, nor one GitHub does not have
+  test('DESK-SAVE-03: discardOf: a text written over GitHub’s version; none; one of an operation or not on GitHub', () => {
+    const [text, held, moved, typed] = changes({
+      'a.md': { text: '書いた' },
+      'b.md': { text: `${MINE_MARK}\n一\n${END_MARK}\n` },
+      'c.md': { sha: '1', op: 'o1' },
+      'd.md': { text: '書いた', op: 'o2' },
+    }).values();
+    expect(discardOf(text, true)).toBe('text');
+    expect(discardOf(held, true)).toBe('text');
+    expect(discardOf(undefined, true)).toBe('none');
+    expect(discardOf(moved, true)).toBe('none');
+    expect(discardOf(typed, true)).toBe('op');
+    expect(discardOf(text, false)).toBe('op');
+  });
+  // DESK-SAVE-03: the button faint while the work is sent or read, and with nothing to give up
+  test('DESK-SAVE-03: discardOff: not pressed while busy or with no text written', () => {
+    const [text] = changes({ 'a.md': { text: '書いた' } }).values();
+    expect(discardOff({ busy: false, draft: text, onGitHub: true })).toBe(false);
+    expect(discardOff({ busy: true, draft: text, onGitHub: true })).toBe(true);
+    expect(discardOff({ busy: false, draft: undefined, onGitHub: true })).toBe(true);
+    // (one of an operation: pressed, to say why it is not given up)
+    expect(discardOff({ busy: false, draft: text, onGitHub: false })).toBe(false);
+  });
+  // DESK-SAVE-03: asked once in the dialog with the episode's title; else why nothing is given up
+  test('DESK-SAVE-03: discardStep: asked with the title; why not, with nothing or with an operation', () => {
+    const [text, typed] = changes({ 'a.md': { text: '書いた' }, 'd.md': { text: '書いた', op: 'o2' } }).values();
+    const step = discardStep(text, true, 'はじまり');
+    expect(step.say).toBe('');
+    expect(step.ask.title).toBe('「はじまり」の書きかけを捨てます');
+    expect(step.ask.help).toMatch(/送らずに捨てて、GitHub の版を読み込み直します。捨てた文章は、この話の履歴（この端末）から復元できます。$/);
+    expect(step.changed).toBe('「はじまり」の書きかけは、確かめている間に送信か GitHub からの読み込みで変わったため、捨てませんでした');
+    expect(discardStep(undefined, true, 'はじまり').say).toBe('「はじまり」には、この端末の書きかけがありません');
+    expect(discardStep(typed, true, '新しい話').say).toMatch(/^「新しい話」は、この端末で追加したか、.*「未送信の一覧」で取り消してください$/);
+  });
+  // DESK-SAVE-03: said once it is given up: the episode, and the version shown now (GitHub's branch, or the one read
+  // before: 同期しない, or GitHub not read)
+  test('DESK-SAVE-03: discardSaid: the episode and the version shown', () => {
+    const s = { title: 'はじまり', branch: 'main', mode: /** @type {const} */ ('auto'), read: true, offline: false };
+    const kept = '（捨てた文章は、この話の履歴に残ります）';
+    expect(discardSaid(s)).toBe(`「はじまり」の書きかけを捨てて、GitHub のブランチ main の版を読み込みました${kept}`);
+    const before = `「はじまり」の書きかけを捨てました。GitHub から読み込めなかったため、この端末で前に読んだ版を出しています${kept}`;
+    expect(discardSaid({ ...s, read: false })).toBe(before);
+    expect(discardSaid({ ...s, offline: true })).toBe(before);
+    expect(discardSaid({ ...s, mode: 'off' })).toBe(
+      `「はじまり」の書きかけを捨てて、この端末で前に読んだ版を出しました。同期しない設定のため、GitHub からは読み込んでいません${kept}`,
+    );
   });
   test('neighborOf: the episode before or after the open one', () => {
     const paths = ['1.md', '2.md', '3.md'];

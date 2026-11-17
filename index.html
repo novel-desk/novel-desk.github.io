@@ -179,6 +179,7 @@
       <button class="ghost menu" id="open-toc" aria-label="目次">☰</button>
       <input id="episode-title" class="episode-title" maxlength="80" aria-label="話のタイトル">
       <button class="ghost icon" id="reload-desk" title="GitHub から再読み込み（ほかの端末や GitHub での変更と、差し替えた画像を反映）" aria-label="再読み込み"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.6L20 8.7"/><path d="M20 3v5.7h-5.7"/></svg></button>
+      <button class="ghost icon danger" id="discard-desk" title="書きかけを捨てて再読み込み（この話の、この端末で書いてまだ送っていない文章を送らずに捨て、GitHub の版を読み込み直す）" aria-label="書きかけを捨てて読み込み直す" disabled><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12a8 8 0 1 0 2.3-5.6L4 8.7"/><path d="M4 3v5.7h5.7"/></svg></button>
       <button class="ghost icon" id="plot-peek" title="この話のプロット（中箱）を見る" aria-label="この話のプロット"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg></button>
       <button class="ghost icon side-peek" id="side-peek" title="資料を本文の横に出す（PC と iPad の横向きの幅のとき）" aria-label="資料を横に出す"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M14 4v16M16.5 9h2M16.5 13h2"/></svg></button>
       <button class="ghost icon danger" id="trash-episode" title="この話を削除（作品の _trash/ フォルダに移動。完全には消えません）" aria-label="この話を削除"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg></button>
@@ -297,6 +298,16 @@
     <button type="button" data-delete="push" class="primary">送ってから削除</button>
     <button type="button" data-delete="keep">送らずに削除</button>
     <button type="button" data-delete="" autofocus>やめる</button>
+  </div>
+</dialog>
+
+<!-- 書きかけを捨てて読み込み直す: 捨てる前に一度だけ確かめる -->
+<dialog id="discard-ask" class="versions picker" aria-labelledby="discard-ask-title">
+  <header><strong id="discard-ask-title"></strong></header>
+  <p class="muted small" id="discard-ask-help"></p>
+  <div class="picker-list">
+    <button type="button" data-answer="discard">捨てて読み込み直す</button>
+    <button type="button" data-answer="" autofocus>やめる</button>
   </div>
 </dialog>
 

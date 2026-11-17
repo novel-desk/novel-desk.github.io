@@ -18,6 +18,9 @@ import {
   briefOf,
   changedEpisodes,
   changedKey,
+  discardOff,
+  discardSaid,
+  discardStep,
   episodeAfter,
   episodeToOpen,
   fileName,
@@ -244,6 +247,8 @@ function renderToc() {
   $('sync-mode').value = mode;
   brief();
   for (const id of ['add-episode', 'add-chapter', 'toggle-reorder', 'trash-episode']) $(id).disabled = busy;
+  // 書きかけを捨てて読み込み直す (DESK-SAVE-03): faint when the episode open has no text written here
+  $('discard-desk').disabled = discardOff({ busy, draft: drafts.get(current), onGitHub: Boolean(w.blobs[current]) });
   for (const id of WORK_TOOLS) $(id).disabled = false;
   $('prev-episode').disabled = !neighbor(-1);
   $('next-episode').disabled = !neighbor(1);
@@ -929,13 +934,21 @@ async function relinkRepo() {
 // stays. As the server version's: a synced work asks in one dialog whether what was not sent goes first (送ってから削除),
 // is given up (送らずに削除), or nothing is done (やめる); a work not synced asks once
 /** @param {string} title @param {string} repoName @returns {Promise<string>} 'push', 'keep' or '' (stop) */
-function askDelete(title, repoName) {
-  return new Promise(resolve => {
-    const dlg = /** @type {HTMLDialogElement} */ (/** @type {unknown} */ ($('delete-ask')));
-    $('delete-ask-title').textContent = `作品「${title}」を削除します`;
-    $('delete-ask-help').textContent =
+const askDelete = (title, repoName) =>
+  askIn('delete-ask', 'delete', {
+    title: `作品「${title}」を削除します`,
+    help:
       `GitHub のリポジトリ（${repoName}）はそのままです。まだ送っていない変更をどうしますか？` +
-      '送らずに削除すると、その変更は GitHub に送られず、この端末からも消えます。';
+      '送らずに削除すると、その変更は GitHub に送られず、この端末からも消えます。',
+  });
+// A question in one of the app's dialogs (作品の削除, 書きかけを捨てて読み込み直す): its title and help said in it; the
+// value of the button pressed (its data- attribute `name`), '' when it is closed otherwise (やめる, Esc)
+/** @param {string} id @param {string} name @param {{ title: string, help: string }} said @returns {Promise<string>} */
+function askIn(id, name, said) {
+  return new Promise(resolve => {
+    const dlg = /** @type {HTMLDialogElement} */ (/** @type {unknown} */ ($(id)));
+    $(`${id}-title`).textContent = said.title;
+    $(`${id}-help`).textContent = said.help;
     let done = false;
     /** @type {(v: string) => void} */
     const finish = v => {
@@ -944,10 +957,33 @@ function askDelete(title, repoName) {
       dlg.close();
       resolve(v);
     };
-    for (const b of /** @type {NodeListOf<HTMLElement>} */ (dlg.querySelectorAll('[data-delete]'))) b.onclick = () => finish(b.dataset.delete || '');
+    for (const b of /** @type {NodeListOf<HTMLElement>} */ (dlg.querySelectorAll(`[data-${name}]`))) b.onclick = () => finish(b.dataset[name] || '');
     dlg.onclose = () => finish('');
     dlg.showModal();
   });
+}
+// 書きかけを捨てて読み込み直す (DESK-SAVE-03): the text written in the episode open on this device and not sent, given up
+// without sending it (places side by side in it too: the author gives up tidying them), kept in its history (as
+// 未送信の一覧's 取り消す keeps it), and the work read again from GitHub. Asked once in a dialog first (as 作品の削除
+// asks); the send by itself waits meanwhile. Said where it was pressed: which episode, and which version is shown now
+async function discardAndReload() {
+  const path = current;
+  const w = /** @type {NonNullable<typeof work>} */ (work);
+  const d = drafts.get(path);
+  const title = titleAt(/** @type {import('../lib/layout.js').TocEpisode} */ (findEpisode(path)).rel);
+  const step = discardStep(d, Boolean(w.blobs[path]), title);
+  if (step.say) return void toast(step.say);
+  clearTimeout(autoTimer);
+  const answer = await askIn('discard-ask', 'answer', step.ask);
+  if (!answer) return void sendSoon();
+  // (sent, or moved by what was read in, while it was asked: not given up, as the author did not see it so)
+  if (drafts.get(path) !== d) return void toast(step.changed);
+  await snapshot(path, /** @type {string} */ (/** @type {Draft} */ (d).text), true);
+  await discard({ kind: 'text', path });
+  const before = work;
+  await withBand('読み込んでいます…', reload);
+  const after = /** @type {NonNullable<typeof work>} */ (work);
+  toast(discardSaid({ title, branch: after.branch, mode, read: after !== before, offline: after.offline }));
 }
 async function deleteWork() {
   const r = /** @type {Repo} */ (repo);
@@ -1243,7 +1279,7 @@ export async function open(r) {
   $('send-foot').hidden = true;
   $('save-state').textContent = '読み込み中…';
   // (the operations wait until the work is read: renderToc)
-  for (const id of ['add-episode', 'add-chapter', 'toggle-reorder', 'trash-episode', ...WORK_TOOLS]) $(id).disabled = true;
+  for (const id of ['add-episode', 'add-chapter', 'toggle-reorder', 'trash-episode', 'discard-desk', ...WORK_TOOLS]) $(id).disabled = true;
   $('work-title').value = r.full_name.split('/')[1];
   /** @type {Draft[]} */
   const kept = await store.all('drafts');
@@ -1375,6 +1411,7 @@ export function wire(on) {
   const again = band => void (busy || opening ? null : band ? withBand('読み込んでいます…', reload) : reload());
   $('reload-work').addEventListener('click', () => again(false));
   $('reload-desk').addEventListener('click', () => again(true));
+  $('discard-desk').addEventListener('click', () => void discardAndReload());
   $('to-shelf').addEventListener('click', on.changeRepo);
   changeRepo = on.changeRepo;
   $('delete-work').addEventListener('click', () => void deleteWork());

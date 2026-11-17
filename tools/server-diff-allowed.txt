@@ -106,3 +106,6 @@ B6 html + #send-foot
 # B7. 作者が決めたもの: 幅の広い画面で、本文のスクロールバーを右端に出す
 B7 css + @media (min-width: 761px) #body
 B7 css + @media (min-width: 761px) #preview
+# B8. 作者が決めたもの: 書きかけを捨てて読み込み直す
+B8 html + #discard-desk
+B8 html + #discard-ask
