@@ -393,28 +393,29 @@ test.describe('with a passkey', () => {
   }
   // DESK-SEC-01, NFR-SEC-16: the passkey made on the press, before GitHub; the key GitHub gives encrypted with a key
   // from its PRF output (kept, until then, with the flow's state: deleted with it), its text and bytes kept nowhere;
-  // back from installing, and each time after, opened with the passkey
-  test('DESK-SEC-01: the passkey made on the press; the key GitHub gives kept encrypted with it; back from installing and after, opened with the passkey', async ({
+  // DESK-SEC-05: the passkey asked for only when the App is made (7 日 first): the key kept as well, as one that cannot
+  // be taken out, so that back from installing, and after, within 7 日, it is opened without the passkey
+  test('DESK-SEC-01: the passkey made on the press; the key GitHub gives kept encrypted with it; DESK-SEC-05: back from installing, and for 7 日, opened without the passkey', async ({
     page,
     gh,
   }) => {
     await authenticator(page, true);
     await page.goto('./');
     await makeApp(page);
-    await expect(page.locator('#unlock')).toBeVisible();
+    await expect(page.locator('#episode-title')).toHaveValue('はじまり');
+    await expect(page.locator('#unlock')).toBeHidden();
     expect(gh.installPages).toHaveLength(1);
+    // (the App's key kept encrypted; the one WebCrypto key kept is the one that cannot be taken out, DESK-SEC-05)
     const kept = /** @type {NonNullable<Awaited<ReturnType<typeof keptAppForm>>>} */ (await keptAppForm(page));
     expect(kept.fields).toEqual(['appId', 'author', 'credentialId', 'data', 'iv', 'kind', 'salt', 'slug']);
-    expect([kept.kind, kept.cryptoKeys]).toEqual(['prf', 0]);
+    expect([kept.kind, kept.cryptoKeys]).toEqual(['prf', 1]);
     const pem = /** @type {{ pem: string }} */ (gh.codes.get('testcode100000000')).pem;
     const all = await everything(page);
     for (const line of pem.split('\n').slice(1, -2)) expect(all.texts).not.toContain(line);
     expect(all.texts).not.toMatch(/PRIVATE KEY|test-client-secret-not-real|testcode1/);
-    await expect(page.locator('#unlock-note')).toHaveText(/暗号化し.*起動するたびにパスキーで認証します/);
-    await page.getByRole('button', { name: 'パスキーで開く' }).click();
-    await expect(page.locator('#episode-title')).toHaveValue('はじまり');
     await page.reload();
-    await expect(page.locator('#unlock')).toBeVisible();
+    await expect(page.locator('#episode-title')).toHaveValue('はじまり');
+    await expect(page.locator('#unlock')).toBeHidden();
   });
   // the passkey not made: nothing posted to GitHub
   test('the passkey not made: said; nothing posted', async ({ page, gh }) => {

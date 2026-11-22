@@ -1,4 +1,5 @@
-// The app: the GitHub App (made once, its key opened with a passkey each time), the repository chosen, and the desk. No
+// The app: the GitHub App (made once, its key opened with a passkey as often as the settings say), the repository chosen,
+// and the desk. No
 // server: the page talks to GitHub's API only, and keeps what it needs on this device
 import { installHint, isIos, isStandalone, switchNow } from './lib/install.js';
 import { $, busy, show, toast } from './ui/dom.js';
@@ -12,6 +13,7 @@ import { importBox, showWorks, wireWorks } from './ui/works.js';
 import { appOf, madeApp, startManifest } from './ui/appkey.js';
 import { appFormOf, authorOf, installUrl, returnOf, startedHere } from './lib/appkey.js';
 import { afterInstall, leaveLinks, linkState, othersDrafts, screenSaid, themeColor, themeOf, waitingFlow } from './lib/settings.js';
+import { ASK_INTERVALS, askChanged, askIntervalOf, prfSaid } from './lib/passkey.js';
 import { forgetDevice, keepWork, worksHere } from './ui/repo.js';
 
 // started: every module came and linked (boot.js reloads the page once when they do not)
@@ -24,21 +26,23 @@ try {
 /** @typedef {import('./ui/vault.js').AppVault} AppVault */
 /** @typedef {import('./lib/appkey.js').Pending} Pending */
 
-// what the screen says of how the App's key is kept ('' none kept yet)
+// what the screen says of how the App's key is kept ('' none kept yet; 'app-prf': by the interval chosen, keptSaid)
 const KINDS = {
   '': '',
-  'app-prf': 'GitHub App の秘密鍵は、パスキー（PRF）から生成した鍵で暗号化し、この端末に保存しています。起動するたびにパスキーで認証します。',
+  'app-prf': '',
   'app-local':
     'このブラウザーはパスキーの PRF に対応していないため、GitHub App の秘密鍵は暗号化せず、この端末の取り出せない鍵（WebCrypto）として保存しています。パスキーは使用しません。この端末でこのブラウザーを開ける人は、作品を読み書きできます。',
   // (DESK-SEC-01: kept by the version before; said here only, not each time it is opened)
   'app-old':
     'GitHub App の秘密鍵は暗号化されていません（前の版で、この端末の取り出せない鍵として保存したものです。起動するたびにパスキーで認証します）。ログアウトしてから「GitHub App を作成して始める」で App を再作成すると、パスキーで暗号化して保存します。前の App は、GitHub の Settings → Developer settings → GitHub Apps で削除してください。',
 };
-// what the screen to open it with says of an App's key kept with a passkey (the one kept by the version before: what
-// to do with it is said in the settings only)
-const UNLOCK_APP = { 'app-prf': KINDS['app-prf'], 'app-old': 'GitHub App の秘密鍵は、起動するたびにパスキーで認証します。' };
+// what the screen to open it with says of the App's key kept by the version before with a passkey (what to do with it is
+// said in the settings only; one kept encrypted with a passkey: by the interval chosen, as the settings say it)
+const UNLOCK_OLD = 'GitHub App の秘密鍵は、起動するたびにパスキーで認証します。';
 /** @type {keyof typeof KINDS} */
 let kind = '';
+// what the settings say of how the App's key in use is kept
+const keptSaid = () => (kind === 'app-prf' ? prfSaid(askInterval()) : KINDS[kind]);
 /** @type {AppVault | null} the GitHub App in use, as kept */
 let appVault = null;
 /** @type {import('./ui/github.js').App | null} the GitHub App in use */
@@ -61,6 +65,8 @@ async function openKey() {
   $('open-key').textContent = 'パスキーで開いています…';
   try {
     const key = await vault.openApp(a);
+    // (kept until the interval chosen has passed: DESK-SEC-05)
+    if (a.kind === 'prf') await vault.keepOpened(a, key, askInterval(), Date.now());
     loading('作品を読み込んでいます…');
     await withApp(a, key);
   } catch (err) {
@@ -166,7 +172,10 @@ async function openSettings() {
   desk.leave();
   show('settings');
   $('screen-info').textContent = screenInfo();
-  $('gh-help').textContent = KINDS[kind];
+  $('gh-help').textContent = keptSaid();
+  // (how often the passkey is asked for: only for a key kept encrypted with one, DESK-SEC-05)
+  $('ask-card').hidden = kind !== 'app-prf';
+  showAsk();
   showLeave();
   // asked of GitHub (DESK-OPS-03), said while it is asked (DESK-OPS-05): refused (the App deleted on GitHub), said so;
   // GitHub not saying it (not reached, failed), said as connected
@@ -306,6 +315,9 @@ async function finishApp(code, p) {
     const { appId, slug, key, lock } = await madeApp(code, p.seal);
     await checkLogin(await whoseApp(appOf(appId, key, null)));
     const v = await vault.keepApp({ appId, slug, author: null, ...lock });
+    // (the key encrypted with the passkey made when the flow started: kept as well, with when the passkey was made, so
+    // that it is not asked for again back from installing the App: DESK-SEC-05)
+    if (v.kind === 'prf') await vault.keepOpened(v, key, askInterval(), p.at);
     void keepStore();
     useApp(v, key);
     await installed(true);
@@ -448,13 +460,15 @@ async function start() {
   // (started before the 利用規約 were agreed to here, or before they changed)
   if (!agreed()) return showTerms(() => void start(), null);
   const form = appFormOf(a);
-  // (kept without a passkey: opened at once, what is read said until the next screen: DESK-OPS-05)
-  if (form === 'local') {
+  // (kept without a passkey, or opened by the passkey within the interval chosen: opened at once, what is read said
+  // until the next screen: DESK-OPS-05, DESK-SEC-05)
+  const opened = a.kind === 'prf' ? await vault.openedKey(a, askInterval(), Date.now()) : null;
+  if (form === 'local' || opened) {
     loading('作品を読み込んでいます…');
-    return withApp(a, await vault.openApp(a));
+    return withApp(a, opened ?? (await vault.openApp(a)));
   }
   kind = `app-${form}`;
-  $('unlock-note').textContent = UNLOCK_APP[kind];
+  $('unlock-note').textContent = form === 'prf' ? prfSaid(askInterval()) : UNLOCK_OLD;
   show('unlock');
 }
 
@@ -534,6 +548,44 @@ try {
 $('theme-pick').addEventListener('click', e => {
   const b = /** @type {HTMLElement} */ (e.target).closest('[data-theme-pick]');
   if (b instanceof HTMLElement) setTheme(/** @type {string} */ (b.dataset.themePick));
+});
+// --- パスキーを求める間隔 (DESK-SEC-05, lib/passkey.js): kept on this device, as the screen's colors are (kept through
+// logging out); while this device's storage cannot be written, for this time the page is open
+/** @type {string | null} the one chosen while the storage could not be written */
+let askNow = null;
+function askInterval() {
+  try {
+    return askIntervalOf(askNow ?? localStorage.getItem('passkey-interval'));
+  } catch {
+    return askIntervalOf(askNow);
+  }
+}
+function showAsk() {
+  const id = askInterval();
+  for (const b of /** @type {NodeListOf<HTMLElement>} */ (document.querySelectorAll('[data-ask-pick]'))) b.classList.toggle('on', b.dataset.askPick === id);
+}
+// The interval chosen: kept, and said with what it does; 「毎回」: the key the passkey opened, kept, deleted at once
+/** @param {string} id */
+async function setAsk(id) {
+  askNow = id;
+  try {
+    localStorage.setItem('passkey-interval', id);
+    askNow = null;
+  } catch {}
+  if (id === 'every') await vault.forgetOpened();
+  showAsk();
+  $('gh-help').textContent = keptSaid();
+  toast(askChanged(id));
+}
+for (const c of ASK_INTERVALS) {
+  const b = document.createElement('button');
+  b.dataset.askPick = c.id;
+  b.textContent = c.label;
+  $('ask-pick').append(b);
+}
+$('ask-pick').addEventListener('click', e => {
+  const b = /** @type {HTMLElement} */ (e.target).closest('[data-ask-pick]');
+  if (b instanceof HTMLElement) void setAsk(/** @type {string} */ (b.dataset.askPick));
 });
 // --- a new version of the app (FR-APP-02): its worker takes over at once (sw.js); the page is loaded again when
 // nothing typed can be lost (lib/install.js switchNow): off the desk, or when the desk is left (the page hidden). The

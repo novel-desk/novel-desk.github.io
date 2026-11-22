@@ -74,6 +74,59 @@ const keptKey = page =>
         req.onerror = () => reject(req.error);
       }),
   );
+// What the vault keeps of the App's key the passkey opened (DESK-SEC-05): its App, whether it is of the App's passkey,
+// when the passkey opened it, and whether it can be taken out; null when none is kept
+/** @param {import('@playwright/test').Page} page @returns {Promise<{ appId: string, at: number, extractable: boolean, usages: string[], out: string, ofPasskey: boolean } | null>} */
+const openedKept = page =>
+  page.evaluate(
+    () =>
+      new Promise((resolve, reject) => {
+        const req = indexedDB.open('novel-writer-js');
+        req.onsuccess = () => {
+          const tx = req.result.transaction('vault');
+          const opened = tx.objectStore('vault').get('app-opened');
+          const app = tx.objectStore('vault').get('app');
+          tx.oncomplete = async () => {
+            const v = opened.result;
+            if (!v) return resolve(null);
+            const out = await crypto.subtle.exportKey('pkcs8', v.key).then(
+              () => 'exported',
+              e => e.name,
+            );
+            /** @type {Uint8Array | undefined} */
+            const id = app.result?.credentialId;
+            const ofPasskey =
+              Boolean(id) && id?.length === v.credentialId.length && v.credentialId.every((/** @type {number} */ b, /** @type {number} */ i) => b === id?.[i]);
+            resolve({ appId: v.appId, at: v.at, extractable: v.key.extractable, usages: v.key.usages, out, ofPasskey });
+          };
+          tx.onerror = () => reject(tx.error);
+        };
+        req.onerror = () => reject(req.error);
+      }),
+  );
+const DAY = 86400000;
+// The key the passkey opened, as if it had opened it `ms` ago (when it opened it, kept with it, put back)
+/** @param {import('@playwright/test').Page} page @param {number} ms */
+const openedAgo = (page, ms) =>
+  page.evaluate(
+    ms =>
+      new Promise((resolve, reject) => {
+        const req = indexedDB.open('novel-writer-js');
+        req.onsuccess = () => {
+          const tx = req.result.transaction('vault', 'readwrite');
+          const store = tx.objectStore('vault');
+          const got = store.get('app-opened');
+          got.onsuccess = () => store.put({ ...got.result, at: Date.now() - ms }, 'app-opened');
+          tx.oncomplete = () => resolve(null);
+          tx.onerror = () => reject(tx.error);
+        };
+        req.onerror = () => reject(req.error);
+      }),
+    ms,
+  );
+// 「毎回」 chosen on this device (DESK-SEC-05: the passkey asked for each time the app is opened, as before)
+/** @param {import('@playwright/test').Page} page */
+const askEachTime = page => page.addInitScript(() => localStorage.setItem('passkey-interval', 'every'));
 /** @param {import('./lib/fake-github.mjs').FakeGitHub} gh */
 const tokensAsked = gh => gh.appCalls.filter(c => /^POST \/app\/installations\/\d+\/access_tokens$/.test(c)).length;
 
@@ -95,6 +148,8 @@ test('started with the App’s private key: kept so that it cannot be taken out;
   await expect(page.locator('#gh-help')).toHaveText(
     /PRF に対応していないため、GitHub App の秘密鍵は暗号化せず、この端末の取り出せない鍵.*パスキーは使用しません/,
   );
+  // (DESK-SEC-05: no passkey, no interval to choose)
+  await expect(page.locator('#ask-card')).toBeHidden();
   await page.getByRole('button', { name: '‹ 戻る' }).click();
   // (whose the commits are: not known until a work is opened)
   expect(await keptKey(page)).toEqual({ extractable: false, usages: ['sign'], out: 'InvalidAccessError', author: null, appId: CLIENT_ID });
@@ -377,11 +432,13 @@ test.describe('with a passkey', () => {
   }
   // DESK-SEC-01, NFR-SEC-15: kept encrypted with a key from its passkey's PRF output: neither the key (WebCrypto's)
   // nor its PKCS#8 bytes nor the .pem's text kept anywhere. Opened each time with the passkey, into a key that cannot
-  // be taken out and that signs (GitHub takes its JWT); the passkey refused: said, not opened
+  // be taken out and that signs (GitHub takes its JWT); the passkey refused: said, not opened. DESK-SEC-05: with 「毎回」
+  // chosen (nothing kept but the encrypted bytes, as before)
   test('DESK-SEC-01: with PRF, the App’s key kept encrypted (no key, PKCS#8 or PEM kept); opened with its passkey each time into a key that cannot be taken out, that signs', async ({
     page,
     gh,
   }) => {
+    await askEachTime(page);
     await otherAnswers(page);
     await authenticator(page, true);
     await watchPasskeyNames(page);
@@ -439,7 +496,7 @@ test.describe('with a passkey', () => {
       }, caps);
       await authenticator(page, true);
       await startApp(page, gh, ['author/novel', 'author/other']);
-      await page.getByRole('button', { name: 'パスキーで開く' }).click();
+      // (DESK-SEC-05: the key kept as well when the App is made, 7 日 first: not asked for back from installing)
       await expect(page.locator('#shelf')).toBeVisible();
       expect((await keptAppForm(page))?.kind).toBe('prf');
     });
@@ -463,13 +520,15 @@ test.describe('with a passkey', () => {
       await answering(page, 'nw-create', create);
       await answering(page, 'nw-get', get);
       await page.getByRole('button', { name: 'GitHub App を作成して始める' }).click();
-      if (kind === 'prf') await page.getByRole('button', { name: 'パスキーで開く' }).click();
+      // (DESK-SEC-05: the key kept as well when the App is made, 7 日 first: not asked for back from installing)
       await expect(page.locator('#shelf')).toBeVisible();
       expect((await keptAppForm(page))?.kind).toBe(kind);
     });
 
   // NFR-USE-01, FR-AUTH-07: logged out in another tab while this one waits for the passkey: the first screen again
   test('logged out elsewhere while the passkey is asked for: the first screen', async ({ page, context, gh }) => {
+    // (DESK-SEC-05: 「毎回」, the passkey asked for back from installing)
+    await askEachTime(page);
     await authenticator(page, true);
     await startApp(page, gh, ['author/novel', 'author/other']);
     await expect(page.locator('#unlock')).toBeVisible();
@@ -485,6 +544,8 @@ test.describe('with a passkey', () => {
   // DESK-SEC-01, NFR-USE-01: the passkey not opening the App's key: why; another passkey's PRF
   // output (the key from it opens nothing): said; opened once the passkey answers
   test('DESK-SEC-01: the passkey not opening the App’s key: said why; another passkey: not decrypted; opened once it answers', async ({ page, gh }) => {
+    // (DESK-SEC-05: 「毎回」, the passkey asked for again once the page is loaded again)
+    await askEachTime(page);
     await otherAnswers(page);
     await authenticator(page, true);
     await startApp(page, gh, ['author/novel', 'author/other']);
@@ -499,7 +560,7 @@ test.describe('with a passkey', () => {
     await expect(page.locator('#loading-text')).toHaveText('作品を読み込んでいます…');
     release();
     await expect(page.locator('#shelf')).toBeVisible();
-    await page.unrouteAll();
+    await page.unrouteAll({ behavior: 'wait' });
     await page.reload();
     for (const [how, said] of [
       ['cancel', CANCELLED],
@@ -526,6 +587,8 @@ test.describe('with a passkey', () => {
     await expect(page.locator('#gh-help')).toHaveText(
       'このブラウザーはパスキーの PRF に対応していないため、GitHub App の秘密鍵は暗号化せず、この端末の取り出せない鍵（WebCrypto）として保存しています。パスキーは使用しません。この端末でこのブラウザーを開ける人は、作品を読み書きできます。',
     );
+    // (DESK-SEC-05: no passkey, no interval to choose)
+    await expect(page.locator('#ask-card')).toBeHidden();
     const kept = await keptAppForm(page);
     expect([kept?.kind, kept?.fields, kept?.cryptoKeys]).toEqual(['local', ['appId', 'author', 'key', 'kind', 'slug'], 1]);
     expect(await keptKey(page)).toEqual({ extractable: false, usages: ['sign'], out: 'InvalidAccessError', author: null, appId: CLIENT_ID });
@@ -560,7 +623,171 @@ test.describe('with a passkey', () => {
     await expect(page.locator('#gh-help')).toHaveText(
       'GitHub App の秘密鍵は暗号化されていません（前の版で、この端末の取り出せない鍵として保存したものです。起動するたびにパスキーで認証します）。ログアウトしてから「GitHub App を作成して始める」で App を再作成すると、パスキーで暗号化して保存します。前の App は、GitHub の Settings → Developer settings → GitHub Apps で削除してください。',
     );
-    // (kept as it was)
+    // (kept as it was; DESK-SEC-05: the passkey asked for each time, no interval to choose, nothing else kept)
     expect((await keptAppForm(page))?.fields).toEqual(['appId', 'author', 'credentialId', 'key']);
+    await expect(page.locator('#ask-card')).toBeHidden();
+    expect(await openedKept(page)).toBeNull();
+  });
+
+  // DESK-SEC-05: 7 日 until another interval is chosen: the App's key kept on this device as one that cannot be taken
+  // out, with when the passkey was used, when the App is made (its passkey made then: not asked for again back from
+  // installing it) and when the passkey opens it; the app opened again without the passkey until 7 日 have passed since
+  // then; then that key deleted before the passkey is asked for, and kept again once it opens it; logging out deletes it
+  test('DESK-SEC-05: 7 日 first: the key kept (it cannot be taken out) with when, from the App made and from the passkey opening it; opened without the passkey until 7 日 have passed; then deleted and the passkey asked for; deleted on logging out', async ({
+    page,
+    gh,
+  }) => {
+    await otherAnswers(page);
+    await authenticator(page, true);
+    const before = Date.now();
+    await startApp(page, gh, ['author/novel', 'author/other']);
+    // the App made (its passkey made on the press): back from installing it, opened without asking for the passkey
+    await expect(page.locator('#shelf')).toBeVisible();
+    await expect(page.locator('#unlock')).toBeHidden();
+    const kept = /** @type {NonNullable<Awaited<ReturnType<typeof openedKept>>>} */ (await openedKept(page));
+    expect({ ...kept, at: 0 }).toEqual({ appId: CLIENT_ID, at: 0, extractable: false, usages: ['sign'], out: 'InvalidAccessError', ofPasskey: true });
+    expect(kept.at).toBeGreaterThanOrEqual(before);
+    expect(kept.at).toBeLessThanOrEqual(Date.now());
+    // (the App's key itself kept as before: encrypted, no key in it; the one key kept is the one the passkey opened)
+    const form = await keptAppForm(page);
+    expect([form?.kind, form?.fields, form?.cryptoKeys]).toEqual(['prf', ['appId', 'author', 'credentialId', 'data', 'iv', 'kind', 'salt', 'slug'], 1]);
+    // opened again within 7 日: the passkey not asked for (it would refuse); the key kept signs (GitHub takes its JWT)
+    await answering(page, 'nw-get', 'cancel');
+    await page.reload();
+    await expect(page.locator('#shelf')).toBeVisible();
+    await openRepo(page, 'author/novel');
+    await expect(page.locator('#episode-title')).toHaveValue('はじまり');
+    await openedAgo(page, 7 * DAY - 60000);
+    await page.reload();
+    await expect(page.locator('#episode-title')).toHaveValue('はじまり');
+    await expect(page.locator('#unlock')).toBeHidden();
+    // 7 日 passed: the key kept deleted, then the passkey asked for
+    await openedAgo(page, 7 * DAY + 1000);
+    await page.reload();
+    await expect(page.locator('#unlock')).toBeVisible();
+    await expect(page.locator('#unlock-note')).toHaveText(
+      'GitHub App の秘密鍵は、パスキー（PRF）から生成した鍵で暗号化し、この端末に保存しています。App を作成したときと、パスキーで開いたときに、秘密鍵を取り出せない鍵（WebCrypto）としてもこの端末に保存し、7 日のあいだはパスキーを求めずに起動します。7 日を過ぎると、保存した鍵を削除してパスキーで認証します。鍵を保存している間は、この端末でこのブラウザーを開ける人が、パスキーなしで作品を読み書きできます。',
+    );
+    expect(await openedKept(page)).toBeNull();
+    await page.getByRole('button', { name: 'パスキーで開く' }).click();
+    await expect(page.locator('#unlock-error')).toHaveText(CANCELLED);
+    expect(await openedKept(page)).toBeNull();
+    await answering(page, 'nw-get', '');
+    const again = Date.now();
+    await page.getByRole('button', { name: 'パスキーで開く' }).click();
+    await expect(page.locator('#episode-title')).toHaveValue('はじまり');
+    expect((await openedKept(page))?.at).toBeGreaterThanOrEqual(again);
+    // logged out (NFR-SEC-16): the key kept deleted with the App's
+    await toSettings(page);
+    await page.getByRole('button', { name: 'ログアウト' }).click();
+    await expect(page.locator('#setup')).toBeVisible();
+    expect(await stored(page, 'vault')).toEqual([]);
+  });
+
+  // DESK-SEC-05: the interval chosen in the settings (only for a key kept encrypted with a passkey): the toast says the
+  // interval now and what it does; 「毎回」 deletes the key kept at once, and the passkey is asked for each time with
+  // nothing kept; 30 日 and 求めない keep it from the next time the passkey opens it; the choice is this device's, kept
+  // through logging out
+  test('DESK-SEC-05: the interval chosen in the settings: said in a toast; 毎回 deletes the key kept at once and asks each time; 30 日 and 求めない keep it', async ({
+    page,
+    gh,
+  }) => {
+    await otherAnswers(page);
+    await authenticator(page, true);
+    await startApp(page, gh, ['author/novel', 'author/other']);
+    await expect(page.locator('#shelf')).toBeVisible();
+    await toSettings(page);
+    await expect(page.locator('#ask-card')).toBeVisible();
+    await expect(page.locator('#ask-pick button')).toHaveText([
+      '毎回',
+      '1 日',
+      '7 日',
+      '30 日',
+      '求めない（App を作成したときと、端末の保存データが消えたときだけ）',
+    ]);
+    await expect(page.locator('#ask-pick button.on')).toHaveText('7 日');
+    await expect(page.locator('#gh-help')).toHaveText(/7 日のあいだはパスキーを求めずに起動します/);
+    expect(await openedKept(page)).not.toBeNull();
+    // (a tap between the buttons changes nothing)
+    await page.locator('#ask-pick').dispatchEvent('click');
+    await expect(page.locator('#ask-pick button.on')).toHaveText('7 日');
+    expect(await openedKept(page)).not.toBeNull();
+    // 毎回: the key kept deleted at once
+    await page.getByRole('button', { name: '毎回', exact: true }).click();
+    await expect(page.locator('#toast')).toHaveText(
+      'パスキーを求める間隔を「毎回」にしました。パスキーで開いて保存した鍵を、この端末から削除しました。起動するたびにパスキーで認証します',
+    );
+    await expect(page.locator('#ask-pick button.on')).toHaveText('毎回');
+    await expect(page.locator('#gh-help')).toHaveText(
+      'GitHub App の秘密鍵は、パスキー（PRF）から生成した鍵で暗号化し、この端末に保存しています。起動するたびにパスキーで認証します。',
+    );
+    await expect.poll(() => openedKept(page)).toBeNull();
+    // opened again: the passkey asked for; nothing kept after it opens the App's key (as before)
+    await page.reload();
+    await expect(page.locator('#unlock-note')).toHaveText(/起動するたびにパスキーで認証します。$/);
+    await page.getByRole('button', { name: 'パスキーで開く' }).click();
+    await expect(page.locator('#shelf')).toBeVisible();
+    expect(await openedKept(page)).toBeNull();
+    expect((await keptAppForm(page))?.cryptoKeys).toBe(0);
+    // 30 日: kept from the next time the passkey opens it, and used until 30 日 have passed
+    await toSettings(page);
+    await expect(page.locator('#ask-pick button.on')).toHaveText('毎回');
+    await page.getByRole('button', { name: '30 日', exact: true }).click();
+    await expect(page.locator('#toast')).toHaveText(
+      'パスキーを求める間隔を「30 日」にしました。パスキーで開いてから 30 日のあいだは、パスキーを求めずに起動します',
+    );
+    await expect(page.locator('#ask-pick button.on')).toHaveText('30 日');
+    expect(await page.evaluate(() => localStorage.getItem('passkey-interval'))).toBe('30d');
+    await page.reload();
+    await page.getByRole('button', { name: 'パスキーで開く' }).click();
+    await expect(page.locator('#shelf')).toBeVisible();
+    await openedAgo(page, 29 * DAY);
+    await answering(page, 'nw-get', 'cancel');
+    await page.reload();
+    await expect(page.locator('#shelf')).toBeVisible();
+    // 求めない: used however long ago the passkey opened it
+    await toSettings(page);
+    await page.getByRole('button', { name: /^求めない/ }).click();
+    await expect(page.locator('#toast')).toHaveText(
+      'パスキーを求める間隔を「求めない」にしました。パスキーを求めるのは、App を作成したときと、端末の保存データが消えたときだけです',
+    );
+    await expect(page.locator('#gh-help')).toHaveText(/パスキーを求めるのは、App を作成したときと、端末の保存データが消えたときだけです。/);
+    await openedAgo(page, 3650 * DAY);
+    await page.reload();
+    await expect(page.locator('#shelf')).toBeVisible();
+    // logged out: the key kept deleted; the interval is this device's, kept (as the screen's colors)
+    await toSettings(page);
+    await page.getByRole('button', { name: 'ログアウト' }).click();
+    await expect(page.locator('#setup')).toBeVisible();
+    expect(await stored(page, 'vault')).toEqual([]);
+    expect(await page.evaluate(() => localStorage.getItem('passkey-interval'))).toBe('never');
+  });
+
+  // DESK-SEC-05: this device's storage not to be read or written (a browser that blocks localStorage): 7 日 until one is
+  // chosen; one chosen, used while the page is open (「毎回」: the key kept deleted at once)
+  test('DESK-SEC-05: the storage not to be used: 7 日; the interval chosen used while the page is open', async ({ page, gh }) => {
+    await page.addInitScript(() => {
+      Storage.prototype.getItem = () => {
+        throw new DOMException('test', 'SecurityError');
+      };
+      Storage.prototype.setItem = () => {
+        throw new DOMException('test', 'SecurityError');
+      };
+    });
+    await authenticator(page, true);
+    await startApp(page, gh, ['author/novel', 'author/other']);
+    // (the 利用規約 agreed to, not kept: asked on starting, and again back from installing the App)
+    await page.getByRole('button', { name: '同意して始める' }).click();
+    await page.getByRole('button', { name: '同意して始める' }).click();
+    // (the key kept when the App was made, by the interval before one is chosen)
+    await expect(page.locator('#shelf')).toBeVisible();
+    expect(await openedKept(page)).not.toBeNull();
+    await toSettings(page);
+    await expect(page.locator('#ask-pick button.on')).toHaveText('7 日');
+    await page.getByRole('button', { name: '毎回', exact: true }).click();
+    await expect(page.locator('#toast')).toHaveText(/^パスキーを求める間隔を「毎回」にしました。/);
+    await expect(page.locator('#ask-pick button.on')).toHaveText('毎回');
+    await expect(page.locator('#gh-help')).toHaveText(/起動するたびにパスキーで認証します。$/);
+    await expect.poll(() => openedKept(page)).toBeNull();
   });
 });

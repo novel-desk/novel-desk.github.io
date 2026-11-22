@@ -231,6 +231,8 @@ html { overscroll-behavior-x: none; }
 /* and no 字数・最終更新 line */
 .desk.writing .episode-meta { display: none; }
 .theme-pick { display: flex; gap: 6px; } .theme-pick button { flex: 1; } .theme-pick button.on { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+/* パスキーを求める間隔（DESK-SEC-05。docs/server-differences.md B9）: 選択肢の文が長いので 1 行に 1 つ並べる。選んだものは画面の色と同じ印 */
+.ask-pick { display: grid; gap: 6px; } .ask-pick button { text-align: left; } .ask-pick button.on { border-color: var(--accent); color: var(--accent); font-weight: 600; }
 /* GitHub の公開状態: 非公開 quiet, 公開 in the accent (anyone can read it) */
 .vis { display: inline-block; margin: 0 4px; padding: 0 6px; border: 1px solid var(--line); border-radius: 999px; font-size: 10px; line-height: 16px; color: var(--muted); vertical-align: 1px; white-space: nowrap; }
 .vis.public { border-color: var(--accent); color: var(--accent); font-weight: 600; }

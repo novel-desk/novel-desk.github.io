@@ -1,6 +1,19 @@
 // The GitHub App's private key, kept on this device: encrypted with a key from a passkey's PRF output (iPhone: Face ID
-// each time it is opened), or where PRF is not there, as a WebCrypto key that cannot be taken out of IndexedDB (below)
-import { APP_KEY_INFO, asksPasskey, createOptions, getOptions, openFailure, passkeyName, prfInCaps, prfOf, webauthnFailure } from '../lib/passkey.js';
+// when it is opened, as often as the settings say: DESK-SEC-05), or where PRF is not there, as a WebCrypto key that
+// cannot be taken out of IndexedDB (below)
+import {
+  APP_KEY_INFO,
+  asksPasskey,
+  createOptions,
+  getOptions,
+  keepsOpened,
+  openedStill,
+  openFailure,
+  passkeyName,
+  prfInCaps,
+  prfOf,
+  webauthnFailure,
+} from '../lib/passkey.js';
 import { pkcs8Of } from '../lib/appkey.js';
 import * as store from './db.js';
 
@@ -109,9 +122,10 @@ async function opened(v) {
 }
 
 // --- the GitHub App's private key (ui/appkey.js, DESK-SEC-01): its PKCS#8 bytes encrypted (AES-GCM) with a key from
-// the PRF output of a passkey made for it; opened each time with the passkey, made at once into WebCrypto's key that cannot be taken out (extractable: false), held in memory only, the bytes
-// zeroed. Where PRF is not there: the key that cannot be taken out kept as it is, no passkey (anyone who can open this
-// browser can sign with it: the screen says so). One kept as it is by the version before, with a passkey that encrypts
+// the PRF output of a passkey made for it; opened with the passkey, made at once into WebCrypto's key that cannot be
+// taken out (extractable: false), the bytes zeroed; that key held in memory only (「毎回」), or kept as well until the
+// interval chosen has passed (DESK-SEC-05: openedKey, keepOpened, below). Where PRF is not there: the key that cannot
+// be taken out kept as it is, no passkey (anyone who can open this browser can sign with it: the screen says so). One kept as it is by the version before, with a passkey that encrypts
 // nothing ('old'), cannot be encrypted now (it cannot be taken out): opened as before, and the settings say how to
 // have it encrypted (README: GitHub App の秘密鍵の置き方)
 /**
@@ -127,7 +141,11 @@ async function opened(v) {
 const APP = 'app';
 /** @returns {Promise<AppVault | undefined>} */
 export const keptApp = () => store.get('vault', APP);
-export const forgetApp = () => store.del('vault', APP);
+// (logged out: the key the passkey opened, kept with it, deleted as well, DESK-SEC-05)
+export async function forgetApp() {
+  await store.del('vault', APP);
+  await forgetOpened();
+}
 // The passkey to encrypt the App's key with, made when this browser has PRF (null when it has not). Throws when the
 // author said no to it. (Made while the author's press is fresh: Safari makes one only then)
 /** @returns {Promise<AppSeal | null>} */
@@ -181,4 +199,30 @@ export async function openApp(v) {
     }
   }
   return v.key;
+}
+
+// --- the App's key the passkey opened (or the App was made with, its passkey made then), kept so that the passkey is
+// not asked for again until the interval chosen has passed (DESK-SEC-05, lib/passkey.js openedStill): the key that
+// cannot be taken out (extractable: false) as it is, with the App and the passkey it is of, and when the passkey was used
+/** @typedef {{ appId: string, credentialId: Uint8Array, key: CryptoKey, at: number }} AppOpened */
+const OPENED = 'app-opened';
+export const forgetOpened = () => store.del('vault', OPENED);
+// The key kept for `v`, while the interval `id` has not passed since the passkey opened it (null: none kept, or it has
+// passed: then deleted, and the passkey asked for)
+/** @param {AppSealed & AppInfo} v @param {string} id @param {number} now ms @returns {Promise<CryptoKey | null>} */
+export async function openedKey(v, id, now) {
+  /** @type {AppOpened | undefined} */
+  const kept = await store.get('vault', OPENED);
+  if (kept === undefined) return null;
+  if (openedStill(kept, v, id, now)) return kept.key;
+  await forgetOpened();
+  return null;
+}
+// The key the passkey opened for `v` (or `v` was made with), kept, unless the interval is 「毎回」
+/** @param {AppSealed & AppInfo} v @param {CryptoKey} key @param {string} id @param {number} now when the passkey was used (ms) */
+export async function keepOpened(v, key, id, now) {
+  if (!keepsOpened(id)) return;
+  /** @type {AppOpened} */
+  const opened = { appId: v.appId, credentialId: v.credentialId, key, at: now };
+  await store.put('vault', OPENED, opened);
 }
