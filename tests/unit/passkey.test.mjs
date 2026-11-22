@@ -1,5 +1,22 @@
 import { describe, test, expect } from 'vitest';
-import { APP_KEY_INFO, createOptions, getOptions, openFailure, passkeyName, prfOf, webauthnFailure, prfInCaps, asksPasskey } from '../../lib/passkey.js';
+import {
+  APP_KEY_INFO,
+  ASK_DEFAULT,
+  ASK_INTERVALS,
+  askChanged,
+  askIntervalOf,
+  createOptions,
+  getOptions,
+  keepsOpened,
+  openedStill,
+  openFailure,
+  passkeyName,
+  prfOf,
+  prfSaid,
+  webauthnFailure,
+  prfInCaps,
+  asksPasskey,
+} from '../../lib/passkey.js';
 
 const bytes = n => new Uint8Array(n).fill(7);
 
@@ -74,4 +91,84 @@ test('asksPasskey: kept by the version before with a passkey; not with none, nor
   expect(asksPasskey({ credentialId: new Uint8Array([1]) })).toBe(true);
   expect(asksPasskey({ credentialId: null })).toBe(false);
   expect(asksPasskey({ kind: 'local' })).toBe(false);
+});
+
+// DESK-SEC-05: how often the passkey is asked for
+describe('DESK-SEC-05: the interval the passkey is asked for', () => {
+  const DAY = 86400000;
+  const app = { appId: 'Iv23testclient1', credentialId: new Uint8Array([1, 2, 3]) };
+  const at = Date.UTC(2026, 10, 22, 3);
+  const opened = { ...app, at };
+  test('DESK-SEC-05: ASK_INTERVALS: 毎回, 1 日, 7 日, 30 日, 求めない (App を作成したときと、端末の保存データが消えたときだけ), in this order; 7 日 before one is chosen', () => {
+    expect(ASK_INTERVALS.map(c => [c.id, c.label, c.ms])).toEqual([
+      ['every', '毎回', 0],
+      ['1d', '1 日', DAY],
+      ['7d', '7 日', 7 * DAY],
+      ['30d', '30 日', 30 * DAY],
+      ['never', '求めない（App を作成したときと、端末の保存データが消えたときだけ）', Infinity],
+    ]);
+    expect(ASK_DEFAULT).toBe('7d');
+  });
+  test('DESK-SEC-05: askIntervalOf: the one kept; none kept, or not one of them: 7 日', () => {
+    for (const c of ASK_INTERVALS) expect(askIntervalOf(c.id)).toBe(c.id);
+    expect(askIntervalOf(null)).toBe('7d');
+    expect(askIntervalOf('')).toBe('7d');
+    expect(askIntervalOf('2d')).toBe('7d');
+  });
+  test('DESK-SEC-05: keepsOpened: the key the passkey opened kept, but for 毎回', () => {
+    expect(ASK_INTERVALS.map(c => keepsOpened(c.id))).toEqual([false, true, true, true, true]);
+    expect(keepsOpened('unknown')).toBe(true);
+  });
+  test('DESK-SEC-05: openedStill: used until the interval has passed since the passkey opened it; at it, and after, not', () => {
+    for (const [id, ms] of /** @type {const} */ ([
+      ['1d', DAY],
+      ['7d', 7 * DAY],
+      ['30d', 30 * DAY],
+    ])) {
+      expect(openedStill(opened, app, id, at)).toBe(true);
+      expect(openedStill(opened, app, id, at + ms - 1)).toBe(true);
+      expect(openedStill(opened, app, id, at + ms)).toBe(false);
+      expect(openedStill(opened, app, id, at + ms + 1)).toBe(false);
+    }
+    // (毎回: never kept; one kept before 毎回 was chosen, not used)
+    expect(openedStill(opened, app, 'every', at)).toBe(false);
+    // (求めない: whenever)
+    expect(openedStill(opened, app, 'never', at + 3650 * DAY)).toBe(true);
+    // (not one of them: as 7 日)
+    expect(openedStill(opened, app, 'x', at + 7 * DAY - 1)).toBe(true);
+    expect(openedStill(opened, app, 'x', at + 7 * DAY)).toBe(false);
+  });
+  test('DESK-SEC-05: openedStill: the device’s clock put back (now before the passkey opened it): passed, but for 求めない', () => {
+    expect(openedStill(opened, app, '30d', at - 1)).toBe(false);
+    expect(openedStill(opened, app, 'never', at - 1)).toBe(true);
+  });
+  test('DESK-SEC-05: openedStill: kept for another App, or for another passkey: not used', () => {
+    expect(openedStill({ ...opened, appId: 'Iv23other' }, app, 'never', at)).toBe(false);
+    expect(openedStill({ ...opened, credentialId: new Uint8Array([1, 2, 4]) }, app, 'never', at)).toBe(false);
+    expect(openedStill({ ...opened, credentialId: new Uint8Array([1, 2]) }, app, 'never', at)).toBe(false);
+    expect(openedStill({ ...opened, credentialId: new Uint8Array([1, 2, 3, 0]) }, app, 'never', at)).toBe(false);
+  });
+  test('DESK-SEC-05: prfSaid: how the key is kept, by the interval', () => {
+    const kept = 'GitHub App の秘密鍵は、パスキー（PRF）から生成した鍵で暗号化し、この端末に保存しています。';
+    const others = '鍵を保存している間は、この端末でこのブラウザーを開ける人が、パスキーなしで作品を読み書きできます。';
+    expect(prfSaid('every')).toBe(`${kept}起動するたびにパスキーで認証します。`);
+    expect(prfSaid('7d')).toBe(
+      `${kept}App を作成したときと、パスキーで開いたときに、秘密鍵を取り出せない鍵（WebCrypto）としてもこの端末に保存し、7 日のあいだはパスキーを求めずに起動します。7 日を過ぎると、保存した鍵を削除してパスキーで認証します。${others}`,
+    );
+    expect(prfSaid('1d')).toContain('1 日のあいだはパスキーを求めずに起動します。1 日を過ぎると');
+    expect(prfSaid('30d')).toContain('30 日のあいだはパスキーを求めずに起動します。30 日を過ぎると');
+    expect(prfSaid('never')).toBe(
+      `${kept}App を作成したときと、パスキーで開いたときに、秘密鍵を取り出せない鍵（WebCrypto）としてもこの端末に保存し、パスキーを求めずに起動します。パスキーを求めるのは、App を作成したときと、端末の保存データが消えたときだけです。${others}`,
+    );
+  });
+  test('DESK-SEC-05: askChanged: the interval now, and what it does', () => {
+    expect(askChanged('every')).toBe(
+      'パスキーを求める間隔を「毎回」にしました。パスキーで開いて保存した鍵を、この端末から削除しました。起動するたびにパスキーで認証します',
+    );
+    expect(askChanged('1d')).toBe('パスキーを求める間隔を「1 日」にしました。パスキーで開いてから 1 日のあいだは、パスキーを求めずに起動します');
+    expect(askChanged('30d')).toBe('パスキーを求める間隔を「30 日」にしました。パスキーで開いてから 30 日のあいだは、パスキーを求めずに起動します');
+    expect(askChanged('never')).toBe(
+      'パスキーを求める間隔を「求めない」にしました。パスキーを求めるのは、App を作成したときと、端末の保存データが消えたときだけです',
+    );
+  });
 });

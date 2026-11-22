@@ -348,6 +348,12 @@
         <p class="muted small">GitHub のリポジトリと、送った原稿は残ります。また使うときは、最初の画面からもう一度始めます。</p>
       </details>
     </section>
+    <!-- パスキーを求める間隔（DESK-SEC-05。パスキーで暗号化した鍵のときだけ出す。ボタンは app.js が lib/passkey.js の選択肢から作る） -->
+    <section class="card" id="ask-card" hidden>
+      <h2>パスキーを求める間隔</h2>
+      <div class="ask-pick" id="ask-pick"></div>
+      <p class="muted small">App を作成したときか、パスキーで開いたときから、選んだ間隔のあいだは、パスキーを求めずに起動します。「毎回」は、起動するたびにパスキーで認証します。この端末だけに効きます。</p>
+    </section>
     <section class="card">
       <h2>利用規約</h2>
       <p class="muted small">Novel Desk はベータ版です。</p>
